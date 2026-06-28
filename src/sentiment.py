@@ -1,7 +1,6 @@
 import yfinance as yf
 import numpy as np
 import pandas as pd
-from transformers import pipeline
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -12,6 +11,7 @@ _sentiment_pipeline = None
 def get_sentiment_pipeline():
     global _sentiment_pipeline
     if _sentiment_pipeline is None:
+        from transformers import pipeline
         _sentiment_pipeline = pipeline(
             "sentiment-analysis",
             model="distilbert-base-uncased-finetuned-sst-2-english",
