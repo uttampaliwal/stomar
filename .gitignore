@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+data/*.parquet
+models/*.pkl
+models/*.keras
+.venv/
+venv/
+*.egg-info/
+.DS_Store
