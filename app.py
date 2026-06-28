@@ -3,343 +3,336 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import os
-import sys
-import traceback
+import os, sys, traceback
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 from src.data_fetcher import fetch_stock_data, NSE_STOCKS, get_market_status
 from src.features import add_technical_indicators
-from src.model import load_models, models_exist
-from src.trainer import train_for_ticker
+from src.model import load_models, models_exist, DEVICE
+from src.trainer import train_for_ticker, FEATURE_COLS
+from src.ensemble import predict_ensemble, backtest_ensemble
+from src.sentiment import fetch_news_sentiment
+from src.portfolio import Portfolio
+from src.backtester import run_backtest, generate_model_signals
 
-st.set_page_config(
-    page_title="StoMar - Stock Market Predictor",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="StoMar - Trading Suite", page_icon="📈", layout="wide")
 
-st.markdown(
-    """
+st.markdown("""
 <style>
-    .main-header {font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem;}
-    .pred-up {color: #00ff88; font-weight: 700; font-size: 1.2rem;}
-    .pred-down {color: #ff4444; font-weight: 700; font-size: 1.2rem;}
-    .stMetric {background: #1e1e1e; padding: 1rem; border-radius: 10px; border: 1px solid #333;}
-    .feature-bar {margin: 2px 0;}
+    .main-header {font-size: 2.2rem; font-weight: 700;}
+    .pred-up {color: #00ff88; font-weight: 700; font-size: 1.3rem;}
+    .pred-down {color: #ff4444; font-weight: 700; font-size: 1.3rem;}
+    .metric-box {background: #1e1e1e; padding: 1rem; border-radius: 10px; border: 1px solid #333;}
+    .green {color: #00ff88;}
+    .red {color: #ff4444;}
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
+
+if "portfolio" not in st.session_state:
+    st.session_state.portfolio = Portfolio(initial_capital=100000)
+if "last_ticker" not in st.session_state:
+    st.session_state.last_ticker = NSE_STOCKS[0]
 
 
 @st.cache_data(ttl=3600)
-def get_data(ticker: str, period: str, refresh: bool):
-    return fetch_stock_data(ticker, period=period, force_refresh=refresh)
+def get_data(ticker, period):
+    return fetch_stock_data(ticker, period=period)
 
 
-def plot_candlestick(df: pd.DataFrame, df_feat: pd.DataFrame, ticker: str):
-    df = df.copy()
-    df["sma_20"] = df_feat["sma_20"]
-    df["sma_50"] = df_feat["sma_50"]
-    df["rsi"] = df_feat["rsi"]
-
-    fig = make_subplots(
-        rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05,
-        row_heights=[0.6, 0.2, 0.2],
-        subplot_titles=(f"{ticker} Price", "RSI (14)", "Volume"),
-    )
-
-    fig.add_trace(
-        go.Candlestick(
-            x=df.index[-90:], open=df["open"][-90:], high=df["high"][-90:],
-            low=df["low"][-90:], close=df["close"][-90:], name="Price",
-        ), row=1, col=1,
-    )
-    fig.add_trace(
-        go.Scatter(x=df.index[-90:], y=df["sma_20"][-90:], name="SMA 20", line=dict(color="orange", width=1)),
-        row=1, col=1,
-    )
-    fig.add_trace(
-        go.Scatter(x=df.index[-90:], y=df["sma_50"][-90:], name="SMA 50", line=dict(color="purple", width=1)),
-        row=1, col=1,
-    )
-    fig.add_trace(
-        go.Scatter(x=df.index[-90:], y=df["rsi"][-90:], name="RSI", line=dict(color="cyan")),
-        row=2, col=1,
-    )
-    fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
-    fig.add_trace(
-        go.Bar(x=df.index[-90:], y=df["volume"][-90:], name="Volume", marker_color="gray"),
-        row=3, col=1,
-    )
-
-    fig.update_layout(
-        height=650, template="plotly_dark",
-        xaxis_rangeslider_visible=False, margin=dict(l=20, r=20, t=40, b=20),
-    )
-    return fig
-
-
-def make_prediction(ticker: str, df_feat: pd.DataFrame):
-    import torch
-    from src.model import DEVICE
-
-    lstm, xgb, scaler, feature_cols = load_models(ticker)
-    feature_cols = [c for c in feature_cols if c in df_feat.columns]
-
-    latest_data = df_feat[feature_cols].dropna()
-    if len(latest_data) < 60:
-        return None, None, None, None
-
-    latest_scaled = scaler.transform(latest_data.values[-60:])
-    lstm_input = torch.tensor(latest_scaled, dtype=torch.float32).unsqueeze(0).to(DEVICE)
-    lstm.eval()
-    with torch.no_grad():
-        lstm_pred_scaled = lstm(lstm_input).item()
-
-    current_close_scaled = latest_scaled[-1, 0]
-    lstm_direction = 1 if lstm_pred_scaled > current_close_scaled else 0
-
-    xgb_input = latest_data.iloc[-1:][feature_cols]
-    xgb_prob = xgb.predict_proba(xgb_input)[0]
-    xgb_direction = int(xgb.predict(xgb_input)[0])
-
-    ensemble_prob = (lstm_direction + xgb_prob[1]) / 2
-    ensemble_dir = 1 if ensemble_prob > 0.5 else 0
-    confidence = max(ensemble_prob, 1 - ensemble_prob) * 100
-
-    return ensemble_dir, confidence, xgb_prob[1], lstm_direction
-
-
-def show_feature_importance(xgb_model, feature_cols):
-    importance = xgb_model.feature_importances_
-    feat_df = pd.DataFrame({"feature": feature_cols, "importance": importance})
-    feat_df = feat_df.sort_values("importance", ascending=True).tail(15)
-
-    fig = go.Figure(go.Bar(
-        x=feat_df["importance"], y=feat_df["feature"],
-        orientation="h", marker_color="limegreen",
-    ))
-    fig.update_layout(
-        template="plotly_dark", height=350,
-        margin=dict(l=10, r=10, t=10, b=10),
-        xaxis_title="Importance", yaxis_title=None,
-    )
-    return fig
-
-
-def prediction_page():
-    st.markdown('<p class="main-header">StoMar 📈</p>', unsafe_allow_html=True)
-    st.markdown("### Indian Stock Market Predictor (NSE)")
+def page_predictions():
+    st.markdown('<p class="main-header">📈 StoMar Predictions</p>', unsafe_allow_html=True)
 
     col1, col2, col3, col4 = st.columns([2, 1, 1, 0.8])
     with col1:
-        ticker = st.selectbox("Select Stock", NSE_STOCKS, index=0)
+        ticker = st.selectbox("Stock", NSE_STOCKS, index=NSE_STOCKS.index(st.session_state.last_ticker))
+        st.session_state.last_ticker = ticker
     with col2:
-        period = st.selectbox("Data Period", ["6mo", "1y", "2y", "5y"], index=3)
+        period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=3)
     with col3:
         st.markdown("###")
-        refresh = st.button("🔄 Refresh Data")
+        refresh = st.button("🔄 Refresh")
     with col4:
         st.markdown("###")
-        train_btn = st.button("⚡ Train Model")
+        train_btn = st.button("⚡ Train")
 
-    market_status = get_market_status()
-    status_icon = "🟢" if market_status == "Open" else ("🟡" if "Closed" in market_status else "🔴")
-    st.markdown(f"**Market:** {status_icon} {market_status}")
+    market = get_market_status()
+    st.caption(f"Market: {'🟢' if market=='Open' else '🔴'} {market}")
 
     try:
-        df = get_data(ticker, period, refresh)
+        df = get_data(ticker, period)
     except Exception as e:
-        st.error(f"Failed to fetch data: {e}")
+        st.error(f"Data fetch failed: {e}")
         st.stop()
 
     ticker_display = ticker.replace(".NS", "")
     df_feat = add_technical_indicators(df)
 
-    # Top metrics row
-    current_price = df["close"].iloc[-1]
-    prev_close = df["close"].iloc[-2]
-    change = current_price - prev_close
-    change_pct = (change / prev_close) * 100
+    # Price row
+    curr = df["close"].iloc[-1]
+    prev = df["close"].iloc[-2]
+    chg = curr - prev
+    chg_pct = (chg / prev) * 100
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Price", f"₹{curr:.2f}", f"{chg:+.2f} ({chg_pct:+.2f}%)")
+    c2.metric("Range", f"₹{df['low'].iloc[-1]:.2f} – ₹{df['high'].iloc[-1]:.2f}")
+    c3.metric("Volume", f"{df['volume'].iloc[-1]:,.0f}")
 
-    price_col, range_col, vol_col, pred_col = st.columns(4)
-    price_col.metric("Current Price", f"₹{current_price:.2f}", f"{change:+.2f} ({change_pct:+.2f}%)")
-    range_col.metric("Day Range", f"₹{df['low'].iloc[-1]:.2f} – ₹{df['high'].iloc[-1]:.2f}")
-    vol_col.metric("Volume", f"{df['volume'].iloc[-1]:,.0f}")
-
-    # Prediction display
+    # Prediction
     if train_btn:
-        with st.spinner(f"Training models for {ticker_display}... (~2 min)"):
-            try:
-                result = train_for_ticker(ticker, force_retrain=True)
-                st.success(
-                    f"✅ Training done!  "
-                    f"XGBoost: {result['xgb_accuracy']:.1%}  |  "
-                    f"LSTM: {result['lstm_accuracy']:.1%}  "
-                    f"({result.get('lstm_correct',0)}/{result.get('lstm_total',0)} correct)"
-                )
-                st.cache_data.clear()
-            except Exception as e:
-                st.error(f"Training failed: {e}")
+        with st.spinner(f"Training {ticker_display} (~3 min)..."):
+            r = train_for_ticker(ticker, force_retrain=True)
+            st.success(f"XGB: {r['xgb_accuracy']:.1%} | LSTM: {r['lstm_accuracy']:.1%} | GRU: {r['gru_accuracy']:.1%} | TF: {r['transformer_accuracy']:.1%} | Ensemble: {r['ensemble_accuracy']:.1%}")
+            st.cache_data.clear()
 
     if models_exist(ticker):
-        pred_dir, conf, xgb_prob, lstm_dir = make_prediction(ticker, df_feat)
-        if pred_dir is not None:
-            direction_text = "📈 UP" if pred_dir == 1 else "📉 DOWN"
-            direction_class = "pred-up" if pred_dir == 1 else "pred-down"
-            pred_col.markdown(
-                f"**Prediction**<br>"
-                f'<span class="{direction_class}">{direction_text}</span><br>'
-                f"<small>{conf:.1f}% confidence</small>",
-                unsafe_allow_html=True,
-            )
+        lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
+        ens_dir, conf, details = predict_ensemble(lstm, gru, transformer, xgb, scaler, feat, df_feat)
+        if ens_dir is not None:
+            icon = "📈" if ens_dir == 1 else "📉"
+            cls = "pred-up" if ens_dir == 1 else "pred-down"
+            c4.markdown(f"**Ensemble**<br><span class='{cls}'>{icon} {'UP' if ens_dir==1 else 'DOWN'}</span><br><small>{conf:.1f}% confidence</small>", unsafe_allow_html=True)
+
+            # Model breakdown
+            with st.expander("⚙️ Model Details", expanded=False):
+                cols = st.columns(4)
+                for i, (name, key) in enumerate([("LSTM","lstm_dir"), ("GRU","gru_dir"), ("Transformer","transformer_dir"), ("XGBoost","xgb_dir")]):
+                    d = details[key]
+                    txt = "📈 UP" if d == 1 else "📉 DOWN"
+                    cols[i].metric(name, txt)
+                st.metric("XGBoost UP Probability", f"{details['xgb_prob_up']:.1%}")
+                st.metric("Ensemble Probability", f"{details['ensemble_prob']:.1%}")
         else:
-            pred_col.metric("Prediction", "⏳ Need 60d")
+            c4.metric("Prediction", "Need 60d data")
     else:
-        pred_col.metric("Prediction", "Not trained")
+        c4.metric("Prediction", "Not trained")
+        if st.button(f"Train {ticker_display}"):
+            with st.spinner("Training..."):
+                r = train_for_ticker(ticker, force_retrain=True)
+                st.success(f"Ensemble: {r['ensemble_accuracy']:.1%}")
+                st.cache_data.clear()
+                st.rerun()
 
     # Chart
-    st.plotly_chart(plot_candlestick(df, df_feat, ticker_display), use_container_width=True)
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05,
+                        row_heights=[0.6, 0.2, 0.2],
+                        subplot_titles=(f"{ticker_display} Price", "RSI", "Volume"))
+    fig.add_trace(go.Candlestick(x=df.index[-90:], open=df["open"][-90:], high=df["high"][-90:],
+                                 low=df["low"][-90:], close=df["close"][-90:], name=""), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index[-90:], y=df_feat["sma_20"][-90:], name="SMA 20",
+                             line=dict(color="orange", width=1)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index[-90:], y=df_feat["sma_50"][-90:], name="SMA 50",
+                             line=dict(color="purple", width=1)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index[-90:], y=df_feat["rsi"][-90:], name="RSI",
+                             line=dict(color="cyan")), row=2, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+    fig.add_trace(go.Bar(x=df.index[-90:], y=df["volume"][-90:], name="Vol",
+                         marker_color="gray"), row=3, col=1)
+    fig.update_layout(height=550, template="plotly_dark", xaxis_rangeslider_visible=False)
+    st.plotly_chart(fig, use_container_width=True)
 
-    # Technical indicators expander
+    # Indicators
     with st.expander("📊 Technical Indicators", expanded=False):
         cols = st.columns(5)
-        rsi_val = df_feat["rsi"].iloc[-1]
-        rsi_label = "Overbought ⚠️" if rsi_val > 70 else "Oversold ⚠️" if rsi_val < 30 else "Neutral"
-        cols[0].metric("RSI (14)", f"{rsi_val:.1f}", rsi_label)
+        rsi_v = df_feat["rsi"].iloc[-1]
+        cols[0].metric("RSI", f"{rsi_v:.1f}", "Overbought" if rsi_v>70 else "Oversold" if rsi_v<30 else "Neutral")
+        macd_v = df_feat["macd"].iloc[-1]
+        macd_s = df_feat["macd_signal"].iloc[-1]
+        cols[1].metric("MACD", f"{macd_v:.2f}", "Bullish" if macd_v>macd_s else "Bearish")
+        cols[2].metric("Bollinger Width", f"{df_feat['bb_width'].iloc[-1]:.2f}")
+        cols[3].metric("ATR", f"{df_feat['atr'].iloc[-1]:.2f}")
+        cols[4].metric("OBV", f"{df_feat['obv'].iloc[-1]:,.0f}")
 
-        macd_val = df_feat["macd"].iloc[-1]
-        macd_sig = df_feat["macd_signal"].iloc[-1]
-        macd_status = "Bullish ✅" if macd_val > macd_sig else "Bearish"
-        cols[1].metric("MACD", f"{macd_val:.2f}", macd_status)
+    # Feature importance
+    if models_exist(ticker):
+        _, xgb_m, _, _, _, _ = load_models(ticker)
+        if hasattr(xgb_m, "feature_importances_"):
+            imp = xgb_m.feature_importances_
+            feat_used = [c for c in FEATURE_COLS if c in df_feat.columns]
+            fi_df = pd.DataFrame({"f": feat_used, "i": imp}).sort_values("i", ascending=True).tail(12)
+            fig_fi = go.Figure(go.Bar(x=fi_df["i"], y=fi_df["f"], orientation="h", marker_color="limegreen"))
+            fig_fi.update_layout(template="plotly_dark", height=300, margin=dict(l=0, r=0, t=0, b=0))
+            with st.expander("🔑 Feature Importance", expanded=False):
+                st.plotly_chart(fig_fi, use_container_width=True)
 
-        bb_w = df_feat["bb_width"].iloc[-1]
-        cols[2].metric("Bollinger Width", f"{bb_w:.2f}")
 
-        atr_v = df_feat["atr"].iloc[-1]
-        cols[3].metric("ATR (14)", f"{atr_v:.2f}")
+def page_portfolio():
+    st.markdown('<p class="main-header">💰 Portfolio Tracker</p>', unsafe_allow_html=True)
+    p = st.session_state.portfolio
+    stats = p.get_stats()
 
-        obv_v = df_feat["obv"].iloc[-1]
-        cols[4].metric("OBV", f"{obv_v:,.0f}")
+    if not stats:
+        st.info("No trades yet. Go to Backtest tab to run a simulation.")
+        return
 
-    # Bottom: two columns
-    col_left, col_right = st.columns(2)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Return", f"{stats['total_return']:.1%}")
+    c2.metric("Sharpe Ratio", stats["sharpe_ratio"])
+    c3.metric("Max Drawdown", f"{stats['max_drawdown']:.1f}%")
+    c4.metric("Win Rate", f"{stats['win_rate']:.1f}%")
 
-    with col_left:
-        st.markdown("### 📋 Recent Data")
-        display_df = df.tail(8)[["open", "high", "low", "close", "volume"]].copy()
-        display_df.index = display_df.index.strftime("%Y-%m-%d")
-        display_df.columns = [c.capitalize() for c in display_df.columns]
-        st.dataframe(display_df.iloc[::-1], use_container_width=True)
+    eq = pd.DataFrame(p.equity_curve)
+    if len(eq) > 1:
+        eq["date"] = pd.to_datetime(eq["date"])
+        fig = go.Figure(go.Scatter(x=eq["date"], y=eq["equity"], mode="lines",
+                                   fill="tozeroy", line=dict(color="limegreen")))
+        fig.update_layout(template="plotly_dark", height=350, title="Equity Curve")
+        st.plotly_chart(fig, use_container_width=True)
 
-        # Feature importance
-        if models_exist(ticker):
-            try:
-                _, xgb, _, _ = load_models(ticker)
-                if hasattr(xgb, "feature_importances_"):
-                    st.markdown("### 🔑 Feature Importance (XGBoost)")
-                    feat_cols = [c for c in FEATURE_COLS if c in df_feat.columns]
-                    fig_fi = show_feature_importance(xgb, feat_cols)
-                    st.plotly_chart(fig_fi, use_container_width=True)
-            except Exception:
-                pass
+    c1, c2 = st.columns(2)
+    c1.metric("Cash", f"₹{stats['cash_remaining']:,.2f}")
+    c2.metric("Holdings Value", f"₹{stats['holdings_value']:,.2f}")
 
-    with col_right:
-        st.markdown("### 🤖 Model Controls")
-        if not models_exist(ticker):
-            st.warning("Models not trained for this stock")
-            if st.button(f"Train {ticker_display}", type="primary", use_container_width=True):
-                with st.spinner("Training... (~2 min)"):
-                    result = train_for_ticker(ticker, force_retrain=True)
-                st.success(f"XGB: {result['xgb_accuracy']:.1%} | LSTM: {result['lstm_accuracy']:.1%}")
-                st.cache_data.clear()
-                st.rerun()
+    if p.trades:
+        st.markdown("### Trade Log")
+        df_t = pd.DataFrame(p.trades)
+        cols = ["date", "ticker", "action", "price", "quantity"]
+        if "pnl" in df_t.columns:
+            cols.append("pnl")
+        st.dataframe(df_t[cols].iloc[::-1], use_container_width=True)
+
+
+def page_backtest():
+    st.markdown('<p class="main-header">🔬 Strategy Backtest</p>', unsafe_allow_html=True)
+    ticker = st.selectbox("Stock to backtest", NSE_STOCKS, key="bt_ticker")
+
+    if not models_exist(ticker):
+        st.warning("Train models first (Predictions tab)")
+        return
+
+    capital = st.number_input("Initial Capital (₹)", 10000, 10000000, 100000, step=50000)
+
+    if st.button("▶ Run Backtest", type="primary"):
+        with st.spinner("Running backtest..."):
+            df = fetch_stock_data(ticker, period="5y")
+            df_feat = add_technical_indicators(df)
+            lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
+
+            signals = generate_model_signals(ticker, df_feat, lstm, gru, transformer, xgb, scaler, feat)
+            stats, portfolio = run_backtest(df_feat, signals, capital)
+
+            st.session_state.portfolio = portfolio
+
+        if stats:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Return", f"{stats['total_return']:.1%}")
+            c2.metric("Sharpe", stats["sharpe_ratio"])
+            c3.metric("Max DD", f"{stats['max_drawdown']:.1f}%")
+            c4.metric("Win Rate", f"{stats['win_rate']:.1f}%")
+
+            eq = pd.DataFrame(portfolio.equity_curve)
+            if len(eq) > 1:
+                eq["date"] = pd.to_datetime(eq["date"])
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=eq["date"], y=eq["equity"], mode="lines",
+                                         fill="tozeroy", line=dict(color="limegreen"), name="Strategy"))
+                bh = capital * (df["close"] / df["close"].iloc[0])
+                bh_dates = df.index[:len(eq)]
+                if len(bh_dates) > len(eq):
+                    bh_dates = bh_dates[:len(eq)]
+                fig.add_trace(go.Scatter(x=bh_dates, y=bh.values[:len(bh_dates)],
+                                         line=dict(color="gray", dash="dash"), name="Buy & Hold"))
+                fig.update_layout(template="plotly_dark", height=400, title="Equity vs Buy & Hold")
+                st.plotly_chart(fig, use_container_width=True)
+
+            st.markdown("### Trade Log")
+            df_t = pd.DataFrame(portfolio.trades)
+            st.dataframe(df_t.iloc[::-1], use_container_width=True)
         else:
-            _, xgb, _, _ = load_models(ticker)
-            lstm, _, _, _ = load_models(ticker)
-            st.info("✅ Models trained and ready")
-            if st.button("🔄 Retrain", use_container_width=True):
-                with st.spinner("Retraining..."):
-                    result = train_for_ticker(ticker, force_retrain=True)
-                st.success(f"XGB: {result['xgb_accuracy']:.1%} | LSTM: {result['lstm_accuracy']:.1%}")
-                st.cache_data.clear()
-                st.rerun()
-
-        # Backtest summary
-        if models_exist(ticker):
-            st.markdown("### 📈 Backtest Summary (last 20% of data)")
-            try:
-                from sklearn.metrics import accuracy_score
-                lstm, xgb, scaler, feature_cols = load_models(ticker)
-                feature_cols = [c for c in feature_cols if c in df_feat.columns]
-                bt_data = df_feat[feature_cols].dropna()
-                if len(bt_data) > 100:
-                    split = int(len(bt_data) * 0.8)
-                    bt_test = bt_data.iloc[split:]
-                    bt_scaled = scaler.transform(bt_test.values)
-                    correct_lstm = 0
-                    total = len(bt_scaled) - 60
-                    for i in range(60, len(bt_scaled)):
-                        inp = torch.tensor(bt_scaled[i-60:i], dtype=torch.float32).unsqueeze(0)
-                        lstm.eval()
-                        with torch.no_grad():
-                            p = lstm(inp).item()
-                        actual = bt_scaled[i, 0]
-                        prev = bt_scaled[i-1, 0]
-                        pred_dir = 1 if p > prev else 0
-                        act_dir = 1 if actual > prev else 0
-                        if pred_dir == act_dir:
-                            correct_lstm += 1
-                    bt_acc = correct_lstm / total if total > 0 else 0
-
-                    xgb_test = bt_test[feature_cols]
-                    xgb_actual = df_feat["target_direction"].iloc[split:split+len(xgb_test)]
-                    xgb_pred = xgb.predict(xgb_test)
-                    xgb_valid = min(len(xgb_pred), len(xgb_actual))
-                    xgb_acc = accuracy_score(xgb_actual[:xgb_valid], xgb_pred[:xgb_valid])
-
-                    col_a, col_b = st.columns(2)
-                    col_a.metric("LSTM Accuracy", f"{bt_acc:.1%}")
-                    col_b.metric("XGBoost Accuracy", f"{xgb_acc:.1%}")
-            except Exception as e:
-                st.caption(f"Backtest unavailable: {e[:50]}...")
-
-    # Long-term chart
-    st.markdown("### 📈 Long-Term Trend")
-    sma_200 = df["close"].rolling(200).mean()
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(x=df.index, y=df["close"], name="Close", line=dict(color="white")))
-    fig2.add_trace(go.Scatter(x=df.index, y=df_feat["sma_50"], name="SMA 50", line=dict(color="orange", width=1)))
-    fig2.add_trace(go.Scatter(x=df.index, y=sma_200, name="SMA 200", line=dict(color="purple", width=1)))
-    fig2.update_layout(template="plotly_dark", height=400, margin=dict(l=20, r=20, t=20, b=20))
-    st.plotly_chart(fig2, use_container_width=True)
-
-    # Footer
-    st.divider()
-    st.caption(
-        "⚠️ **Disclaimer:** This is for educational purposes only. "
-        "Stock predictions are inherently uncertain. Do not trade based solely on these predictions."
-    )
+            st.error("Backtest failed: no signals generated")
 
 
-FEATURE_COLS = [
-    "close", "volume", "sma_10", "sma_20", "sma_50", "ema_12", "ema_26",
-    "rsi", "macd", "macd_signal", "bb_width", "atr", "obv", "volume_ratio",
-    "high_low_pct", "close_open_pct", "close_position",
-    "returns_1d", "returns_2d", "returns_3d", "returns_5d", "returns_10d", "returns_20d",
-    "volatility_5d", "volatility_10d", "volatility_20d",
-    "return_lag_1", "return_lag_2", "return_lag_3", "return_lag_5",
-    "day_of_week", "month", "quarter", "day_of_month",
-]
+def page_scanner():
+    st.markdown('<p class="main-header">🔍 Market Scanner</p>', unsafe_allow_html=True)
+    st.markdown("Scanning **all 20 NSE stocks** for signals...")
+    trained = [t for t in NSE_STOCKS if models_exist(t)]
+
+    if not trained:
+        st.warning("No trained models found. Train some stocks first.")
+        return
+
+    results = []
+    progress = st.progress(0)
+    status = st.empty()
+
+    for i, ticker in enumerate(trained):
+        status.text(f"Scanning {ticker}...")
+        try:
+            df = fetch_stock_data(ticker, period="6mo")
+            df_feat = add_technical_indicators(df)
+            lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
+            d, conf, details = predict_ensemble(lstm, gru, transformer, xgb, scaler, feat, df_feat)
+
+            price = df["close"].iloc[-1]
+            chg = (df["close"].iloc[-1] / df["close"].iloc[-5] - 1) * 100
+            rsi = df_feat["rsi"].iloc[-1]
+
+            results.append({
+                "Ticker": ticker.replace(".NS", ""),
+                "Signal": "📈 BUY" if d == 1 else "📉 SELL",
+                "Confidence": f"{conf:.0f}%",
+                "Price": f"₹{price:.1f}",
+                "5d Change": f"{chg:+.1f}%",
+                "RSI": f"{rsi:.0f}",
+                "Score": conf * (1 if d == 1 else -1),
+            })
+        except Exception:
+            results.append({
+                "Ticker": ticker.replace(".NS", ""),
+                "Signal": "❌ Error", "Confidence": "-",
+                "Price": "-", "5d Change": "-", "RSI": "-", "Score": 0,
+            })
+        progress.progress((i + 1) / len(trained))
+
+    status.text("")
+
+    df_r = pd.DataFrame(results).sort_values("Score", ascending=False)
+    df_r = df_r.drop(columns=["Score"])
+
+    st.markdown(f"### Signals — {len(trained)} stocks scanned")
+    st.dataframe(df_r, use_container_width=True)
+
+    # Highlight top picks
+    top_buy = [r["Ticker"] for r in results if r.get("Score", 0) > 50][:3]
+    top_sell = [r["Ticker"] for r in results if r.get("Score", 0) < -50][:3]
+
+    if top_buy:
+        st.markdown(f"**Strongest BUY signals:** {', '.join(top_buy)}")
+    if top_sell:
+        st.markdown(f"**Strongest SELL signals:** {', '.join(top_sell)}")
+
+
+def page_sentiment():
+    st.markdown('<p class="main-header">📰 News Sentiment</p>', unsafe_allow_html=True)
+    ticker = st.selectbox("Stock", NSE_STOCKS, key="sent_ticker")
+    ticker_display = ticker.replace(".NS", "")
+
+    if st.button("🔍 Analyze News Sentiment", type="primary"):
+        with st.spinner(f"Analyzing latest news for {ticker_display}..."):
+            score = fetch_news_sentiment(ticker)
+
+        score_label = "Positive ✅" if score > 0.05 else "Negative ❌" if score < -0.05 else "Neutral ⚖️"
+        color = "green" if score > 0.05 else "red" if score < -0.05 else "white"
+
+        st.markdown(f"### Overall Sentiment: <span style='color:{color}'>{score_label}</span>", unsafe_allow_html=True)
+        st.metric("Sentiment Score", f"{score:+.3f}")
+        st.caption("Score range: -1 (very negative) to +1 (very positive). Based on latest headlines.")
 
 
 def main():
-    prediction_page()
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment"]
+    )
+    with tab1: page_predictions()
+    with tab2: page_portfolio()
+    with tab3: page_backtest()
+    with tab4: page_scanner()
+    with tab5: page_sentiment()
+
+    st.divider()
+    st.caption("⚠️ Educational purposes only. Not financial advice.")
 
 
 if __name__ == "__main__":
