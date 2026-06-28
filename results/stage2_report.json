@@ -1,0 +1,556 @@
+{
+  "RELIANCE.NS": {
+    "cpcv": {
+      "outcomes": [
+        0.4560810810810811,
+        0.5135135135135135,
+        0.5168918918918919,
+        0.4816053511705686
+      ],
+      "mean": 0.49202295941426377,
+      "std": 0.024903076605642616,
+      "median": 0.49755943234204103,
+      "p5": 0.4599097215945042,
+      "p95": 0.5163851351351352,
+      "n": 4,
+      "prob_profit": 1.0,
+      "prob_beat_random": 0.5
+    },
+    "walk_forward_metrics": {
+      "ensemble_accuracy": 0.53125,
+      "total_test_days": 384,
+      "n_windows": 2,
+      "simulated_annual_return": 0.01315926892950392,
+      "simulated_sharpe": 0.10428757468014369,
+      "simulated_win_rate": 31.853785900783286,
+      "total_return": 0.0,
+      "annualized_return": 0.0,
+      "annualized_volatility": 0.0,
+      "sharpe_ratio": 0,
+      "sortino_ratio": -65.0,
+      "calmar_ratio": 0,
+      "max_drawdown": 0.0,
+      "max_dd_duration_days": 0,
+      "var_95": 0.0,
+      "cvar_95": 0.0,
+      "total_trades": 0,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0,
+      "avg_loss": 0.0,
+      "n_years": 1.3
+    },
+    "permutation": {
+      "real_accuracy": 0.53125,
+      "null_mean": 0.4996614583333333,
+      "null_std": 0.02425248266841144,
+      "null_p5": 0.4635416666666667,
+      "null_p95": 0.5416666666666666,
+      "p_value": 0.118,
+      "significant": false,
+      "n_permutations": 1000
+    },
+    "benchmarks": [
+      {
+        "name": "Buy & Hold",
+        "cumulative_return": 0.00793134949114327,
+        "sharpe": -0.41083924509409764,
+        "accuracy": 1.0,
+        "n_trades": 1,
+        "annualized_return": 0.005211484590246007
+      },
+      {
+        "name": "Always Long",
+        "cumulative_return": 0.00793134949114327,
+        "sharpe": -0.41083924509409764,
+        "accuracy": 0.3185378590078329,
+        "n_trades": 0,
+        "annualized_return": 0.005211484590246007
+      },
+      {
+        "name": "Your Strategy",
+        "cumulative_return": 0.009545411259827663,
+        "sharpe": -0.44103330441485733,
+        "accuracy": 0.9581151832460733,
+        "n_trades": 130,
+        "annualized_return": 0.0062703226371612075
+      },
+      {
+        "name": "Random",
+        "cumulative_return": -0.035698542088553276,
+        "sharpe": -0.9270865445138048,
+        "accuracy": 0.49869451697127937,
+        "n_trades": 185,
+        "annualized_return": -0.02363407355516578
+      },
+      {
+        "name": "SMA 10/50",
+        "cumulative_return": -0.08185774348627772,
+        "sharpe": -1.3965860438669093,
+        "accuracy": 0.3681462140992167,
+        "n_trades": 12,
+        "annualized_return": -0.054642400279277026
+      },
+      {
+        "name": "20D Momentum",
+        "cumulative_return": -0.11697716698174865,
+        "sharpe": -1.8959030814591955,
+        "accuracy": 0.4903581267217631,
+        "n_trades": 40,
+        "annualized_return": -0.07859300012941028
+      }
+    ],
+    "confidence_intervals": {
+      "accuracy": {
+        "point_estimate": 0.53125,
+        "ci_lower": 0.4843098958333334,
+        "ci_upper": 0.5833333333333334,
+        "std_error": 0.02539364779015173,
+        "confidence": 0.95,
+        "n_bootstrap": 1000
+      },
+      "sharpe": {
+        "point_estimate": 0.0536666474715991,
+        "ci_lower": -0.11851460740159646,
+        "ci_upper": 0.24996152923928686,
+        "std_error": 0.09120235487077086,
+        "confidence": 0.95,
+        "n_bootstrap": 1000
+      },
+      "annualized_return": 0.005211484590246007,
+      "total_return": 0.00793134949114327
+    },
+    "alpha_research": {
+      "top_features": [
+        "returns_1d",
+        "volatility_20d",
+        "ema_26",
+        "sma_20",
+        "obv",
+        "ema_12",
+        "sma_10",
+        "close",
+        "month",
+        "macd_signal"
+      ],
+      "quality_scores": {
+        "close": 0.16206731687765696,
+        "volume": 0.09846783495972011,
+        "sma_10": 0.16321419568569812,
+        "sma_20": 0.16737107110280644,
+        "sma_50": 0.15585477280133342,
+        "ema_12": 0.16602357366318832,
+        "ema_26": 0.16792272751867993,
+        "rsi": 0.09045743240488528,
+        "macd": 0.09586911550957843,
+        "macd_signal": 0.15696202987784771,
+        "bb_width": 0.10772981809278465,
+        "atr": 0.1072183212599972,
+        "obv": 0.16664909502652356,
+        "volume_ratio": 0.09851319377454495,
+        "high_low_pct": 0.09697350404444373,
+        "close_open_pct": 0.09232843869544607,
+        "close_position": 0.0974001996147326,
+        "returns_1d": 0.3953305570433715,
+        "returns_2d": 0.10058768723833175,
+        "returns_3d": 0.0937392233351953,
+        "returns_5d": 0.10171072129391558,
+        "returns_10d": 0.09671892097309492,
+        "returns_20d": 0.09691774676614127,
+        "volatility_5d": 0.09122154018663788,
+        "volatility_10d": 0.0974265543411328,
+        "volatility_20d": 0.2252748842927991,
+        "return_lag_1": 0.09824928794283685,
+        "return_lag_2": 0.10388812368936028,
+        "return_lag_3": 0.0928472861662091,
+        "return_lag_5": 0.10312885657164035,
+        "day_of_week": 0.09856563019493925,
+        "month": 0.15859793947627582,
+        "quarter": 0.15513869679344822,
+        "day_of_month": 0.09480138448590085,
+        "sentiment_score": 0.15,
+        "fii_net": 0.15,
+        "dii_net": 0.15,
+        "flow_signal": 0.15,
+        "pcr": 0.15,
+        "mtf_signal": 0.15,
+        "mtf_confidence": 0.15
+      }
+    }
+  },
+  "TCS.NS": {
+    "cpcv": {
+      "outcomes": [
+        0.5540540540540541,
+        0.5236486486486487,
+        0.543918918918919,
+        0.4682274247491639
+      ],
+      "mean": 0.5224622615926964,
+      "std": 0.033170975777882826,
+      "median": 0.5337837837837838,
+      "p5": 0.4765406083340866,
+      "p95": 0.5525337837837838,
+      "n": 4,
+      "prob_profit": 1.0,
+      "prob_beat_random": 0.75
+    },
+    "walk_forward_metrics": {
+      "ensemble_accuracy": 0.4609375,
+      "total_test_days": 384,
+      "n_windows": 2,
+      "simulated_annual_return": -0.22370757180156658,
+      "simulated_sharpe": -1.5539502945492414,
+      "simulated_win_rate": 37.0757180156658,
+      "total_return": 0.0,
+      "annualized_return": 0.0,
+      "annualized_volatility": 0.0,
+      "sharpe_ratio": 0,
+      "sortino_ratio": -65.0,
+      "calmar_ratio": 0,
+      "max_drawdown": 0.0,
+      "max_dd_duration_days": 0,
+      "var_95": 0.0,
+      "cvar_95": 0.0,
+      "total_trades": 0,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0,
+      "avg_loss": 0.0,
+      "n_years": 1.3
+    },
+    "permutation": {
+      "real_accuracy": 0.4609375,
+      "null_mean": 0.44504166666666667,
+      "null_std": 0.0181466106798671,
+      "null_p5": 0.4140625,
+      "null_p95": 0.4765625,
+      "p_value": 0.244,
+      "significant": false,
+      "n_permutations": 1000
+    },
+    "benchmarks": [
+      {
+        "name": "Random",
+        "cumulative_return": 0.07465778009531898,
+        "sharpe": -0.1205555583396933,
+        "accuracy": 0.5613577023498695,
+        "n_trades": 185,
+        "annualized_return": 0.04851498134546106
+      },
+      {
+        "name": "SMA 10/50",
+        "cumulative_return": -0.052522287073813456,
+        "sharpe": -1.3584374568969093,
+        "accuracy": 0.5169712793733682,
+        "n_trades": 8,
+        "annualized_return": -0.03487567772228173
+      },
+      {
+        "name": "20D Momentum",
+        "cumulative_return": -0.10805774442600835,
+        "sharpe": -1.819031678955536,
+        "accuracy": 0.4986225895316804,
+        "n_trades": 34,
+        "annualized_return": -0.07247977230096747
+      },
+      {
+        "name": "Your Strategy",
+        "cumulative_return": -0.27729999335791533,
+        "sharpe": -1.938851998188602,
+        "accuracy": 0.9738219895287958,
+        "n_trades": 155,
+        "annualized_return": -0.19239396021429667
+      },
+      {
+        "name": "Buy & Hold",
+        "cumulative_return": -0.2994658258772769,
+        "sharpe": -2.00546281302267,
+        "accuracy": 1.0,
+        "n_trades": 1,
+        "annualized_return": -0.20877837811473043
+      },
+      {
+        "name": "Always Long",
+        "cumulative_return": -0.2994658258772769,
+        "sharpe": -2.00546281302267,
+        "accuracy": 0.370757180156658,
+        "n_trades": 0,
+        "annualized_return": -0.20877837811473043
+      }
+    ],
+    "confidence_intervals": {
+      "accuracy": {
+        "point_estimate": 0.4609375,
+        "ci_lower": 0.4114583333333333,
+        "ci_upper": 0.5104166666666666,
+        "std_error": 0.02536033235681788,
+        "confidence": 0.95,
+        "n_bootstrap": 1000
+      },
+      "sharpe": {
+        "point_estimate": -1.6261729900807853,
+        "ci_lower": -1.7785890126127928,
+        "ci_upper": -1.4696732861362507,
+        "std_error": 0.0792690564875525,
+        "confidence": 0.95,
+        "n_bootstrap": 1000
+      },
+      "annualized_return": -0.20877837811473043,
+      "total_return": -0.2994658258772769
+    },
+    "alpha_research": {
+      "top_features": [
+        "return_lag_2",
+        "obv",
+        "atr",
+        "sma_20",
+        "ema_26",
+        "ema_12",
+        "sma_10",
+        "close",
+        "sma_50",
+        "sentiment_score"
+      ],
+      "quality_scores": {
+        "close": 0.16005289832723862,
+        "volume": 0.09645806998575646,
+        "sma_10": 0.16185291471509075,
+        "sma_20": 0.16515629474013505,
+        "sma_50": 0.15566986739598113,
+        "ema_12": 0.16202842977265003,
+        "ema_26": 0.1636665703098698,
+        "rsi": 0.09315935600518714,
+        "macd": 0.10760219936127532,
+        "macd_signal": 0.09748962474122744,
+        "bb_width": 0.09249211164526348,
+        "atr": 0.1668899097258431,
+        "obv": 0.22700333049923518,
+        "volume_ratio": 0.09911269036552801,
+        "high_low_pct": 0.10273623282685629,
+        "close_open_pct": 0.10743278605418335,
+        "close_position": 0.09325518938017348,
+        "returns_1d": 0.10932073943406417,
+        "returns_2d": 0.09996262831297247,
+        "returns_3d": 0.10915545378170005,
+        "returns_5d": 0.10345444474950675,
+        "returns_10d": 0.09614706017517344,
+        "returns_20d": 0.0988512124116795,
+        "volatility_5d": 0.09685934981060565,
+        "volatility_10d": 0.09145266050683482,
+        "volatility_20d": 0.09337130210230114,
+        "return_lag_1": 0.10003010649461079,
+        "return_lag_2": 0.27354225344118743,
+        "return_lag_3": 0.0946490804354524,
+        "return_lag_5": 0.10730716177985669,
+        "day_of_week": 0.09568519935050285,
+        "month": 0.10523540762232468,
+        "quarter": 0.09771062494455339,
+        "day_of_month": 0.10046509520400883,
+        "sentiment_score": 0.15,
+        "fii_net": 0.15,
+        "dii_net": 0.15,
+        "flow_signal": 0.15,
+        "pcr": 0.15,
+        "mtf_signal": 0.15,
+        "mtf_confidence": 0.15
+      }
+    }
+  },
+  "HDFCBANK.NS": {
+    "cpcv": {
+      "outcomes": [
+        0.5101351351351351,
+        0.4966216216216216,
+        0.4864864864864865,
+        0.5050167224080268
+      ],
+      "mean": 0.4995649914128174,
+      "std": 0.008960469100308918,
+      "median": 0.5008191720148242,
+      "p5": 0.48800675675675675,
+      "p95": 0.5093673732260688,
+      "n": 4,
+      "prob_profit": 1.0,
+      "prob_beat_random": 0.5
+    },
+    "walk_forward_metrics": {
+      "ensemble_accuracy": 0.5390625,
+      "total_test_days": 384,
+      "n_windows": 2,
+      "simulated_annual_return": 0.019738903394255877,
+      "simulated_sharpe": 0.6755279625367214,
+      "simulated_win_rate": 2.088772845953003,
+      "total_return": 0.0,
+      "annualized_return": 0.0,
+      "annualized_volatility": 0.0,
+      "sharpe_ratio": 0,
+      "sortino_ratio": -65.0,
+      "calmar_ratio": 0,
+      "max_drawdown": 0.0,
+      "max_dd_duration_days": 0,
+      "var_95": 0.0,
+      "cvar_95": 0.0,
+      "total_trades": 0,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0,
+      "avg_loss": 0.0,
+      "n_years": 1.3
+    },
+    "permutation": {
+      "real_accuracy": 0.5390625,
+      "null_mean": 0.5240208333333333,
+      "null_std": 0.008865580878067469,
+      "null_p5": 0.5078125,
+      "null_p95": 0.5390625,
+      "p_value": 0.077,
+      "significant": false,
+      "n_permutations": 1000
+    },
+    "benchmarks": [
+      {
+        "name": "Your Strategy",
+        "cumulative_return": 0.0614139985859401,
+        "sharpe": -1.1190218335763005,
+        "accuracy": 0.9973821989528796,
+        "n_trades": 4,
+        "annualized_return": 0.03999501955836782
+      },
+      {
+        "name": "Buy & Hold",
+        "cumulative_return": 0.029785952519797432,
+        "sharpe": -1.5489784696526545,
+        "accuracy": 1.0,
+        "n_trades": 1,
+        "annualized_return": 0.01949954401788312
+      },
+      {
+        "name": "Always Long",
+        "cumulative_return": 0.029785952519797432,
+        "sharpe": -1.5489784696526545,
+        "accuracy": 0.020887728459530026,
+        "n_trades": 0,
+        "annualized_return": 0.01949954401788312
+      },
+      {
+        "name": "Random",
+        "cumulative_return": -0.00039994000399989904,
+        "sharpe": -2.833136372705911,
+        "accuracy": 0.4934725848563969,
+        "n_trades": 185,
+        "annualized_return": -0.000263163905039554
+      },
+      {
+        "name": "20D Momentum",
+        "cumulative_return": 0.0199979899999998,
+        "sharpe": -3.199690293857517,
+        "accuracy": 0.9834710743801653,
+        "n_trades": 1,
+        "annualized_return": 0.013113343882528161
+      },
+      {
+        "name": "SMA 10/50",
+        "cumulative_return": 0.009899000000000102,
+        "sharpe": -4.159985621735191,
+        "accuracy": 0.9817232375979112,
+        "n_trades": 1,
+        "annualized_return": 0.006502202475356267
+      }
+    ],
+    "confidence_intervals": {
+      "accuracy": {
+        "point_estimate": 0.5390625,
+        "ci_lower": 0.4895833333333333,
+        "ci_upper": 0.5885416666666666,
+        "std_error": 0.025023504440192145,
+        "confidence": 0.95,
+        "n_bootstrap": 1000
+      },
+      "sharpe": {
+        "point_estimate": 0.6471268304007929,
+        "ci_lower": 0.4907693711578144,
+        "ci_upper": 0.8028987408332747,
+        "std_error": 0.07938673861824312,
+        "confidence": 0.95,
+        "n_bootstrap": 1000
+      },
+      "annualized_return": 0.01949954401788312,
+      "total_return": 0.029785952519797432
+    },
+    "alpha_research": {
+      "top_features": [
+        "close_open_pct",
+        "bb_width",
+        "month",
+        "macd_signal",
+        "sma_10",
+        "obv",
+        "close",
+        "ema_26",
+        "sma_20",
+        "ema_12"
+      ],
+      "quality_scores": {
+        "close": 0.16687553053294157,
+        "volume": 0.09603262238357148,
+        "sma_10": 0.16928528480195534,
+        "sma_20": 0.1653783310760162,
+        "sma_50": 0.16396198863682201,
+        "ema_12": 0.16478167441302402,
+        "ema_26": 0.16632423268477423,
+        "rsi": 0.09817470585996285,
+        "macd": 0.09910411335423913,
+        "macd_signal": 0.21450870963253976,
+        "bb_width": 0.22336031202594409,
+        "atr": 0.1642683847417059,
+        "obv": 0.1680842622702893,
+        "volume_ratio": 0.09493755660906539,
+        "high_low_pct": 0.09368884457248472,
+        "close_open_pct": 0.27220187452357697,
+        "close_position": 0.09744376559102681,
+        "returns_1d": 0.09590084875157048,
+        "returns_2d": 0.09606722416721253,
+        "returns_3d": 0.09543524858516704,
+        "returns_5d": 0.09559875545916008,
+        "returns_10d": 0.0925437586029742,
+        "returns_20d": 0.09395669464896017,
+        "volatility_5d": 0.09457540322587904,
+        "volatility_10d": 0.09087910802728841,
+        "volatility_20d": 0.09233489291415632,
+        "return_lag_1": 0.09876347403342027,
+        "return_lag_2": 0.0935285648078468,
+        "return_lag_3": 0.10868791100355092,
+        "return_lag_5": 0.09066629809370315,
+        "day_of_week": 0.09161085850027409,
+        "month": 0.2182835695945111,
+        "quarter": 0.09183769728309213,
+        "day_of_month": 0.09253685063158223,
+        "sentiment_score": 0.15,
+        "fii_net": 0.15,
+        "dii_net": 0.15,
+        "flow_signal": 0.15,
+        "pcr": 0.15,
+        "mtf_signal": 0.15,
+        "mtf_confidence": 0.15
+      }
+    }
+  },
+  "_decision": {
+    "signal_real": false,
+    "confidence": "LOW",
+    "reasons": [
+      "RELIANCE.NS: permutation NOT significant (p=0.1180)",
+      "RELIANCE.NS: CPCV mean=0.4920 (no edge)",
+      "TCS.NS: permutation NOT significant (p=0.2440)",
+      "TCS.NS: CPCV mean=0.5225 (edge detected)",
+      "HDFCBANK.NS: permutation NOT significant (p=0.0770)",
+      "HDFCBANK.NS: CPCV mean=0.4996 (no edge)",
+      "Average CPCV accuracy: 0.5047 (no significant edge)",
+      "Strategy beats Buy & Hold on Sharpe in 2/3 stocks"
+    ],
+    "recommendations": [
+      "Signal likely noise. Consider pivoting to volatility forecasting or cross-sectional ranking"
+    ]
+  }
+}
