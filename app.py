@@ -172,14 +172,14 @@ def pred_card(direction, confidence, details=None):
 def tab_predictions():
     col1, col2, col3, col4 = st.columns([2.5, 1, 1, 0.8])
     with col1:
-        ticker = st.selectbox("", NSE_STOCKS, index=NSE_STOCKS.index(st.session_state.last_ticker), label_visibility="collapsed")
+        ticker = st.selectbox("Stock", NSE_STOCKS, index=NSE_STOCKS.index(st.session_state.last_ticker), label_visibility="collapsed")
         st.session_state.last_ticker = ticker
     with col2:
-        period = st.selectbox("", ["6mo", "1y", "2y", "5y"], index=3, label_visibility="collapsed")
+        period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=3, label_visibility="collapsed")
     with col3:
-        refresh = st.button("↻ Refresh", use_container_width=True)
+        refresh = st.button("↻ Refresh", width='stretch')
     with col4:
-        train_btn = st.button("⚡ Train", use_container_width=True, type="secondary")
+        train_btn = st.button("⚡ Train", width='stretch', type="secondary")
 
     market = get_market_status()
     st.caption(f"{'🟢' if market=='Open' else '🔴'} Market {market} • {ticker.replace('.NS','')} • Last updated {datetime.now().strftime('%H:%M')}")
@@ -205,11 +205,13 @@ def tab_predictions():
             st.cache_data.clear()
 
     # Prediction
+    ens_dir, conf, details = None, 0, None
     if models_exist(ticker):
-        lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
-        ens_dir, conf, details = predict_ensemble(lstm, gru, transformer, xgb, scaler, feat, df_feat)
-    else:
-        ens_dir, conf, details = None, 0, None
+        try:
+            lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
+            ens_dir, conf, details = predict_ensemble(lstm, gru, transformer, xgb, scaler, feat, df_feat)
+        except Exception as e:
+            st.warning(f"Model load failed: {e}. Retrain this stock.")
 
     # Top row: price + prediction
     r1, r2, r3, r4, r5 = st.columns([1.5, 1, 1, 1, 1.5])
@@ -257,7 +259,7 @@ def tab_predictions():
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     # Bottom row
     c_left, c_right = st.columns([1, 1])
@@ -290,7 +292,7 @@ def tab_predictions():
                         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                         margin=dict(l=0, r=0, t=10, b=0), xaxis_visible=False, yaxis_title=None)
                     st.markdown('<div class="section-header" style="margin-top:1rem">Top Features</div>', unsafe_allow_html=True)
-                    st.plotly_chart(fig_fi, use_container_width=True)
+                    st.plotly_chart(fig_fi, width='stretch')
             except Exception:
                 pass
 
@@ -302,7 +304,7 @@ def tab_predictions():
         display_df["Chg%"] = display_df["Close"].pct_change().mul(100).round(1).fillna(0)
         display_df["Close"] = display_df["Close"].round(2)
         display_df["Volume"] = (display_df["Volume"] / 1e6).round(1)
-        st.dataframe(display_df.iloc[::-1], use_container_width=True)
+        st.dataframe(display_df.iloc[::-1], width='stretch')
 
         # Model details
         if ens_dir is not None and details:
@@ -324,7 +326,7 @@ def tab_predictions():
     fig2.update_layout(template="plotly_dark", height=300,
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width='stretch')
 
 
 def tab_portfolio():
@@ -352,7 +354,7 @@ def tab_portfolio():
         fig.update_layout(template="plotly_dark", height=350,
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             margin=dict(l=10,r=10,t=10,b=10), yaxis_title="Value (₹)")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     c1, c2 = st.columns(2)
     c1.markdown(metric_card("Cash", f'₹{stats["cash_remaining"]:,.2f}'), unsafe_allow_html=True)
@@ -363,7 +365,7 @@ def tab_portfolio():
         df_t = pd.DataFrame(p.trades).iloc[::-1]
         if "pnl" in df_t.columns:
             df_t["pnl"] = df_t["pnl"].round(2)
-        st.dataframe(df_t, use_container_width=True, hide_index=True)
+        st.dataframe(df_t, width='stretch', hide_index=True)
 
 
 def tab_backtest():
@@ -374,11 +376,15 @@ def tab_backtest():
         return
     capital = st.number_input("Initial Capital (₹)", 10000, 10_000_000, 100000, step=50000)
 
-    if st.button("▶ Run Backtest", type="primary", use_container_width=True):
+    if st.button("▶ Run Backtest", type="primary", width='stretch'):
         with st.spinner("Running backtest..."):
             df = fetch_stock_data(ticker, period="5y")
             df_feat = add_technical_indicators(df)
-            lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
+            try:
+                lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
+            except Exception as e:
+                st.error(f"Failed to load models: {e}")
+                st.stop()
             signals = generate_model_signals(ticker, df_feat, lstm, gru, transformer, xgb, scaler, feat)
             stats, portfolio = run_backtest(df_feat, signals, capital)
             st.session_state.portfolio = portfolio
@@ -405,11 +411,11 @@ def tab_backtest():
                     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                     margin=dict(l=10,r=10,t=10,b=10),
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
             df_t = pd.DataFrame(portfolio.trades)
             st.markdown(f'<div class="section-header">Trades ({len(df_t)})</div>', unsafe_allow_html=True)
-            st.dataframe(df_t.iloc[::-1], use_container_width=True)
+            st.dataframe(df_t.iloc[::-1], width='stretch')
 
 
 def tab_scanner():
@@ -420,7 +426,7 @@ def tab_scanner():
         st.warning("No trained models found.")
         return
 
-    if st.button("🔍 Scan Now", type="primary", use_container_width=True):
+    if st.button("🔍 Scan Now", type="primary", width='stretch'):
         results = []
         prog = st.progress(0)
         for i, ticker in enumerate(trained):
@@ -444,14 +450,14 @@ def tab_scanner():
         c1, c2 = st.columns(2)
         c1.markdown(f'<div class="glass" style="text-align:center"><div class="metric-label">Buy Signals</div><div style="font-size:1.8rem;font-weight:700;color:#00d4aa">{len(buys)}</div></div>', unsafe_allow_html=True)
         c2.markdown(f'<div class="glass" style="text-align:center"><div class="metric-label">Sell Signals</div><div style="font-size:1.8rem;font-weight:700;color:#ff4444">{len(sells)}</div></div>', unsafe_allow_html=True)
-        st.dataframe(df_r, use_container_width=True, hide_index=True)
+        st.dataframe(df_r, width='stretch', hide_index=True)
 
 
 def tab_sentiment():
     st.markdown(f'<div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:1rem;"><span class="gradient-text" style="font-size:2rem;font-weight:800;">News Sentiment</span></div>', unsafe_allow_html=True)
     ticker = st.selectbox("Stock", NSE_STOCKS, key="sent_ticker")
     td = ticker.replace(".NS", "")
-    if st.button(f"Analyze {td} News", type="primary", use_container_width=True):
+    if st.button(f"Analyze {td} News", type="primary", width='stretch'):
         with st.spinner(f"Analyzing news for {td}..."):
             try:
                 score = fetch_news_sentiment(ticker)
