@@ -12,7 +12,7 @@ from src.data_fetcher import fetch_stock_data
 from src.features import add_technical_indicators
 from src.model import (
     build_lstm, build_gru, build_transformer,
-    build_xgb_model, save_models, DEVICE,
+    build_xgb_model, build_lgb_model, save_models, DEVICE,
 )
 
 warnings.filterwarnings("ignore")
@@ -103,6 +103,14 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     xgb_acc = accuracy_score(y_te, y_pr)
     print(f"  XGBoost Accuracy: {xgb_acc:.4f}")
 
+    # --- LightGBM ---
+    print("\nTraining LightGBM...")
+    lgb_model = build_lgb_model()
+    lgb_model.fit(X_tr, y_tr, eval_set=[(X_te, y_te)])
+    y_pr_lgb = lgb_model.predict(X_te)
+    lgb_acc = accuracy_score(y_te, y_pr_lgb)
+    print(f"  LightGBM Accuracy: {lgb_acc:.4f}")
+
     # --- Deep Learning Models ---
     print("\nTraining Neural Networks...")
     lstm_data = df_feat[lstm_features].dropna().values
@@ -156,7 +164,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     test_start_idx = split + SEQ_LENGTH
     df_test = df_feat.iloc[test_start_idx:].copy()
     if len(df_test) > SEQ_LENGTH:
-        bt = backtest_ensemble(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, df_test)
+        bt = backtest_ensemble(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, df_test, lgb_model=lgb_model)
         if bt:
             final_dir = [r["final_ensemble"] for r in bt]
             actual_dir = [r["actual"] for r in bt]
@@ -168,11 +176,12 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     else:
         ensemble_acc = 0.0
 
-    save_models(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, ticker)
+    save_models(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, ticker, lgb_model=lgb_model)
     print(f"Models saved for {ticker}")
 
     return {
         "xgb_accuracy": float(xgb_acc),
+        "lgb_accuracy": float(lgb_acc),
         "lstm_accuracy": float(lstm_acc),
         "gru_accuracy": float(gru_acc),
         "transformer_accuracy": float(tf_acc),

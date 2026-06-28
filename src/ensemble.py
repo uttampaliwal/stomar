@@ -3,7 +3,7 @@ import torch
 from src.model import DEVICE
 
 
-def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat, recent_weights=None):
+def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat, recent_weights=None, lgb_model=None):
     feature_cols = [c for c in feature_cols if c in df_feat.columns]
     latest_data = df_feat[feature_cols].dropna()
     if len(latest_data) < 60:
@@ -30,20 +30,28 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
     xgb_prob = xgb.predict_proba(xgb_input)[0]
     dir_xgb = int(xgb.predict(xgb_input)[0])
 
+    dir_lgb = 0
+    lgb_prob = [0.5, 0.5]
+    if lgb_model is not None:
+        lgb_prob = lgb_model.predict_proba(xgb_input)[0]
+        dir_lgb = int(lgb_model.predict(xgb_input)[0])
+
     if recent_weights is None:
-        weights = {"lstm": 0.25, "gru": 0.25, "transformer": 0.25, "xgb": 0.25}
+        n_models = 5
+        w = 1.0 / n_models
+        weights = {"lstm": w, "gru": w, "transformer": w, "xgb": w, "lgb": w}
     else:
         weights = recent_weights
 
-    dl_prob = (dir_lstm * weights["lstm"] +
-               dir_gru * weights["gru"] +
-               dir_transformer * weights["transformer"])
+    dl_prob = (dir_lstm * weights.get("lstm", 0.2) +
+               dir_gru * weights.get("gru", 0.2) +
+               dir_transformer * weights.get("transformer", 0.2))
     dl_dir = 1 if dl_prob > 0.5 else 0
-    dl_confidence = abs(dl_prob - 0.5) * 2
 
-    xgb_weighted = xgb_prob[1] * weights["xgb"]
+    xgb_weighted = xgb_prob[1] * weights.get("xgb", 0.2)
+    lgb_weighted = lgb_prob[1] * weights.get("lgb", 0.2)
 
-    ensemble_prob = dl_prob + xgb_weighted
+    ensemble_prob = dl_prob + xgb_weighted + lgb_weighted
     total_weight = sum(weights.values())
     if total_weight > 0:
         ensemble_prob = ensemble_prob / total_weight
@@ -56,6 +64,7 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
         "gru_dir": dir_gru, "gru_pred": pred_gru,
         "transformer_dir": dir_transformer, "transformer_pred": pred_transformer,
         "xgb_dir": dir_xgb, "xgb_prob_up": float(xgb_prob[1]),
+        "lgb_dir": dir_lgb, "lgb_prob_up": float(lgb_prob[1]),
         "ensemble_prob": float(ensemble_prob),
         "dl_prob": dl_prob,
         "weights": weights,
@@ -63,7 +72,7 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
     return ensemble_dir, confidence, details
 
 
-def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat, seq_length=60):
+def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat, seq_length=60, lgb_model=None):
     feature_cols = [c for c in feature_cols if c in df_feat.columns]
     data = df_feat[feature_cols].dropna().values
     scaled = scaler.transform(data)
@@ -86,20 +95,25 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
         xgb_inp = df_feat[feature_cols].iloc[[i - 1]]
         xgb_p = xgb.predict_proba(xgb_inp)[0][1]
 
+        lgb_p = 0.5
+        if lgb_model is not None:
+            lgb_p = lgb_model.predict_proba(xgb_inp)[0][1]
+
         d_lstm = 1 if p_lstm > prev_close else 0
         d_gru = 1 if p_gru > prev_close else 0
         d_tf = 1 if p_tf > prev_close else 0
 
-        ens = (d_lstm + d_gru + d_tf) / 3
-        dl_dir = 1 if ens > 0.5 else 0
+        dl_ens = (d_lstm + d_gru + d_tf) / 3
+        dl_dir = 1 if dl_ens > 0.5 else 0
         xgb_dir = int(xgb.predict(xgb_inp)[0])
 
-        final = 1 if (ens + xgb_p) / 2 > 0.5 else 0
+        final_prob = (dl_ens * 0.3 + xgb_p * 0.35 + lgb_p * 0.35)
+        final = 1 if final_prob > 0.5 else 0
 
         results.append({
             "actual": actual_dir,
             "lstm": d_lstm, "gru": d_gru, "transformer": d_tf,
-            "dl_ensemble": dl_dir, "xgb": xgb_dir,
+            "dl_ensemble": dl_dir, "xgb": xgb_dir, "lgb": 1 if lgb_p > 0.5 else 0,
             "final_ensemble": final,
         })
 

@@ -92,13 +92,25 @@ def build_xgb_model():
     )
 
 
-def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker):
+def build_lgb_model():
+    import lightgbm as lgb
+    return lgb.LGBMClassifier(
+        n_estimators=300, max_depth=6, learning_rate=0.05,
+        subsample=0.8, colsample_bytree=0.8,
+        reg_alpha=0.1, reg_lambda=0.1,
+        random_state=42, verbose=-1,
+    )
+
+
+def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker, lgb_model=None):
     ticker_clean = ticker.replace(".", "_")
     base = lambda name: os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
     torch.save(lstm.state_dict(), base("lstm.pt"))
     torch.save(gru.state_dict(), base("gru.pt"))
     torch.save(transformer.state_dict(), base("transformer.pt"))
     joblib.dump(xgb, base("xgb.pkl"))
+    if lgb_model is not None:
+        joblib.dump(lgb_model, base("lgb.pkl"))
     joblib.dump(scaler, base("scaler.pkl"))
     joblib.dump(feature_cols, base("features.pkl"))
     joblib.dump(lstm.lstm.input_size, base("lstm_dim.pkl"))
@@ -124,7 +136,13 @@ def load_models(ticker: str):
     xgb = joblib.load(base("xgb.pkl"))
     scaler = joblib.load(base("scaler.pkl"))
     features = joblib.load(base("features.pkl"))
-    return lstm, gru, transformer, xgb, scaler, features
+
+    lgb_model = None
+    lgb_path = base("lgb.pkl")
+    if os.path.exists(lgb_path):
+        lgb_model = joblib.load(lgb_path)
+
+    return lstm, gru, transformer, xgb, scaler, features, lgb_model
 
 
 def models_exist(ticker: str) -> bool:

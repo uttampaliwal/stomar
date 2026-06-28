@@ -210,8 +210,8 @@ def tab_predictions():
     ens_dir, conf, details = None, 0, None
     if models_exist(ticker):
         try:
-            lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
-            ens_dir, conf, details = predict_ensemble(lstm, gru, transformer, xgb, scaler, feat, df_feat)
+            lstm, gru, transformer, xgb, scaler, feat, lgb = load_models(ticker)
+            ens_dir, conf, details = predict_ensemble(lstm, gru, transformer, xgb, scaler, feat, df_feat, lgb_model=lgb)
         except Exception as e:
             st.warning(f"Model load failed: {e}. Retrain this stock.")
 
@@ -283,7 +283,7 @@ def tab_predictions():
 
         if models_exist(ticker):
             try:
-                _, xgb_m, _, _, _, _ = load_models(ticker)
+                _, xgb_m, _, _, _, _, _ = load_models(ticker)
                 if hasattr(xgb_m, "feature_importances_"):
                     imp = xgb_m.feature_importances_
                     feat_used = [c for c in FEATURE_COLS if c in df_feat.columns]
@@ -470,8 +470,8 @@ def tab_scanner():
             try:
                 df = fetch_stock_data(ticker, period="6mo")
                 df_feat = add_technical_indicators(df, ticker=ticker)
-                lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
-                d, conf, det = predict_ensemble(lstm, gru, transformer, xgb, scaler, feat, df_feat)
+                lstm, gru, transformer, xgb, scaler, feat, lgb = load_models(ticker)
+                d, conf, det = predict_ensemble(lstm, gru, transformer, xgb, scaler, feat, df_feat, lgb_model=lgb)
                 price = df["close"].iloc[-1]
                 chg5 = (df["close"].iloc[-1]/df["close"].iloc[-5]-1)*100
                 rsi = df_feat["rsi"].iloc[-1] if "rsi" in df_feat else 50
