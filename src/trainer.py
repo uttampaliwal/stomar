@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
-import tensorflow as tf
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
@@ -8,7 +10,7 @@ import warnings
 
 from src.data_fetcher import fetch_stock_data
 from src.features import add_technical_indicators
-from src.model import build_lstm, build_xgb_model, save_models
+from src.model import build_lstm, build_xgb_model, save_models, DEVICE
 
 warnings.filterwarnings("ignore")
 
@@ -20,8 +22,9 @@ FEATURE_COLS = [
 ]
 
 SEQ_LENGTH = 60
-EPOCHS = 30
+EPOCHS = 50
 BATCH_SIZE = 32
+LEARNING_RATE = 0.001
 
 
 def train_for_ticker(ticker: str, force_retrain: bool = False):
@@ -29,7 +32,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     print(f"Training models for {ticker}")
     print(f"{'='*50}")
 
-    df = fetch_stock_data(ticker, period="3y", force_refresh=force_retrain)
+    df = fetch_stock_data(ticker, period="5y", force_refresh=force_retrain)
     print(f"Fetched {len(df)} rows of data")
 
     df_feat = add_technical_indicators(df)
@@ -60,7 +63,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     acc = accuracy_score(y_test, y_pred)
     print(f"XGBoost Test Accuracy: {acc:.4f}")
 
-    # --- LSTM Training ---
+    # --- PyTorch LSTM Training ---
     print("\nTraining LSTM...")
     lstm_data = df_feat[lstm_features].dropna().values
     scaler = MinMaxScaler()
@@ -71,36 +74,74 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
         X_lstm.append(scaled[i - SEQ_LENGTH : i])
         y_lstm.append(scaled[i, 0])
 
-    X_lstm = np.array(X_lstm)
-    y_lstm = np.array(y_lstm)
+    X_lstm = np.array(X_lstm, dtype=np.float32)
+    y_lstm = np.array(y_lstm, dtype=np.float32)
 
     split_idx = int(len(X_lstm) * 0.8)
-    X_train_lstm, X_test_lstm = X_lstm[:split_idx], X_lstm[split_idx:]
-    y_train_lstm, y_test_lstm = y_lstm[:split_idx], y_lstm[split_idx:]
+    X_train_lstm = torch.tensor(X_lstm[:split_idx]).to(DEVICE)
+    y_train_lstm = torch.tensor(y_lstm[:split_idx]).to(DEVICE)
+    X_test_lstm = torch.tensor(X_lstm[split_idx:]).to(DEVICE)
+    y_test_lstm = torch.tensor(y_lstm[split_idx:]).to(DEVICE)
 
-    lstm_model = build_lstm(input_shape=(X_lstm.shape[1], X_lstm.shape[2]))
-    lstm_model.fit(
-        X_train_lstm,
-        y_train_lstm,
-        epochs=EPOCHS,
-        batch_size=BATCH_SIZE,
-        validation_data=(X_test_lstm, y_test_lstm),
-        verbose=1,
-        callbacks=[
-            tf.keras.callbacks.EarlyStopping(
-                monitor="val_loss", patience=5, restore_best_weights=True
-            ),
-            tf.keras.callbacks.ReduceLROnPlateau(
-                monitor="val_loss", factor=0.5, patience=3
-            ),
-        ],
+    train_dataset = TensorDataset(X_train_lstm, y_train_lstm)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+    lstm_model = build_lstm(input_dim=X_lstm.shape[2])
+    optimizer = torch.optim.Adam(lstm_model.parameters(), lr=LEARNING_RATE)
+    criterion = nn.MSELoss()
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=3
     )
 
-    lstm_pred = lstm_model.predict(X_test_lstm)
-    lstm_direction = (lstm_pred.flatten() > lstm_data[-len(lstm_pred):, 0].mean()).astype(int)
-    lstm_actual = (y_test_lstm > scaled[:len(y_test_lstm), 0].mean()).astype(int)
-    lstm_acc = accuracy_score(lstm_actual, lstm_direction)
-    print(f"LSTM Direction Accuracy: {lstm_acc:.4f}")
+    best_val_loss = float("inf")
+    patience_counter = 0
+
+    for epoch in range(EPOCHS):
+        lstm_model.train()
+        train_loss = 0.0
+        for batch_X, batch_y in train_loader:
+            optimizer.zero_grad()
+            outputs = lstm_model(batch_X).squeeze()
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item()
+
+        lstm_model.eval()
+        with torch.no_grad():
+            val_preds = lstm_model(X_test_lstm).squeeze()
+            val_loss = criterion(val_preds, y_test_lstm).item()
+
+        scheduler.step(val_loss)
+
+        if (epoch + 1) % 5 == 0 or epoch == 0:
+            print(f"Epoch {epoch+1:2d}/{EPOCHS} - Train Loss: {train_loss/len(train_loader):.6f} - Val Loss: {val_loss:.6f}")
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= 5:
+                print(f"Early stopping at epoch {epoch+1}")
+                break
+
+    lstm_model.eval()
+    with torch.no_grad():
+        lstm_pred = lstm_model(X_test_lstm).squeeze().cpu().numpy()
+
+    lstm_actual_vals = y_lstm[split_idx:]
+    last_input_close = scaled[split_idx + SEQ_LENGTH - 1 : -1, 0]  # last close in each input window
+
+    min_len = min(len(lstm_pred), len(last_input_close), len(lstm_actual_vals))
+    lstm_pred = lstm_pred[:min_len]
+    last_input_close = last_input_close[:min_len]
+    lstm_actual_vals = lstm_actual_vals[:min_len]
+
+    lstm_direction = (lstm_pred > last_input_close).astype(int)
+    lstm_actual_dir = (lstm_actual_vals > last_input_close).astype(int)
+    lstm_acc = accuracy_score(lstm_actual_dir, lstm_direction)
+    print(f"LSTM Direction Accuracy: {lstm_acc:.4f} ({np.sum(lstm_direction == lstm_actual_dir)}/{min_len} correct)")
 
     save_models(lstm_model, xgb_model, scaler, lstm_features, ticker)
     print(f"Models saved for {ticker}")

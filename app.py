@@ -33,7 +33,11 @@ st.markdown(
 )
 
 
-def plot_candlestick(df: pd.DataFrame, ticker: str):
+def plot_candlestick(df: pd.DataFrame, df_feat: pd.DataFrame, ticker: str):
+    df = df.copy()
+    df["sma_20"] = df_feat["sma_20"]
+    df["sma_50"] = df_feat["sma_50"]
+    df["rsi"] = df_feat["rsi"]
     fig = make_subplots(
         rows=3,
         cols=1,
@@ -136,7 +140,7 @@ def prediction_page():
     else:
         pred_col.metric("Prediction", "Not trained")
 
-    st.plotly_chart(plot_candlestick(df, ticker_display), use_container_width=True)
+    st.plotly_chart(plot_candlestick(df, df_feat, ticker_display), use_container_width=True)
 
     with st.expander("📊 Technical Indicators", expanded=False):
         cols = st.columns(4)
@@ -181,26 +185,30 @@ def prediction_page():
                 st.rerun()
 
     st.markdown("### 📈 Historical Performance")
-    df_feat["sma_50"] = df_feat["sma_50"]
-    df_feat["sma_200"] = df_feat.get("sma_50", pd.Series(index=df_feat.index))
 
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(x=df.index, y=df["close"], name="Close", line=dict(color="white")))
     fig2.add_trace(go.Scatter(x=df.index, y=df_feat["sma_50"], name="SMA 50", line=dict(color="orange")))
-    fig2.add_trace(go.Scatter(x=df.index, y=df_feat["sma_200"], name="SMA 200", line=dict(color="purple")))
+    sma_200 = df["close"].rolling(200).mean()
+    fig2.add_trace(go.Scatter(x=df.index, y=sma_200, name="SMA 200", line=dict(color="purple")))
     fig2.update_layout(template="plotly_dark", height=400, margin=dict(l=20, r=20, t=20, b=20))
     st.plotly_chart(fig2, use_container_width=True)
 
 
 def make_prediction(ticker: str, df_feat: pd.DataFrame):
+    import torch
+    from src.model import DEVICE
+
     lstm, xgb, scaler, feature_cols = load_models(ticker)
     feature_cols = [c for c in feature_cols if c in df_feat.columns]
 
     latest_data = df_feat[feature_cols].dropna()
     latest_scaled = scaler.transform(latest_data.values[-60:])
 
-    lstm_input = np.expand_dims(latest_scaled, axis=0)
-    lstm_pred_scaled = lstm.predict(lstm_input, verbose=0)[0, 0]
+    lstm_input = torch.tensor(latest_scaled, dtype=torch.float32).unsqueeze(0).to(DEVICE)
+    lstm.eval()
+    with torch.no_grad():
+        lstm_pred_scaled = lstm(lstm_input).item()
 
     current_close_scaled = latest_scaled[-1, 0]
     lstm_direction = 1 if lstm_pred_scaled > current_close_scaled else 0

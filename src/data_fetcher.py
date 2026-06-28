@@ -25,7 +25,11 @@ def fetch_stock_data(
     if not force_refresh and os.path.exists(cache_path):
         df = pd.read_parquet(cache_path)
         last_date = df.index[-1]
-        if last_date >= pd.Timestamp.now().normalize() - pd.Timedelta(days=2):
+        if last_date.tz is not None:
+            now = pd.Timestamp.now(tz=last_date.tz)
+        else:
+            now = pd.Timestamp.now()
+        if last_date >= now.normalize() - pd.Timedelta(days=2):
             return df
 
     stock = yf.Ticker(ticker)
