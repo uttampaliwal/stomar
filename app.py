@@ -16,7 +16,9 @@ from src.trainer import train_for_ticker, FEATURE_COLS
 from src.ensemble import predict_ensemble
 from src.portfolio import Portfolio
 from src.backtester import run_backtest, generate_model_signals
-from src.sentiment import fetch_news_sentiment
+from src.sentiment import get_stock_sentiment
+from src.flow import get_flow_sentiment, fetch_options_pcr
+from src.multitimeframe import fetch_mtf_data, get_combined_signal
 
 st.set_page_config(page_title="StoMar", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 
@@ -460,7 +462,8 @@ def tab_sentiment():
     if st.button(f"Analyze {td} News", type="primary", width='stretch'):
         with st.spinner(f"Analyzing news for {td}..."):
             try:
-                score = fetch_news_sentiment(ticker)
+                result = get_stock_sentiment(ticker)
+                score = result.get("score", 0.0)
             except Exception as e:
                 st.error(f"Sentiment analysis failed: {e}")
                 return
@@ -470,14 +473,96 @@ def tab_sentiment():
         st.caption("Based on latest headlines. Range: -1 (negative) to +1 (positive).")
 
 
+def tab_market_pulse():
+    st.markdown(f'<div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:1rem;"><span class="gradient-text" style="font-size:2rem;font-weight:800;">Market Pulse</span></div>', unsafe_allow_html=True)
+    st.caption("Institutional flows, options PCR, and multi-timeframe signals")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown('<div class="section-header">FII / DII Flow (Today)</div>', unsafe_allow_html=True)
+        try:
+            from src.flow import fetch_fii_dii
+            df_fii = fetch_fii_dii()
+            if len(df_fii) > 0:
+                row = df_fii.iloc[0]
+                fii_net = row["fii_net"]
+                dii_net = row["dii_net"]
+                flow_sentiment = get_flow_sentiment(fii_net, dii_net)
+                fii_c = "#00d4aa" if fii_net >= 0 else "#ff4444"
+                dii_c = "#00d4aa" if dii_net >= 0 else "#ff4444"
+                fii_sign = "+" if fii_net >= 0 else ""
+                dii_sign = "+" if dii_net >= 0 else ""
+                st.markdown(f'''<div class="glass">
+                    <div style="display:flex;gap:1.5rem;justify-content:center;">
+                        <div style="text-align:center"><div class="metric-label">FII</div><div style="font-size:1.5rem;font-weight:700;color:{fii_c}">{fii_sign}₹{abs(fii_net):,.0f} Cr</div><small style="color:var(--text-dim)">Buy ₹{row["fii_buy"]:,.0f} / Sell ₹{row["fii_sell"]:,.0f}</small></div>
+                        <div style="text-align:center"><div class="metric-label">DII</div><div style="font-size:1.5rem;font-weight:700;color:{dii_c}">{dii_sign}₹{abs(dii_net):,.0f} Cr</div><small style="color:var(--text-dim)">Buy ₹{row["dii_buy"]:,.0f} / Sell ₹{row["dii_sell"]:,.0f}</small></div>
+                    </div>
+                    <div style="text-align:center;margin-top:0.8rem;"><span class="tag {'tag-up' if 'Bull' in flow_sentiment else 'tag-down' if 'Bear' in flow_sentiment else 'tag-neutral'}">{flow_sentiment}</span></div>
+                </div>''', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="glass" style="text-align:center;padding:1.5rem;"><div class="metric-label">FII / DII Data</div><div style="margin-top:0.5rem;color:var(--text-dim)">No data available</div></div>', unsafe_allow_html=True)
+        except Exception as e:
+            st.markdown(f'<div class="glass" style="text-align:center;padding:1.5rem;"><div class="metric-label">FII / DII Data</div><div style="margin-top:0.5rem;color:var(--text-dim)">Unavailable: {e}</div></div>', unsafe_allow_html=True)
+
+    with c2:
+        st.markdown('<div class="section-header">Options PCR & Max Pain</div>', unsafe_allow_html=True)
+        pcr = fetch_options_pcr()
+        if pcr.get("pcr_oi", 0) > 0:
+            pcr_v = pcr["pcr_oi"]
+            pcr_c = "#00d4aa" if pcr_v > 1 else "#ff4444" if pcr_v < 0.8 else "var(--text-dim)"
+            pcr_lbl = "Bullish" if pcr_v > 1 else "Bearish" if pcr_v < 0.8 else "Neutral"
+            st.markdown(f'''<div class="glass">
+                <div style="text-align:center"><div class="metric-label">Put-Call Ratio ({pcr.get('symbol','NIFTY')})</div><div style="font-size:2rem;font-weight:700;color:{pcr_c}">{pcr_v:.3f}</div><span class="tag {'tag-up' if pcr_v>1 else 'tag-down' if pcr_v<0.8 else 'tag-neutral'}">{pcr_lbl}</span></div>
+                <div style="display:flex;gap:1.5rem;justify-content:center;margin-top:0.8rem;">
+                    <div style="text-align:center"><div class="metric-label">Call OI</div><div style="font-weight:600">{pcr["call_oi"]/1e6:.1f}M</div></div>
+                    <div style="text-align:center"><div class="metric-label">Put OI</div><div style="font-weight:600">{pcr["put_oi"]/1e6:.1f}M</div></div>
+                </div>
+                <div style="text-align:center;margin-top:0.6rem;"><div class="metric-label">Max Pain</div><div style="font-weight:600">₹{pcr['max_pain']:,.0f}</div></div>
+            </div>''', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="glass" style="text-align:center;padding:1.5rem;"><div class="metric-label">Options Data</div><div style="margin-top:0.5rem;color:var(--text-dim)">Market closed — PCR only available during trading hours</div></div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="section-header" style="margin-top:1rem">Multi-Timeframe Analysis</div>', unsafe_allow_html=True)
+    tf_ticker = st.selectbox("Stock", NSE_STOCKS, key="tf_ticker")
+    if st.button("Analyze Timeframes", type="primary", key="tf_btn", width='stretch'):
+        with st.spinner(f"Analyzing {tf_ticker} across 4 timeframes..."):
+            mtf = fetch_mtf_data(tf_ticker)
+            signal = get_combined_signal(mtf)
+
+        if signal["timeframes"]:
+            sig_c = "#00d4aa" if signal["signal"] == "Bullish" else "#ff4444" if signal["signal"] == "Bearish" else "var(--text-dim)"
+            st.markdown(f'''<div class="glass" style="text-align:center;padding:1.5rem;">
+                <div class="metric-label">Combined Signal ({tf_ticker.replace('.NS','')})</div>
+                <div style="font-size:2rem;font-weight:800;color:{sig_c};margin:0.5rem 0;">{signal['signal']}</div>
+                <span class="tag {'tag-up' if signal['signal']=='Bullish' else 'tag-down' if signal['signal']=='Bearish' else 'tag-neutral'}">Confidence: {signal['confidence']:.0f}%</span>
+            </div>''', unsafe_allow_html=True)
+
+            tf_cols = st.columns(4)
+            tf_names = {"15m": "15 Minute", "1h": "1 Hour", "daily": "Daily", "weekly": "Weekly"}
+            for i, (tf, name) in enumerate(tf_names.items()):
+                if tf in signal["timeframes"]:
+                    sig = signal["timeframes"][tf]
+                    tc = "#00d4aa" if sig["signal"] == "Bullish" else "#ff4444" if sig["signal"] == "Bearish" else "var(--text-dim)"
+                    ind_str = "<br>".join([f'<small>{k}: {v}</small>' for k, v in sig["indicators"].items()])
+                    tf_cols[i].markdown(f'''<div class="glass" style="text-align:center;padding:0.8rem;">
+                        <div class="metric-label">{name}</div>
+                        <div style="font-size:1.2rem;font-weight:700;color:{tc};margin:0.3rem 0;">{sig['signal']}</div>
+                        <small style="color:var(--text-dim)">Strength: {sig['strength']:.0%}</small>
+                        <div style="margin-top:0.5rem;">{ind_str}</div>
+                    </div>''', unsafe_allow_html=True)
+        else:
+            st.info("No timeframe data available.")
+
+
 def main():
     st.markdown(f'<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1rem;"><span style="font-size:2rem;">⚡</span><span class="gradient-text" style="font-size:1.6rem;font-weight:800;">StoMar</span><span style="font-size:0.75rem;color:var(--text-dim);margin-left:auto;">{datetime.now().strftime("%d %b %Y")}</span></div>', unsafe_allow_html=True)
-    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment"])
+    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse"])
     with tabs[0]: tab_predictions()
     with tabs[1]: tab_portfolio()
     with tabs[2]: tab_backtest()
     with tabs[3]: tab_scanner()
     with tabs[4]: tab_sentiment()
+    with tabs[5]: tab_market_pulse()
     st.divider()
     st.caption("⚠️ Educational purposes only. Not financial advice.")
 
