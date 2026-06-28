@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 from src.portfolio import Portfolio
 from src.constants import BROKERAGE_RATE, SLIPPAGE_RATE, RISK_FREE_RATE
+from src.logging_config import get_logger
+
+logger = get_logger("backtester")
 
 
 def walk_forward_split(df, train_years=3, test_years=1, step_months=6):
@@ -125,7 +128,7 @@ def run_walk_forward_backtest(
     portfolio = Portfolio(initial_capital)
     equity_points = []
 
-    print(f"Walk-forward: {len(splits)} windows, {train_years}y train / {test_years}y test")
+    logger.info("walk_forward_start windows=%d train_years=%d test_years=%d", len(splits), train_years, test_years)
 
     for wi, split in enumerate(splits):
         train_dates_in_split = split["train"]

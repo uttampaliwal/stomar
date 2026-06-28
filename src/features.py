@@ -6,6 +6,12 @@ import json
 
 
 def add_sentiment_features(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    """Add sentiment features with point-in-time discipline.
+
+    The sentiment score from today's news is only assigned to the most recent
+    row. Historical rows receive 0.0 because that sentiment was not yet
+    available on those dates. This prevents look-ahead bias in backtests.
+    """
     df = df.copy()
     cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     cache_file = os.path.join(cache_dir, f"sentiment_{ticker.replace('.','_')}.json")
@@ -19,33 +25,70 @@ def add_sentiment_features(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
         except Exception:
             pass
 
-    df["sentiment_score"] = score
+    # Point-in-time: only the most recent row gets the score.
+    # Historical rows stay 0.0 because this sentiment was not available then.
+    df["sentiment_score"] = 0.0
+    if len(df) > 0:
+        df.iloc[-1, df.columns.get_loc("sentiment_score")] = score
     return df
 
 
 def add_flow_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add FII/DII flow features with point-in-time discipline.
+
+    FII/DII data for day T is only available after market close on day T,
+    so it should only be joined to day T+1's price. We achieve this by
+    joining on date and then shifting by 1 day.
+    """
     df = df.copy()
     cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     cache_file = os.path.join(cache_dir, "fii_dii.parquet")
 
-    fii_net = 0.0
-    dii_net = 0.0
-    if os.path.exists(cache_file):
-        try:
-            flow_df = pd.read_parquet(cache_file)
-            if len(flow_df) > 0:
-                fii_net = float(flow_df.iloc[0]["fii_net"])
-                dii_net = float(flow_df.iloc[0]["dii_net"])
-        except Exception:
-            pass
+    # Default: all zeros
+    df["fii_net"] = 0.0
+    df["dii_net"] = 0.0
+    df["flow_signal"] = 0.0
 
-    df["fii_net"] = fii_net
-    df["dii_net"] = dii_net
-    df["flow_signal"] = 1.0 if fii_net > 0 and dii_net > 0 else (-1.0 if fii_net < -500 else 0.0)
+    if not os.path.exists(cache_file):
+        return df
+
+    try:
+        flow_df = pd.read_parquet(cache_file)
+        if len(flow_df) == 0:
+            return df
+
+        flow_df["date"] = pd.to_datetime(flow_df["date"])
+        flow_df = flow_df.set_index("date").sort_index()
+
+        # Keep only the columns we need
+        flow_df = flow_df[["fii_net", "dii_net"]]
+
+        # Shift by 1 day: FII/DII data for day T joins to day T+1
+        flow_df = flow_df.shift(1)
+
+        # Join on date index (left join preserves all price dates)
+        df = df.join(flow_df, how="left")
+
+        # Fill missing dates with 0
+        df["fii_net"] = df["fii_net"].fillna(0.0)
+        df["dii_net"] = df["dii_net"].fillna(0.0)
+        df["flow_signal"] = df.apply(
+            lambda r: 1.0 if r["fii_net"] > 0 and r["dii_net"] > 0
+            else (-1.0 if r["fii_net"] < -500 else 0.0),
+            axis=1,
+        )
+    except Exception:
+        pass
+
     return df
 
 
 def add_pcr_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add options PCR features with point-in-time discipline.
+
+    PCR is computed during market hours and only available after market close.
+    Assign only to the most recent row to prevent look-ahead bias.
+    """
     df = df.copy()
     cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     cache_file = os.path.join(cache_dir, "options_pcr.json")
@@ -61,26 +104,44 @@ def add_pcr_features(df: pd.DataFrame) -> pd.DataFrame:
         except Exception:
             pass
 
-    df["pcr"] = pcr
-    df["max_pain"] = max_pain
+    # Point-in-time: only the most recent row gets the PCR value.
+    # Historical rows stay at defaults because PCR was not available then.
+    df["pcr"] = 1.0
+    df["max_pain"] = 0.0
+    if len(df) > 0:
+        df.iloc[-1, df.columns.get_loc("pcr")] = pcr
+        df.iloc[-1, df.columns.get_loc("max_pain")] = max_pain
     return df
 
 
 def add_multitimeframe_features(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    """Add multi-timeframe features with point-in-time discipline.
+
+    MTF signals are computed from current data. Assign only to the most
+    recent row to prevent look-ahead bias in backtests.
+    """
     df = df.copy()
     try:
         from src.multitimeframe import fetch_mtf_data, get_combined_signal
         mtf = fetch_mtf_data(ticker)
         if mtf:
             signal = get_combined_signal(mtf)
-            df["mtf_signal"] = signal["direction"]
-            df["mtf_confidence"] = signal["confidence"]
+            mtf_dir = signal["direction"]
+            mtf_conf = signal["confidence"]
         else:
-            df["mtf_signal"] = 0
-            df["mtf_confidence"] = 0
+            mtf_dir = 0
+            mtf_conf = 0
     except Exception:
-        df["mtf_signal"] = 0
-        df["mtf_confidence"] = 0
+        mtf_dir = 0
+        mtf_conf = 0
+
+    # Point-in-time: only the most recent row gets the MTF signal.
+    # Historical rows stay at 0 because this signal was not available then.
+    df["mtf_signal"] = 0.0
+    df["mtf_confidence"] = 0.0
+    if len(df) > 0:
+        df.iloc[-1, df.columns.get_loc("mtf_signal")] = float(mtf_dir)
+        df.iloc[-1, df.columns.get_loc("mtf_confidence")] = float(mtf_conf)
     return df
 
 

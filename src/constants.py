@@ -40,3 +40,42 @@ NSE_TRANSACTION_COSTS = {
     "stamp_duty_buy_pct": STAMP_DUTY_BUY_RATE,
     "gst_pct": GST_RATE,
 }
+
+
+def calculate_nse_costs(price: float, quantity: int, side: str) -> dict:
+    """Calculate full NSE transaction costs for Indian equity delivery trades.
+
+    Args:
+        price: Execution price per share
+        quantity: Number of shares
+        side: "buy" or "sell"
+
+    Returns:
+        Dict with cost breakdown and total
+    """
+    trade_value = price * quantity
+
+    brokerage = trade_value * BROKERAGE_RATE
+    exchange_charge = trade_value * EXCHANGE_CHARGE_RATE
+    sebi_fees = trade_value * SEBI_FEES_RATE
+    gst = (brokerage + exchange_charge) * GST_RATE
+
+    if side == "sell":
+        stt = trade_value * STT_SELL_RATE
+        stamp_duty = 0.0
+    else:
+        stt = 0.0
+        stamp_duty = trade_value * STAMP_DUTY_BUY_RATE
+
+    total = brokerage + stt + exchange_charge + sebi_fees + stamp_duty + gst
+
+    return {
+        "brokerage": round(brokerage, 4),
+        "stt": round(stt, 4),
+        "exchange_charge": round(exchange_charge, 4),
+        "sebi_fees": round(sebi_fees, 4),
+        "stamp_duty": round(stamp_duty, 4),
+        "gst": round(gst, 4),
+        "total": round(total, 4),
+        "effective_rate": round(total / trade_value, 6) if trade_value > 0 else 0.0,
+    }

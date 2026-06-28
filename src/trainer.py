@@ -14,8 +14,11 @@ from src.model import (
     build_xgb_model, build_lgb_model, save_models, DEVICE,
 )
 from src.constants import DEFAULT_SEQ_LENGTH, DEFAULT_EPOCHS, DEFAULT_BATCH_SIZE, DEFAULT_LEARNING_RATE
+from src.logging_config import get_logger
 
 warnings.filterwarnings("ignore")
+
+logger = get_logger("trainer")
 
 FEATURE_COLS = [
     "close", "volume", "sma_10", "sma_20", "sma_50", "ema_12", "ema_26",
@@ -59,7 +62,7 @@ def _train_one_model(model, train_loader, X_val, y_val, model_name, epochs=EPOCH
 
         scheduler.step(val_loss)
         if (epoch + 1) % 10 == 0:
-            print(f"    {model_name} Epoch {epoch+1:2d} - Train: {train_loss/len(train_loader):.6f} Val: {val_loss:.6f}")
+            logger.info("%s epoch=%d train_loss=%.6f val_loss=%.6f", model_name, epoch + 1, train_loss / len(train_loader), val_loss)
 
         if val_loss < best_loss:
             best_loss = val_loss
@@ -67,33 +70,31 @@ def _train_one_model(model, train_loader, X_val, y_val, model_name, epochs=EPOCH
         else:
             patience += 1
             if patience >= 5:
-                print(f"    {model_name} early stop at epoch {epoch+1}")
+                logger.info("%s early_stop epoch=%d", model_name, epoch + 1)
                 break
 
     return model
 
 
 def train_for_ticker(ticker: str, force_retrain: bool = False):
-    print(f"\n{'='*50}")
-    print(f"Training models for {ticker}")
-    print(f"{'='*50}")
+    logger.info("training_start ticker=%s force_retrain=%s", ticker, force_retrain)
 
     df = fetch_stock_data(ticker, period="5y", force_refresh=force_retrain)
-    print(f"Fetched {len(df)} rows")
+    logger.info("data_fetched ticker=%s rows=%d", ticker, len(df))
 
     df_feat = add_technical_indicators(df, ticker=ticker)
     df_feat = df_feat.replace([np.inf, -np.inf], np.nan).dropna()
-    print(f"After features: {len(df_feat)} rows")
+    logger.info("features_computed ticker=%s rows=%d", ticker, len(df_feat))
 
     lstm_features = [c for c in FEATURE_COLS if c in df_feat.columns]
 
     # --- XGBoost ---
-    print("\nTraining XGBoost...")
+    logger.info("training_xgboost ticker=%s", ticker)
     xgb_data = df_feat[lstm_features + ["target_direction"]].dropna()
     X_xgb = xgb_data[lstm_features]
     y_xgb = xgb_data["target_direction"]
     up_c, dn_c = int(y_xgb.sum()), len(y_xgb) - int(y_xgb.sum())
-    print(f"  Up: {up_c} Down: {dn_c}")
+    logger.info("xgb_class_distribution ticker=%s up=%d down=%d", ticker, up_c, dn_c)
 
     X_tr, X_te, y_tr, y_te = train_test_split(X_xgb, y_xgb, test_size=0.2, shuffle=False)
     xgb_model = build_xgb_model()
@@ -101,18 +102,18 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
 
     y_pr = xgb_model.predict(X_te)
     xgb_acc = accuracy_score(y_te, y_pr)
-    print(f"  XGBoost Accuracy: {xgb_acc:.4f}")
+    logger.info("xgb_trained ticker=%s accuracy=%.4f", ticker, xgb_acc)
 
     # --- LightGBM ---
-    print("\nTraining LightGBM...")
+    logger.info("training_lightgbm ticker=%s", ticker)
     lgb_model = build_lgb_model()
     lgb_model.fit(X_tr, y_tr, eval_set=[(X_te, y_te)])
     y_pr_lgb = lgb_model.predict(X_te)
     lgb_acc = accuracy_score(y_te, y_pr_lgb)
-    print(f"  LightGBM Accuracy: {lgb_acc:.4f}")
+    logger.info("lgb_trained ticker=%s accuracy=%.4f", ticker, lgb_acc)
 
     # --- Deep Learning Models ---
-    print("\nTraining Neural Networks...")
+    logger.info("training_neural_networks ticker=%s", ticker)
     lstm_data = df_feat[lstm_features].dropna().values
     scaler = MinMaxScaler()
     scaled = scaler.fit_transform(lstm_data)
@@ -154,13 +155,10 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     gru_acc = eval_dir(gru_model, X_te_l, y_te_l, scaled, split)
     tf_acc = eval_dir(tf_model, X_te_l, y_te_l, scaled, split)
 
-    print(f"\n  LSTM Direction Acc: {lstm_acc:.4f}")
-    print(f"  GRU Direction Acc:  {gru_acc:.4f}")
-    print(f"  Transformer Dir Acc: {tf_acc:.4f}")
+    logger.info("dl_direction_accuracy ticker=%s lstm=%.4f gru=%.4f transformer=%.4f", ticker, lstm_acc, gru_acc, tf_acc)
 
     # Ensemble backtest (TEST SET ONLY)
     from src.ensemble import backtest_ensemble
-    # Split data into train/test same way as DL models
     test_start_idx = split + SEQ_LENGTH
     df_test = df_feat.iloc[test_start_idx:].copy()
     if len(df_test) > SEQ_LENGTH:
@@ -170,14 +168,15 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
             actual_dir = [r["actual"] for r in bt]
             ensemble_acc = accuracy_score(actual_dir, final_dir)
             correct = int(np.sum(np.array(final_dir) == np.array(actual_dir)))
-            print(f"  Ensemble Test Acc: {ensemble_acc:.4f} ({correct}/{len(final_dir)} correct)")
+            logger.info("ensemble_test ticker=%s accuracy=%.4f correct=%d/%d", ticker, ensemble_acc, correct, len(final_dir))
         else:
             ensemble_acc = 0.0
     else:
         ensemble_acc = 0.0
 
     save_models(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, ticker, lgb_model=lgb_model)
-    print(f"Models saved for {ticker}")
+    logger.info("training_complete ticker=%s xgb=%.4f lgb=%.4f lstm=%.4f gru=%.4f tf=%.4f ensemble=%.4f",
+                ticker, xgb_acc, lgb_acc, lstm_acc, gru_acc, tf_acc, ensemble_acc)
 
     return {
         "xgb_accuracy": float(xgb_acc),
@@ -196,6 +195,6 @@ def train_multiple_stocks(tickers: list, force_retrain: bool = False):
         try:
             results[ticker] = train_for_ticker(ticker, force_retrain)
         except Exception as e:
-            print(f"Error training {ticker}: {e}")
+            logger.error("training_failed ticker=%s error=%s", ticker, str(e))
             results[ticker] = {"error": str(e)}
     return results

@@ -1,6 +1,4 @@
 """Tests for model save/load roundtrip and architectures."""
-import numpy as np
-import pytest
 import torch
 import os
 import sys
@@ -46,7 +44,7 @@ class TestModelSaveLoad:
     """Test save/load roundtrip preserves model state."""
 
     def test_lstm_save_load_roundtrip(self, tmp_path):
-        from src.model import StockLSTM, save_models, load_models
+        from src.model import StockLSTM
         model = StockLSTM(input_dim=14)
         x = torch.randn(1, 60, 14)
         model.eval()

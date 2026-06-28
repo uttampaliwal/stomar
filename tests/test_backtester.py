@@ -1,7 +1,6 @@
 """Tests for backtester module — focus on no-data-leakage verification."""
 import numpy as np
 import pandas as pd
-import pytest
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))

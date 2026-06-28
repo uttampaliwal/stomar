@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from src.constants import BROKERAGE_RATE
+from src.constants import BROKERAGE_RATE, calculate_nse_costs
 
 
 class Portfolio:
@@ -13,16 +13,17 @@ class Portfolio:
         self.equity_curve = [{"date": datetime.now(), "equity": initial_capital}]
 
     def buy(self, ticker, price, quantity, date, brokerage=BROKERAGE_RATE):
+        costs = calculate_nse_costs(price, quantity, "buy")
         cost = price * quantity
-        broker_fee = cost * brokerage
-        total_cost = cost + broker_fee
+        total_cost = cost + costs["total"]
         if total_cost > self.cash:
-            quantity = int(self.cash / (price * (1 + brokerage)))
-            if quantity == 0:
+            max_qty = int(self.cash / (price + price * costs["effective_rate"]))
+            if max_qty == 0:
                 return False
+            quantity = max_qty
+            costs = calculate_nse_costs(price, quantity, "buy")
             cost = price * quantity
-            broker_fee = cost * brokerage
-            total_cost = cost + broker_fee
+            total_cost = cost + costs["total"]
 
         self.cash -= total_cost
         if ticker in self.holdings:
@@ -36,7 +37,7 @@ class Portfolio:
         self.trades.append({
             "date": date, "ticker": ticker, "action": "BUY",
             "price": price, "quantity": quantity,
-            "cost": total_cost, "brokerage": broker_fee,
+            "cost": total_cost, "costs": costs,
         })
         self._update_equity(date)
         return True
@@ -46,10 +47,10 @@ class Portfolio:
             return False
         held_qty, avg_price = self.holdings[ticker]
         quantity = min(quantity, held_qty)
+        costs = calculate_nse_costs(price, quantity, "sell")
         proceeds = price * quantity
-        broker_fee = proceeds * brokerage
-        net_proceeds = proceeds - broker_fee
-        pnl = (price - avg_price) * quantity - broker_fee
+        net_proceeds = proceeds - costs["total"]
+        pnl = (price - avg_price) * quantity - costs["total"]
 
         self.cash += net_proceeds
         remaining = held_qty - quantity
@@ -61,7 +62,7 @@ class Portfolio:
         self.trades.append({
             "date": date, "ticker": ticker, "action": "SELL",
             "price": price, "quantity": quantity,
-            "proceeds": net_proceeds, "brokerage": broker_fee, "pnl": pnl,
+            "proceeds": net_proceeds, "costs": costs, "pnl": pnl,
         })
         self._update_equity(date)
         return True
