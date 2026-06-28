@@ -19,6 +19,10 @@ from src.backtester import run_simple_backtest as run_backtest, generate_model_s
 from src.sentiment import get_stock_sentiment
 from src.flow import get_flow_sentiment, fetch_options_pcr
 from src.multitimeframe import fetch_mtf_data, get_combined_signal
+from src.risk import generate_risk_report, kelly_criterion, calculate_var, calculate_cvar
+from src.optimizer import optimize_portfolio
+from src.holdings import parse_holdings_csv, compute_portfolio_stats
+from src.regime import detect_regime
 
 st.set_page_config(page_title="StoMar", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 
@@ -589,15 +593,207 @@ def tab_market_pulse():
             st.info("No timeframe data available.")
 
 
+def tab_optimizer():
+    st.markdown(f'<div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:1rem;"><span class="gradient-text" style="font-size:2rem;font-weight:800;">Portfolio Optimizer</span></div>', unsafe_allow_html=True)
+    st.caption("Mean-Variance Optimization + Black-Litterman — finds optimal allocation")
+
+    selected = st.multiselect("Select Stocks", NSE_STOCKS, default=NSE_STOCKS[:3], key="opt_stocks")
+    if len(selected) < 2:
+        st.info("Select at least 2 stocks")
+        return
+
+    period = st.selectbox("History", ["6mo", "1y", "2y", "5y"], index=2, key="opt_period")
+
+    if st.button("Optimize Portfolio", type="primary", width='stretch', key="opt_btn"):
+        with st.spinner("Fetching prices and optimizing..."):
+            prices = pd.DataFrame()
+            for t in selected:
+                df = fetch_stock_data(t, period=period)
+                prices[t] = df["close"]
+            prices = prices.dropna()
+
+            if len(prices) < 60:
+                st.warning("Not enough price history")
+                return
+
+            result = optimize_portfolio(prices)
+
+        st.markdown('<div class="section-header">Optimal Portfolios</div>', unsafe_allow_html=True)
+        for ptype, label in [("max_sharpe", "Max Sharpe"), ("min_variance", "Min Variance"), ("black_litterman", "Black-Litterman")]:
+            p = result[ptype]
+            c1, c2, c3 = st.columns([2, 1, 1])
+            with c1:
+                st.markdown(f"**{label}**")
+                for i, t in enumerate(selected):
+                    w = p["weights"][i]
+                    bar = "█" * int(w * 30)
+                    st.markdown(f"  {t.replace('.NS','')}: **{w:.1%}** {bar}")
+            with c2:
+                st.metric("Exp. Return", f"{p['return']:.1%}")
+            with c3:
+                st.metric("Volatility", f"{p['volatility']:.1%}")
+            st.divider()
+
+        if result["efficient_frontier"]:
+            ef = pd.DataFrame(result["efficient_frontier"])
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=ef["volatility"], y=ef["return"], mode="lines+markers",
+                name="Efficient Frontier", line=dict(color="#00d4aa", width=2)))
+            ms = result["max_sharpe"]
+            fig.add_trace(go.Scatter(x=[ms["volatility"]], y=[ms["return"]], mode="markers",
+                name="Max Sharpe", marker=dict(color="#7c3aed", size=15, symbol="star")))
+            fig.update_layout(template="plotly_dark", height=400,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                xaxis_title="Volatility", yaxis_title="Return",
+                margin=dict(l=10,r=10,t=10,b=10))
+            st.plotly_chart(fig, width='stretch')
+
+
+def tab_holdings():
+    st.markdown(f'<div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:1rem;"><span class="gradient-text" style="font-size:2rem;font-weight:800;">Holdings Tracker</span></div>', unsafe_allow_html=True)
+
+    uploaded = st.file_uploader("Upload Zerodha Holdings CSV", type=["csv"], key="holdings_upload")
+
+    if uploaded:
+        holdings_df = parse_holdings_csv(uploaded)
+        stats = compute_portfolio_stats(holdings_df)
+
+        if stats:
+            r1, r2, r3, r4 = st.columns(4)
+            colr = "00d4aa" if stats["total_pnl"] >= 0 else "ff4444"
+            r1.markdown(f'<div class="glass" style="text-align:center"><div class="metric-label">Invested</div><div style="font-size:1.3rem;font-weight:700">₹{stats["total_invested"]:,.0f}</div></div>', unsafe_allow_html=True)
+            r2.markdown(f'<div class="glass" style="text-align:center"><div class="metric-label">Current</div><div style="font-size:1.3rem;font-weight:700">₹{stats["total_current"]:,.0f}</div></div>', unsafe_allow_html=True)
+            r3.markdown(f'<div class="glass" style="text-align:center"><div class="metric-label">P&L</div><div style="font-size:1.3rem;font-weight:700;color:#{colr}">₹{stats["total_pnl"]:+,.0f}</div></div>', unsafe_allow_html=True)
+            r4.markdown(f'<div class="glass" style="text-align:center"><div class="metric-label">Return</div><div style="font-size:1.3rem;font-weight:700;color:#{colr}">{stats["total_return_pct"]:+.1f}%</div></div>', unsafe_allow_html=True)
+
+            st.markdown('<div class="section-header">Category Allocation</div>', unsafe_allow_html=True)
+            cat_data = []
+            for cat, info in sorted(stats["categories"].items(), key=lambda x: -x[1]["weight"]):
+                cat_data.append({"Category": cat, "Value": f"₹{info['value']:,.0f}", "Weight": f"{info['weight']:.1%}", "Return": f"{info['return_pct']:+.1f}%"})
+            st.dataframe(pd.DataFrame(cat_data), width='stretch', hide_index=True)
+
+            if stats["categories"]:
+                cat_labels = list(stats["categories"].keys())
+                cat_values = [stats["categories"][c]["value"] for c in cat_labels]
+                fig = go.Figure(go.Pie(labels=cat_labels, values=cat_values,
+                    hole=0.4, marker=dict(colors=px.colors.qualitative.Set3)))
+                fig.update_layout(template="plotly_dark", height=400,
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    margin=dict(l=10,r=10,t=10,b=10), showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.2))
+                st.plotly_chart(fig, width='stretch')
+
+            st.markdown('<div class="section-header">Holdings Detail</div>', unsafe_allow_html=True)
+            h_data = []
+            for h in stats["holdings"]:
+                ret_c = "#00d4aa" if h["return_pct"] >= 0 else "#ff4444"
+                h_data.append({
+                    "Fund": h["name"][:35],
+                    "Invested": f"₹{h['invested']:,.0f}",
+                    "Current": f"₹{h['current_value']:,.0f}",
+                    "P&L": f"₹{h['pnl']:+,.0f}",
+                    "Return": f"{h['return_pct']:+.1f}%",
+                    "Weight": f"{h['weight']:.1%}",
+                })
+            st.dataframe(pd.DataFrame(h_data), width='stretch', hide_index=True)
+
+            st.markdown('<div class="section-header">Risk Assessment</div>', unsafe_allow_html=True)
+            returns_list = [h["return_pct"] for h in stats["holdings"]]
+            weights_list = [h["weight"] for h in stats["holdings"]]
+            herfindahl = sum(w**2 for w in weights_list)
+            top3_weight = sum(sorted(weights_list, reverse=True)[:3])
+            risk_notes = []
+            if herfindahl > 0.25:
+                risk_notes.append("High concentration (Herfindahl > 0.25)")
+            if top3_weight > 0.60:
+                risk_notes.append(f"Top 3 holdings = {top3_weight:.0%} of portfolio")
+            if any(h["return_pct"] < -5 for h in stats["holdings"]):
+                risk_notes.append("Some holdings with >5% loss")
+            if not risk_notes:
+                risk_notes.append("Portfolio risk profile looks reasonable")
+            for note in risk_notes:
+                st.warning(note)
+
+
+def tab_risk():
+    st.markdown(f'<div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:1rem;"><span class="gradient-text" style="font-size:2rem;font-weight:800;">Risk Dashboard</span></div>', unsafe_allow_html=True)
+
+    ticker = st.selectbox("Stock", NSE_STOCKS, key="risk_ticker")
+    period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=2, key="risk_period")
+
+    if st.button("Analyze Risk", type="primary", width='stretch', key="risk_btn"):
+        with st.spinner("Computing risk metrics..."):
+            df = fetch_stock_data(ticker, period=period)
+            returns = df["close"].pct_change().dropna().values
+            equity = (1 + returns).cumprod() * 100000
+            report = generate_risk_report(returns, equity)
+
+            regime = detect_regime(df["close"])
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown('<div class="section-header">Market Regime</div>', unsafe_allow_html=True)
+            regime_c = "#00d4aa" if regime["regime"] == "Bull" else "#ff4444" if regime["regime"] == "Bear" else "#ffa500"
+            st.markdown(f'<div class="glass" style="text-align:center;padding:1.5rem;"><div class="metric-label">Current Regime</div><div style="font-size:2rem;font-weight:800;color:{regime_c};margin:0.5rem 0;">{regime["regime"]}</div><span class="tag {"tag-up" if regime["regime"]=="Bull" else "tag-down" if regime["regime"]=="Bear" else "tag-neutral"}">{regime["confidence"]:.0f}% confidence</span></div>', unsafe_allow_html=True)
+            rec = regime["recommendation"]
+            st.markdown(f'<div class="glass"><div class="metric-label">Recommendation</div><div style="font-weight:600;margin:0.3rem 0;">{rec["action"]}</div><small>Allocation: {rec["allocation"]}</small><br><small>Risk: {rec["risk_level"]}</small></div>', unsafe_allow_html=True)
+
+        with c2:
+            st.markdown('<div class="section-header">Risk Metrics</div>', unsafe_allow_html=True)
+            metrics_grid = [
+                ("Annual Return", f"{report['annual_return']:.1f}%", "#00d4aa" if report['annual_return'] > 0 else "#ff4444"),
+                ("Annual Volatility", f"{report['annual_volatility']:.1f}%", "var(--text-dim)"),
+                ("Sharpe Ratio", f"{report['sharpe']:.3f}", "#00d4aa" if report['sharpe'] > 1 else "#ff4444"),
+                ("Sortino Ratio", f"{report['sortino']:.3f}", "#00d4aa" if report['sortino'] > 1 else "#ff4444"),
+                ("Max Drawdown", f"{report['max_drawdown']:.1f}%", "#ff4444"),
+                ("VaR (95%)", f"{report['var_95']:.2f}%", "#ff4444"),
+                ("CVaR (95%)", f"{report['cvar_95']:.2f}%", "#ff4444"),
+                ("Calmar Ratio", f"{report['calmar']:.3f}", "#00d4aa" if report['calmar'] > 1 else "#ffa500"),
+                ("Win Days", f"{report['positive_days_pct']:.0f}%", "#00d4aa" if report['positive_days_pct'] > 50 else "#ff4444"),
+                ("Best Day", f"{report['best_day']:.2f}%", "#00d4aa"),
+                ("Worst Day", f"{report['worst_day']:.2f}%", "#ff4444"),
+                ("Skewness", f"{report['skewness']:.2f}", "var(--text-dim)"),
+            ]
+            for i in range(0, len(metrics_grid), 3):
+                cols = st.columns(3)
+                for j in range(3):
+                    if i+j < len(metrics_grid):
+                        label, val, color = metrics_grid[i+j]
+                        cols[j].markdown(f'<div class="glass" style="text-align:center;padding:0.6rem"><div class="metric-label">{label}</div><div style="font-size:1.1rem;font-weight:700;color:{color}">{val}</div></div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="section-header">Drawdown Chart</div>', unsafe_allow_html=True)
+        cummax = np.maximum.accumulate(equity)
+        drawdown = (equity - cummax) / cummax * 100
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df.index[-len(drawdown):], y=drawdown, fill="tozeroy",
+            line=dict(color="#ff4444", width=1), fillcolor="rgba(255,68,68,0.2)", name="Drawdown"))
+        fig.update_layout(template="plotly_dark", height=300,
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            yaxis_title="Drawdown %", margin=dict(l=10,r=10,t=10,b=10))
+        st.plotly_chart(fig, width='stretch')
+
+        st.markdown('<div class="section-header">Kelly Criterion</div>', unsafe_allow_html=True)
+        win_days = (returns > 0).sum()
+        lose_days = (returns < 0).sum()
+        avg_win = returns[returns > 0].mean() if win_days > 0 else 0
+        avg_loss = abs(returns[returns < 0].mean()) if lose_days > 0 else 0.001
+        win_rate = win_days / len(returns)
+        kelly = kelly_criterion(win_rate, avg_win, avg_loss)
+        st.markdown(f'<div class="glass"><div class="metric-label">Optimal Position Size (Kelly)</div><div style="font-size:1.5rem;font-weight:700">{kelly:.1%}</div><small>Win rate: {win_rate:.1%} | Avg win: {avg_win:.3f} | Avg loss: {avg_loss:.3f}</small></div>', unsafe_allow_html=True)
+
+
 def main():
     st.markdown(f'<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1rem;"><span style="font-size:2rem;">⚡</span><span class="gradient-text" style="font-size:1.6rem;font-weight:800;">StoMar</span><span style="font-size:0.75rem;color:var(--text-dim);margin-left:auto;">{datetime.now().strftime("%d %b %Y")}</span></div>', unsafe_allow_html=True)
-    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse"])
+    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk"])
     with tabs[0]: tab_predictions()
     with tabs[1]: tab_portfolio()
     with tabs[2]: tab_backtest()
     with tabs[3]: tab_scanner()
     with tabs[4]: tab_sentiment()
     with tabs[5]: tab_market_pulse()
+    with tabs[6]: tab_optimizer()
+    with tabs[7]: tab_holdings()
+    with tabs[8]: tab_risk()
     st.divider()
     st.caption("⚠️ Educational purposes only. Not financial advice.")
 
