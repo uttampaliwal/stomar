@@ -1,9 +1,6 @@
 import pandas as pd
-import numpy as np
-from datetime import datetime
 import yfinance as yf
 import os
-import json
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 

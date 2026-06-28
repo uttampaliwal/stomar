@@ -1,4 +1,3 @@
-import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,6 +13,7 @@ from src.model import (
     build_lstm, build_gru, build_transformer,
     build_xgb_model, build_lgb_model, save_models, DEVICE,
 )
+from src.constants import DEFAULT_SEQ_LENGTH, DEFAULT_EPOCHS, DEFAULT_BATCH_SIZE, DEFAULT_LEARNING_RATE
 
 warnings.filterwarnings("ignore")
 
@@ -29,10 +29,10 @@ FEATURE_COLS = [
     "pcr", "mtf_signal", "mtf_confidence",
 ]
 
-SEQ_LENGTH = 60
-EPOCHS = 40
-BATCH_SIZE = 32
-LEARNING_RATE = 0.001
+SEQ_LENGTH = DEFAULT_SEQ_LENGTH
+EPOCHS = DEFAULT_EPOCHS
+BATCH_SIZE = DEFAULT_BATCH_SIZE
+LEARNING_RATE = DEFAULT_LEARNING_RATE
 
 
 def _train_one_model(model, train_loader, X_val, y_val, model_name, epochs=EPOCHS):

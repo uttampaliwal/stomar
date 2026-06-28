@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from src.constants import BROKERAGE_RATE
 
 
 class Portfolio:
@@ -11,7 +12,7 @@ class Portfolio:
         self.trades = []
         self.equity_curve = [{"date": datetime.now(), "equity": initial_capital}]
 
-    def buy(self, ticker, price, quantity, date, brokerage=0.0003):
+    def buy(self, ticker, price, quantity, date, brokerage=BROKERAGE_RATE):
         cost = price * quantity
         broker_fee = cost * brokerage
         total_cost = cost + broker_fee
@@ -40,7 +41,7 @@ class Portfolio:
         self._update_equity(date)
         return True
 
-    def sell(self, ticker, price, quantity, date, brokerage=0.0003):
+    def sell(self, ticker, price, quantity, date, brokerage=BROKERAGE_RATE):
         if ticker not in self.holdings:
             return False
         held_qty, avg_price = self.holdings[ticker]

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
+from src.constants import RISK_FREE_RATE
 
 
 def compute_returns(prices: pd.DataFrame, period: str = "daily") -> pd.DataFrame:
@@ -30,7 +31,7 @@ def portfolio_stats(weights: np.ndarray, mean_returns: np.ndarray, cov_matrix: n
     return {"return": port_return, "volatility": port_vol, "sharpe": sharpe}
 
 
-def max_sharpe_portfolio(mean_returns: np.ndarray, cov_matrix: np.ndarray, risk_free_rate: float = 0.065 / 252) -> dict:
+def max_sharpe_portfolio(mean_returns: np.ndarray, cov_matrix: np.ndarray, risk_free_rate: float = RISK_FREE_RATE / 252) -> dict:
     n = len(mean_returns)
     result = {
         "fun": None,
@@ -175,7 +176,7 @@ def efficient_frontier(mean_returns: np.ndarray, cov_matrix: np.ndarray, n_point
 
 
 def optimize_portfolio(prices: pd.DataFrame, views: list = None, confidences: list = None,
-                       risk_free_rate: float = 0.065) -> dict:
+                       risk_free_rate: float = RISK_FREE_RATE) -> dict:
     returns = compute_returns(prices)
     mean_returns = returns.mean().values
     cov_matrix = compute_covariance(returns, method="shrinkage")

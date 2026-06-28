@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import ta
 import os
-import time
 import json
 
 

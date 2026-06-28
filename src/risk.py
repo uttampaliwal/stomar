@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import Optional
+from src.constants import RISK_FREE_RATE
 
 
 def kelly_criterion(win_rate: float, avg_win: float, avg_loss: float) -> float:
@@ -48,7 +48,7 @@ def calculate_cvar(returns: np.ndarray, confidence: float = 0.95) -> float:
     return float(tail.mean())
 
 
-def calculate_sharpe(returns: np.ndarray, risk_free_rate: float = 0.065) -> float:
+def calculate_sharpe(returns: np.ndarray, risk_free_rate: float = RISK_FREE_RATE) -> float:
     if len(returns) < 10:
         return 0.0
     ann_return = returns.mean() * 252
@@ -58,7 +58,7 @@ def calculate_sharpe(returns: np.ndarray, risk_free_rate: float = 0.065) -> floa
     return float((ann_return - risk_free_rate) / ann_vol)
 
 
-def calculate_sortino(returns: np.ndarray, risk_free_rate: float = 0.065) -> float:
+def calculate_sortino(returns: np.ndarray, risk_free_rate: float = RISK_FREE_RATE) -> float:
     if len(returns) < 10:
         return 0.0
     ann_return = returns.mean() * 252

@@ -1,6 +1,5 @@
 import yfinance as yf
 import pandas as pd
-import numpy as np
 import ta
 import os
 import time
@@ -48,7 +47,7 @@ def _add_tf_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     c = df["close"]
     h = df["high"]
-    l = df["low"]
+    lo = df["low"]
     v = df["volume"]
 
     df["sma_10"] = ta.trend.sma_indicator(c, window=10)
@@ -61,11 +60,11 @@ def _add_tf_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["macd_signal"] = ta.trend.macd_signal(c)
     df["bb_high"] = ta.volatility.bollinger_hband(c)
     df["bb_low"] = ta.volatility.bollinger_lband(c)
-    df["atr"] = ta.volatility.average_true_range(h, l, c, window=14)
-    df["adx"] = ta.trend.adx(h, l, c, window=14)
-    df["stoch_k"] = ta.momentum.stoch(h, l, c)
-    df["stoch_d"] = ta.momentum.stoch_signal(h, l, c)
-    df["vwap"] = (v * (h + l + c) / 3).cumsum() / v.cumsum()
+    df["atr"] = ta.volatility.average_true_range(h, lo, c, window=14)
+    df["adx"] = ta.trend.adx(h, lo, c, window=14)
+    df["stoch_k"] = ta.momentum.stoch(h, lo, c)
+    df["stoch_d"] = ta.momentum.stoch_signal(h, lo, c)
+    df["vwap"] = (v * (h + lo + c) / 3).cumsum() / v.cumsum()
     df["obv"] = ta.volume.on_balance_volume(c, v)
     df["returns"] = c.pct_change()
     df["volatility"] = df["returns"].rolling(20).std()

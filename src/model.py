@@ -1,7 +1,5 @@
-import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.preprocessing import MinMaxScaler
 import joblib
 import os
 
@@ -104,7 +102,8 @@ def build_lgb_model():
 
 def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker, lgb_model=None):
     ticker_clean = ticker.replace(".", "_")
-    base = lambda name: os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
+    def base(name):
+        return os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
     torch.save(lstm.state_dict(), base("lstm.pt"))
     torch.save(gru.state_dict(), base("gru.pt"))
     torch.save(transformer.state_dict(), base("transformer.pt"))
@@ -118,7 +117,8 @@ def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker, lgb_m
 
 def load_models(ticker: str):
     ticker_clean = ticker.replace(".", "_")
-    base = lambda name: os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
+    def base(name):
+        return os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
     input_dim = joblib.load(base("lstm_dim.pkl"))
 
     lstm = StockLSTM(input_dim=input_dim).to(DEVICE)
@@ -147,6 +147,7 @@ def load_models(ticker: str):
 
 def models_exist(ticker: str) -> bool:
     ticker_clean = ticker.replace(".", "_")
-    base = lambda name: os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
+    def base(name):
+        return os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
     exts = ["lstm.pt", "gru.pt", "transformer.pt", "xgb.pkl", "scaler.pkl", "features.pkl", "lstm_dim.pkl"]
     return all(os.path.exists(base(e)) for e in exts)

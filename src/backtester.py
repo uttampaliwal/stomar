@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from src.portfolio import Portfolio
+from src.constants import BROKERAGE_RATE, SLIPPAGE_RATE, RISK_FREE_RATE
 
 
 def walk_forward_split(df, train_years=3, test_years=1, step_months=6):
@@ -22,7 +23,7 @@ def walk_forward_split(df, train_years=3, test_years=1, step_months=6):
     return splits
 
 
-def compute_metrics(equity_curve, trades, risk_free_rate=0.065):
+def compute_metrics(equity_curve, trades, risk_free_rate=RISK_FREE_RATE):
     if len(equity_curve) < 2:
         return {}
 
@@ -97,12 +98,11 @@ def run_walk_forward_backtest(
     stop_loss_pct=0.05,
     take_profit_pct=0.15,
     max_positions=5,
-    brokerage=0.0003,
-    slippage=0.001,
+    brokerage=BROKERAGE_RATE,
+    slippage=SLIPPAGE_RATE,
 ):
     from src.model import build_lstm, build_gru, build_transformer, build_xgb_model, DEVICE
-    from src.trainer import _train_one_model, SEQ_LENGTH, EPOCHS, BATCH_SIZE, LEARNING_RATE
-    from src.features import add_technical_indicators
+    from src.trainer import _train_one_model, SEQ_LENGTH, BATCH_SIZE
     from sklearn.preprocessing import MinMaxScaler
     from sklearn.metrics import accuracy_score
     from torch.utils.data import DataLoader, TensorDataset
@@ -262,7 +262,7 @@ def run_walk_forward_backtest(
     return metrics, portfolio, all_test_results
 
 
-def run_simple_backtest(df_feat, signals, initial_capital=100000, brokerage=0.0003, slippage=0.001):
+def run_simple_backtest(df_feat, signals, initial_capital=100000, brokerage=BROKERAGE_RATE, slippage=SLIPPAGE_RATE):
     portfolio = Portfolio(initial_capital)
     in_position = {}
     tickers = list(signals.keys())

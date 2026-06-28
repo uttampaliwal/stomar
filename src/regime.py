@@ -36,7 +36,7 @@ def detect_regime(prices: pd.Series, lookback: int = 200) -> dict:
         indicators["Price vs SMA200"] = f"{'Above' if current > sma_200 else 'Below'} (Bull)"
     else:
         bear_signals += 1
-        indicators["Price vs SMA200"] = f"Below (Bear)"
+        indicators["Price vs SMA200"] = "Below (Bear)"
 
     total_signals += 1
     if sma_50 > sma_200:
