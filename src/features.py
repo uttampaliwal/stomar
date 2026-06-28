@@ -26,16 +26,31 @@ def add_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["volume_sma"] = ta.trend.sma_indicator(volume, window=20)
     df["volume_ratio"] = volume / df["volume_sma"].replace(0, np.nan)
 
+    # Price position in range
     df["high_low_pct"] = (high - low) / close * 100
     df["close_open_pct"] = (close - df["open"]) / df["open"] * 100
+    df["close_position"] = (close - low) / (high - low + 1e-8)
 
-    df["returns_1d"] = close.pct_change(1)
-    df["returns_5d"] = close.pct_change(5)
-    df["returns_20d"] = close.pct_change(20)
+    # Returns at multiple horizons
+    for d in [1, 2, 3, 5, 10, 20]:
+        df[f"returns_{d}d"] = close.pct_change(d)
 
-    df["volatility_10d"] = df["returns_1d"].rolling(10).std()
-    df["volatility_20d"] = df["returns_1d"].rolling(20).std()
+    # Volatility
+    for d in [5, 10, 20]:
+        df[f"volatility_{d}d"] = df["returns_1d"].rolling(d).std()
 
+    # Lagged returns
+    for lag in [1, 2, 3, 5]:
+        df[f"return_lag_{lag}"] = df["returns_1d"].shift(lag)
+
+    # Calendar features
+    if df.index.dtype == "datetime64[ns]" or isinstance(df.index, pd.DatetimeIndex):
+        df["day_of_week"] = df.index.dayofweek
+        df["month"] = df.index.month
+        df["quarter"] = df.index.quarter
+        df["day_of_month"] = df.index.day
+
+    # Target
     df["target"] = close.shift(-1) / close - 1
     df["target_direction"] = (df["target"] > 0).astype(int)
 

@@ -42,6 +42,7 @@ def build_xgb_model():
         learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
+        scale_pos_weight=1.05,
         random_state=42,
         eval_metric="logloss",
     )
