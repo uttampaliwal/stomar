@@ -24,25 +24,246 @@ Honest assessment of current state, what matters most, and concrete steps to get
 - The code is honest about its limitations (README disclaimers)
 
 ### What's Actually Missing
+- No point-in-time data discipline (silent look-ahead bias risk)
 - No statistical significance testing
 - No regime-conditional model routing
 - Equal-weight ensemble (not learned)
-- File-based caching (no point-in-time guarantees)
+- File-based caching (no guarantees)
 - Zero tests
 - 3 stocks ≠ a trading system
 
 ---
 
-## Priority-Ordered Improvements
+## Important: What This Project Is NOT
 
-### Tier 1: Highest Impact, Do First
+### Remove "18-35% Guaranteed" From Any Framing
 
-#### 1.1 Replace Equal-Weight Ensemble with Stacked Meta-Learner
+No fund — public or private — "guarantees" 18-35% returns at any time. Even Renaissance Technologies' Medallion fund (~60%+ gross historically) is closed to outsiders, leverages enormously, and still has losing months. SEBI explicitly bars Indian advisors from promising fixed/guaranteed returns because no legitimate strategy can deliver this reliably. A tool that promised this would either be wrong or breaking the law.
+
+### What "Beat Jane Street/Goldman" Actually Requires
+- $50M+ infrastructure budget
+- Colocated servers at exchange
+- Proprietary order-flow data (not public)
+- FPGA/kernel-bypass networking
+- Team of 50+ PhDs
+- Leverage at institutional rates
+
+**This is not a gap you close by adding more features or better models.** Those firms don't run directional next-day stock prediction. Their PnL comes from market-making and statistical arbitrage at microsecond latency — a different business entirely.
+
+### What You CAN Actually Achieve
+- 51-53% directional accuracy with disciplined risk management
+- 15-25% annualized returns (not guaranteed, with significant drawdowns)
+- A statistically validated small edge (2-5 percentage points over coin flip), sized correctly with Kelly, compounding over years with controlled drawdowns
+- A system that's genuinely useful for personal research and learning
+
+That's the real version of "best in class open source," and it's an achievable one.
+
+---
+
+## Phase 1 — Foundations (Do This Before Touching Models)
+
+This is unglamorous but it's what every credible project gets right first.
+
+### 1.1 Point-in-Time Data Discipline
+**Impact:** Critical (the single most common reason backtests lie)
+**Effort:** Medium (3-5 days)
+**Files:** `src/features.py`, `src/flow.py`, `src/data_fetcher.py`
+
+**The problem:** Point-in-time data reflects only what was actually known at each historical timestamp, eliminating look-ahead bias in backtests. Without that discipline, strategies can appear profitable in backtests by using information that would not have been available at the time of the trade.
+
+**Audit these specific leak points:**
+
+| File | Risk | What to Check |
+|------|------|---------------|
+| `features.py:9` (`add_sentiment_features`) | Sentiment score from today's news joined to today's price row | Sentiment should be computed from headlines published BEFORE market close |
+| `features.py:27` (`add_flow_features`) | FII/DII data published at end-of-day joined to same day's price | FII/DII data for day T should only be available on day T+1 |
+| `features.py:49` (`add_pcr_features`) | Options PCR from market hours joined to intraday price | PCR computed during market hours, used with end-of-day close |
+| `features.py:70` (`add_multitimeframe_features`) | MTF signal computed using data that includes today's close | MTF data fetch should lag by at least 1 day |
+| `data_fetcher.py:17` (`fetch_stock_data`) | Parquet cache stale but still used | Cache invalidation strategy needed |
+
+**Concrete fix:**
+```python
+# BAD: FII data for day T joined to day T's price
+df["fii_net"] = fii_data["fii_net"]  # This is look-ahead bias
+
+# GOOD: FII data for day T joined to day T+1's price
+df["fii_net"] = fii_data["fii_net"].shift(1)  # Lag by 1 day
+```
+
+### 1.2 Move to Proper Time-Series Store
+**Impact:** Medium (prevents silent bugs, scales)
+**Effort:** Medium (3-5 days)
+**Files:** `src/data_fetcher.py`, new `src/db.py`
+
+**Current problem:** `@st.cache_data` + flat JSON/parquet files have no point-in-time guarantees. If you fetch data on Monday and a Tuesday feature uses Monday's close, but the feature was computed on Wednesday using Tuesday's close — that's look-ahead bias, and you won't see it.
+
+**Recommendation: DuckDB**
+| Option | Pros | Cons |
+|--------|------|------|
+| **DuckDB** | Zero-config, SQL, fast, file-based | New dependency |
+| **SQLite + partitioning** | Already in Python stdlib | Slower for large datasets |
+| **DVC + parquet** | Version control for data | More complex setup |
+
+```python
+import duckdb
+conn = duckdb.connect("data/stomar.duckdb")
+# Store with timestamp partitioning
+conn.execute("""
+    CREATE TABLE IF NOT EXISTS prices (
+        ticker VARCHAR, date DATE, open DOUBLE, high DOUBLE,
+        low DOUBLE, close DOUBLE, volume BIGINT,
+        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+""")
+# Query with point-in-time guarantee
+conn.execute("SELECT * FROM prices WHERE ticker = ? AND date <= ? ORDER BY date DESC LIMIT 1", [ticker, as_of_date])
+```
+
+### 1.3 Tests Around Backtester No-Leakage Guarantee
+**Impact:** Critical (the walk-forward claim is the project's foundation)
+**Effort:** Medium (3-5 days)
+**Files:** New `tests/` directory
+
+The no-leakage guarantee is the ONE claim the whole project's credibility rests on. If this is wrong, everything else is wrong.
+
+**Priority tests:**
+```
+tests/
+├── test_backtester.py      # Most critical
+│   ├── test_walk_forward_no_leakage()    # Verify no future data in training
+│   ├── test_train_test_no_overlap()      # Train and test sets are disjoint
+│   ├── test_feature_lag()               # Features use only past data
+│   ├── test_computed_metrics()           # Known inputs → known outputs
+│   └── test_portfolio_value()            # Buy/sell → correct cash/holdings
+├── test_features.py
+│   ├── test_feature_count()              # Always 41 features
+│   ├── test_no_nans_in_features()        # NaN handling works
+│   ├── test_sentiment_range()            # Score in [-1, 1]
+│   └── test_point_in_time()              # No future data in features
+├── test_ensemble.py
+│   ├── test_ensemble_direction()         # Output is 0 or 1
+│   ├── test_confidence_range()           # Output in [0, 100]
+│   └── test_meta_learner()              # Meta-learner outperforms equal weight
+├── test_model.py
+│   ├── test_save_load_roundtrip()        # Save → load → same predictions
+│   └── test_models_exist()              # File detection works
+└── test_risk.py
+    ├── test_var_range()                  # VaR in reasonable range
+    ├── test_kelly_positive()             # Kelly > 0 when win_rate > 0.5
+    └── test_sharpe_known_input()         # Known return series → known Sharpe
+```
+
+### 1.4 Docker + CI
+**Impact:** Low (nice for reproducibility, but do after the above)
+**Effort:** Low (1 day)
+
+```dockerfile
+FROM python:3.14-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["python", "-m", "streamlit", "run", "app.py"]
+```
+
+### 1.5 Reference: QuantConnect LEAN
+Worth skimming (not copying) for design ideas:
+- **Automated accounting** for splits, dividends, corporate actions (stomar doesn't handle these)
+- **Algorithmically selected asset universes** to avoid selection bias
+- **Point-in-time data** is baked into their architecture
+- You don't need their infrastructure, just steal the checklist
+
+### Phase 1 Exit Criteria
+- [ ] All leakage points in `features.py` and `flow.py` identified and fixed
+- [ ] DuckDB (or equivalent) stores data with point-in-time guarantees
+- [ ] `test_walk_forward_no_leakage()` passes
+- [ ] `test_point_in_time()` passes for all feature sources
+- [ ] Docker builds and runs successfully
+
+---
+
+## Phase 2 — Statistical Rigor on the Backtest
+
+Before adding any more models, find out if the 45-50% you already have is signal or noise.
+
+### 2.1 Combinatorial Purged Cross-Validation (CPCV)
+**Impact:** Critical (catches false discoveries in backtests)
+**Effort:** Medium (3-5 days)
+**Files:** New `src/significance.py`, update `src/backtester.py`
+
+**Why:** Walk-forward is good, but CPCV gives you the distribution of performance, not just a point estimate. It shows probability of ruin.
+
+**What to implement:**
+- Generate all possible train/test combinations from the walk-forward windows
+- For each combination, compute strategy performance
+- Build a distribution of outcomes
+- Calculate probability of losing money over N trades
+
+**Reference:** Marcos López de Prado, *Advances in Financial Machine Learning*, Chapter 12
+
+### 2.2 Deflated Sharpe Ratio
+**Impact:** Critical (adjusts for multiple testing bias)
+**Effort:** Low (1-2 days, once CPCV exists)
+**Files:** `src/significance.py`
+
+**The problem:** If you tested 100 strategies and found one with Sharpe 2.0, the deflated Sharpe might be 0.8 — noise. The more strategies you try, the more you need to deflate.
+
+**What to implement:**
+```python
+def deflated_sharpe_ratio(sharpe_observed, n_trials, sharpe_max, T, skew, kurtosis):
+    """
+    Adjusts observed Sharpe for multiple testing bias.
+    
+    sharpe_observed: Your best strategy's Sharpe
+    n_trials: How many strategy variations you tried
+    sharpe_max: Maximum possible Sharpe (theoretical bound)
+    T: Number of independent observations (trades)
+    skew: Return distribution skewness
+    kurtosis: Return distribution excess kurtosis
+    """
+    # Implementation from López de Prado
+```
+
+### 2.3 Permutation Test
+**Impact:** High (simple, powerful null hypothesis test)
+**Effort:** Low (1 day)
+**Files:** `src/significance.py`
+
+**What to do:**
+1. Take your labeled data (UP/DOWN for each day)
+2. Shuffle the labels randomly (destroying any signal)
+3. Re-run your backtest on the shuffled labels
+4. Repeat 1000 times → build null distribution
+5. See where your real backtest falls in that distribution
+6. If real performance isn't well outside the null distribution, the edge isn't there yet
+
+**This is the single most honest test of whether your signal is real.**
+
+### 2.4 Confidence Intervals on All Metrics
+**Impact:** Medium (shows uncertainty)
+**Effort:** Low (1 day)
+**Files:** `src/backtester.py`
+
+- Report confidence intervals on accuracy, Sharpe, annual return
+- Use bootstrap resampling for CI estimation
+- Never report point estimates without intervals
+
+### Phase 2 Exit Criteria
+- [ ] CPCV implemented and run on all 3 trained stocks
+- [ ] Deflated Sharpe computed (accounting for how many variations were tried)
+- [ ] Permutation test shows real performance is outside null distribution (p < 0.05)
+- [ ] All metrics reported with confidence intervals
+- [ ] **Decision: Is the signal real?** If yes → Phase 3. If no → pivot to volatility/ranking.
+
+---
+
+## Phase 3 — Modeling (Once Phase 2 Says There's Something Real)
+
+### 3.1 Replace Equal-Weight Ensemble with Stacked Meta-Learner
 **Impact:** Medium (typically +2-5% accuracy)
 **Effort:** Low (1-2 days)
 **File:** `src/ensemble.py`
 
-**What to do:**
 ```python
 # Current: equal weights
 # ensemble_prob = 0.2*lstm + 0.2*gru + 0.2*transformer + 0.2*xgb + 0.2*lgb
@@ -60,51 +281,13 @@ ensemble_prob = meta_model.predict_proba(meta_X_test)[:, 1]
 **Specifics:**
 - Use k-fold cross-validation to generate out-of-fold predictions for meta-learner training
 - Store the fitted meta-learner alongside base models
-- This is the single easiest win in the entire roadmap
+- This is the single easiest win in the modeling phase
 
-#### 1.2 Add Statistical Significance Testing
-**Impact:** Critical (knows if your signal is real)
-**Effort:** Medium (3-5 days)
-**Files:** New `src/significance.py`, update `src/backtester.py`
-
-**What to do:**
-- **Deflated Sharpe Ratio** (Marcos López de Prado): Adjusts Sharpe for multiple testing bias. If you tested 100 strategies and found one with Sharpe 2.0, the deflated Sharpe might be 0.8 — noise.
-- **Combinatorial Purged Cross-Validation (CPCV):** Walk-forward is good, but CPCV gives you the distribution of performance, not just a point estimate. Shows probability of ruin.
-- **Minimum Backtest Length:** How many years of data do you need to be 95% confident the strategy isn't luck? With daily data and ~50% accuracy, you need hundreds of independent trades.
-
-**Concrete steps:**
-1. Track every strategy variation you test (even mentally) — the more you try, the more you need to deflate
-2. Compute CPCV on walk-forward results: probability of losing money over N trades
-3. Report confidence intervals on all metrics, not just point estimates
-4. Add a "required sample size" calculator — tells you how many more trades needed
-
-#### 1.3 Reframe: Direction → Volatility/Ranking
-**Impact:** High (historically more exploitable edge)
-**Effort:** Medium (1-2 weeks)
-**Files:** `src/model.py`, `src/trainer.py`, `src/ensemble.py`
-
-**Why:** Predicting "will RELIANCE go up tomorrow" is the hardest problem in finance. Predicting "will RELIANCE be more volatile than TCS tomorrow" or "rank these 20 stocks by expected return" has historically had more retail-accessible edge.
-
-**Concrete alternatives:**
-| Target | Edge Source | Data Needed |
-|--------|------------|-------------|
-| **Volatility forecasting** | Mean-reversion in vol, GARCH effects | Historical vol, options IV |
-| **Cross-sectional ranking** | Relative strength, momentum | Universe of stocks |
-| **Sector rotation** | Business cycle, macro | Sector ETFs, economic data |
-| **Pairs trading** | Cointegration breakdowns | Correlated stock pairs |
-
-**For volatility specifically:**
-- Target: next-day realized volatility (not direction)
-- Features: GARCH inputs, options IV, ATR, historical vol surface
-- Metric: QLIKE loss (quasi-likelihood, standard for vol forecasting)
-- This is where retail traders can actually find edge because institutional focus is elsewhere
-
-#### 1.4 Add Regime-Conditional Model Routing
+### 3.2 Regime-Conditional Model Routing
 **Impact:** Medium-High (your regime detection already exists but isn't used)
 **Effort:** Low (1-2 days)
 **Files:** `src/ensemble.py`, `src/regime.py`
 
-**What to do:**
 ```python
 # Current: detect_regime() shows the regime but doesn't change model behavior
 # Better: different ensemble weights per regime
@@ -122,60 +305,29 @@ elif regime == "Sideways":
 - Backtest each regime separately — accuracy should differ meaningfully
 - This is where `regime.py` becomes actually useful instead of just decorative
 
----
+### 3.3 Reframe: Direction → Volatility/Ranking
+**Impact:** High (historically more exploitable edge)
+**Effort:** Medium (1-2 weeks)
+**Files:** `src/model.py`, `src/trainer.py`, `src/ensemble.py`
 
-### Tier 2: Important for Scale
+**Why:** Predicting "will RELIANCE go up tomorrow" is the hardest problem in finance. Predicting "will RELIANCE be more volatile than TCS tomorrow" or "rank these 20 stocks by expected return" has historically had more retail-accessible edge.
 
-#### 2.1 Move to Proper Time-Series Store
-**Impact:** Medium (prevents silent bugs, scales)
-**Effort:** Medium (3-5 days)
-**Files:** `src/data_fetcher.py`, new `src/db.py`
+**Concrete alternatives:**
 
-**Current problem:** `@st.cache_data` + flat JSON/parquet files have no point-in-time guarantees. If you fetch data on Monday and a Tuesday feature uses Monday's close, but the feature was computed on Wednesday using Tuesday's close — that's look-ahead bias, and you won't see it.
+| Target | Edge Source | Data Needed |
+|--------|------------|-------------|
+| **Volatility forecasting** | Mean-reversion in vol, GARCH effects | Historical vol, options IV |
+| **Cross-sectional ranking** | Relative strength, momentum | Universe of stocks |
+| **Sector rotation** | Business cycle, macro | Sector ETFs, economic data |
+| **Pairs trading** | Cointegration breakdowns | Correlated stock pairs |
 
-**Solution options (pick one):**
-| Option | Pros | Cons |
-|--------|------|------|
-| **DuckDB** | Zero-config, SQL, fast, file-based | New dependency |
-| **SQLite + partitioning** | Already in Python stdlib | Slower for large datasets |
-| **DVC + parquet** | Version control for data | More complex setup |
+**For volatility specifically:**
+- Target: next-day realized volatility (not direction)
+- Features: GARCH inputs, options IV, ATR, historical vol surface
+- Metric: QLIKE loss (quasi-likelihood, standard for vol forecasting)
+- This is where retail traders can actually find edge because institutional focus is elsewhere
 
-**DuckDB approach:**
-```python
-import duckdb
-conn = duckdb.connect("data/stomar.duckdb")
-# Store with timestamp partitioning
-conn.execute("""
-    CREATE TABLE IF NOT EXISTS prices (
-        ticker VARCHAR, date DATE, open DOUBLE, high DOUBLE,
-        low DOUBLE, close DOUBLE, volume BIGINT,
-        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-""")
-# Query with point-in-time guarantee
-conn.execute("SELECT * FROM prices WHERE ticker = ? AND date <= ? ORDER BY date DESC LIMIT 1", [ticker, as_of_date])
-```
-
-#### 2.2 Feature Store with Versioning
-**Impact:** Medium (reproducibility)
-**Effort:** Low (1-2 days)
-**Files:** `src/features.py`, new `src/feature_store.py`
-
-**What to do:**
-- Hash the feature computation code + input data to create a feature version ID
-- Store feature version alongside model training metadata
-- When loading a model, verify the feature version matches
-- This prevents "model trained on v1 features, running on v3 features" silent failures
-
-```python
-import hashlib
-
-def compute_feature_version(feature_cols, df_hash):
-    content = json.dumps(sorted(feature_cols)) + df_hash
-    return hashlib.sha256(content.encode()).hexdigest()[:12]
-```
-
-#### 2.3 Expand Trained Universe
+### 3.4 Expand Trained Universe
 **Impact:** Medium (more stocks = more opportunities, better regime detection)
 **Effort:** Low (automated)
 
@@ -187,97 +339,60 @@ def compute_feature_version(feature_cols, df_hash):
 - Track accuracy per sector — some sectors are more predictable than others
 - Consider expanding NSE_STOCKS to NIFTY 50 or NIFTY 100
 
-#### 2.4 Add Tests (Critical for Credibility)
-**Impact:** High (the walk-forward backtest claim is the project's foundation)
-**Effort:** Medium (3-5 days)
-**Files:** New `tests/` directory
+### 3.5 Reference: Microsoft Qlib
+Worth reading for ideas, particularly:
+- **Alpha factor library** — how they define and combine factors
+- **Model zoo** — what models work for equity prediction
+- **Rolling retraining** — more rigorous than static equal-weight ensemble
+- **Multi-factor combination** — how they handle many signals
 
-**What to test:**
-```
-tests/
-├── test_backtester.py      # Most critical
-│   ├── test_walk_forward_no_leakage()    # Verify no future data in training
-│   ├── test_computed_metrics()           # Known inputs → known outputs
-│   └── test_portfolio_value()            # Buy/sell → correct cash/holdings
-├── test_features.py
-│   ├── test_feature_count()              # Always 41 features
-│   ├── test_no_nans_in_features()        # NaN handling works
-│   └── test_sentiment_range()            # Score in [-1, 1]
-├── test_ensemble.py
-│   ├── test_ensemble_direction()         # Output is 0 or 1
-│   ├── test_confidence_range()           # Output in [0, 100]
-│   └── test_meta_learner()              # Meta-learner outperforms equal weight
-├── test_model.py
-│   ├── test_save_load_roundtrip()        # Save → load → same predictions
-│   └── test_models_exist()              # File detection works
-└── test_risk.py
-    ├── test_var_range()                  # VaR in reasonable range
-    ├── test_kelly_positive()             # Kelly > 0 when win_rate > 0.5
-    └── test_sharpe_known_input()         # Known return series → known Sharpe
-```
+GitHub: microsoft/qlib (39.3k stars, active as of 2026)
 
-**Priority tests:**
-1. `test_walk_forward_no_leakage()` — THE most important test
-2. `test_computed_metrics()` — sanity check backtester math
-3. `test_save_load_roundtrip()` — models survive serialization
+### 3.6 Research Direction: Multi-Agent LLM Debate Systems
+**Impact:** Research only (not a return-generating layer yet)
+**Effort:** N/A (exploration)
+
+A 2025-26 trend worth knowing about: setups where multiple AI agents (analysts, debaters, risk manager) debate stock picks in real-time. Interesting for combining sentiment/flow/technical signals into a single reasoned view rather than just weighted-averaging probabilities.
+
+**Treat as research direction, not production.** The value is in structured reasoning, not in generating trading signals.
+
+### Phase 3 Exit Criteria
+- [ ] Stacked meta-learner implemented and outperforms equal-weight
+- [ ] Regime-conditional routing implemented and backtested per-regime
+- [ ] Volatility forecasting or ranking prototype built (if Phase 2 suggested direction prediction isn't viable)
+- [ ] All 20 stocks in NSE_STOCKS trained
+- [ ] Qlib alpha factor library reviewed for ideas
 
 ---
 
-### Tier 3: Nice to Have
+## Phase 4 — Portfolio / Mutual Fund Framework (Factual)
 
-#### 3.1 Better Feature Selection
-**Impact:** Low-Medium (some features might be noise)
-**Effort:** Low (1 day)
+Once the above is solid, this is purely informational (not advice).
 
-- Use XGBoost/LightGBM feature importance to drop low-value features
-- Try mutual information or permutation importance
-- Current: 41 features. Might work better with 25-30
-- Track which features are consistently important vs noise
+### 4.1 True XIRR on Zerodha Holdings
+**Files:** `src/holdings.py`
 
-#### 3.2 Concept Drift Detection
-**Impact:** Medium (models degrade over time)
-**Effort:** Medium (2-3 days)
+Your `holdings.py` already half-does this. What's missing:
+- Proper cash flow extraction from Zerodha CSV (buy dates, sell dates, dividend dates)
+- XIRR Newton-Raphson solver with convergence checks
+- Comparison against benchmark (Nifty 50, category average)
 
-- Monitor rolling accuracy: if ensemble accuracy drops below 48% for N days, flag retrain
-- Track feature distribution shifts (KS test on feature distributions)
-- Auto-retrain trigger when drift detected
+### 4.2 Direct vs Regular Plan Expense Ratio Drag
+- Regular plans: 0.5-1.5% higher expense ratio than direct plans
+- Over 10-20 years, this compounds to 15-30% less wealth
+- Your holdings parser could flag which funds are regular vs direct
 
-#### 3.3 Walk-Forward with Expanding Window
-**Impact:** Low (current rolling window is fine, expanding is just different)
-**Effort:** Low (modify `walk_forward_split`)
+### 4.3 Equity/Debt/Gold Allocation Framework
+- Based on stated risk tolerance and time horizon
+- Not "what's the best allocation" but "what allocation matches YOUR situation"
+- Your regime detection could inform tactical allocation shifts
 
-- Currently: 3y train / 1y test / 6mo step (rolling)
-- Alternative: expanding window (train on everything from start to current)
-- Both are valid, expanding uses more data
-
-#### 3.4 Paper Trading Mode
-**Impact:** Medium (validates signals without real money)
-**Effort:** Medium (2-3 days)
-
-- Run signals in shadow mode for 3 months
-- Track: what would have been bought/sold, actual returns
-- Compare predicted vs actual before committing real capital
-
-#### 3.5 Docker + CI
-**Impact:** Low (nice for reproducibility, not urgent for solo project)
-**Effort:** Low (1 day)
-
-```dockerfile
-FROM python:3.14-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-CMD ["python", "-m", "streamlit", "run", "app.py"]
-```
-
-#### 3.6 Structured Logging
-**Impact:** Low (Streamlit state is hard to debug)
-**Effort:** Low (1 day)
-
-- Replace print statements with Python `logging` module
-- Log: training start/end, prediction confidence, backtest results
-- Structured format (JSON) for machine parsing
+### 4.4 Concentration Risk (Herfindahl Index)
+Your holdings tracker already computes Herfindahl. What to explain:
+- HHI > 0.25 = concentrated (risky)
+- HHI < 0.10 = diversified
+- Top-3 weight > 60% = top-heavy
+- Category breakdown (Gold/Silver/Debt/Equity) shows true diversification
 
 ---
 
@@ -292,6 +407,7 @@ CMD ["python", "-m", "streamlit", "run", "app.py"]
 | Add crypto/forex | Different market microstructure. Master NSE first. |
 | Buy expensive data feeds | yfinance is fine for research. Paid data only matters for live trading. |
 | Copy Jane Street/Goldman infrastructure | Different business entirely. They do market-making, not direction prediction. |
+| Promise guaranteed returns | SEBI violation. No legitimate strategy can guarantee returns. |
 
 ---
 
@@ -317,81 +433,37 @@ CMD ["python", "-m", "streamlit", "run", "app.py"]
 
 **Key insight:** Edge compounds, but variance is real. You WILL have losing months. The question is whether you have the discipline to keep trading when the edge is working but variance is against you.
 
-### What "Beat Jane Street" Actually Requires
-- $50M+ infrastructure budget
-- Colocated servers at exchange
-- Proprietary order-flow data (not public)
-- FPGA/kernel-bypass networking
-- Team of 50+ PhDs
-- Leverage (borrowed money) at institutional rates
-
-**This is not a gap you close by adding more features or better models.** It's a different business.
-
-### What You Can Actually Achieve
-- 51-53% directional accuracy with disciplined risk management
-- 15-25% annualized returns (not guaranteed, with significant drawdowns)
-- A system that's genuinely useful for personal research and learning
-- A portfolio that outperforms naive buy-and-hold *sometimes* (not always)
-
----
-
-## Recommended Execution Order
-
-### Phase 1: Validate (1-2 weeks)
-1. Add statistical significance testing (`src/significance.py`)
-2. Replace equal-weight ensemble with stacked meta-learner (`src/ensemble.py`)
-3. Add regime-conditional model routing (`src/ensemble.py`)
-4. Train all 20 stocks (batch script)
-5. Add 3 critical tests (backtester no-leakage, metrics, save/load)
-
-**Exit criteria:** You know if your signal is statistically significant. If it is, proceed. If not, the problem is fundamental, not engineering.
-
-### Phase 2: Harden (2-3 weeks)
-1. Move to DuckDB for data storage
-2. Add feature versioning
-3. Add comprehensive test suite
-4. Reframe toward volatility forecasting or cross-sectional ranking
-5. Add concept drift detection
-
-**Exit criteria:** The system is reproducible, testable, and you know its limitations.
-
-### Phase 3: Scale (1-2 months)
-1. Expand to NIFTY 50/100 universe
-2. Add paper trading mode
-3. Docker + CI
-4. Structured logging
-5. Better feature selection
-
-**Exit criteria:** The system can handle a real universe and you have 3 months of paper trading results.
-
----
-
-## Decision Point
-
-After Phase 1, you'll know:
-- **Is the signal real?** (statistical significance testing)
-- **Is the edge meaningful?** (stacked ensemble accuracy vs baseline)
-- **Does regime routing help?** (per-regime accuracy comparison)
-
-If the answer to all three is "yes" — proceed to Phase 2.
-If the answer to any is "no" — the problem is not engineering. It's the fundamental difficulty of the task. At that point, consider:
-- Shifting to volatility forecasting (more exploitable)
-- Shifting to cross-sectional ranking (relative strength)
-- Accepting that 51% is actually fine with proper risk management
-- Using the system for research/learning, not live trading
-
 ---
 
 ## Files to Modify (Quick Reference)
 
 | Improvement | Files |
 |-------------|-------|
-| Stacked meta-learner | `src/ensemble.py`, `src/model.py` |
-| Statistical significance | New `src/significance.py`, `src/backtester.py` |
-| Volatility forecasting | `src/model.py`, `src/trainer.py`, `src/ensemble.py`, `src/features.py` |
-| Regime routing | `src/ensemble.py`, `src/regime.py` |
+| Point-in-time fixes | `src/features.py`, `src/flow.py`, `src/data_fetcher.py` |
 | DuckDB storage | `src/data_fetcher.py`, New `src/db.py` |
+| CPCV + Deflated Sharpe | New `src/significance.py`, `src/backtester.py` |
+| Permutation test | New `src/significance.py` |
+| Stacked meta-learner | `src/ensemble.py`, `src/model.py` |
+| Regime routing | `src/ensemble.py`, `src/regime.py` |
+| Volatility forecasting | `src/model.py`, `src/trainer.py`, `src/ensemble.py`, `src/features.py` |
 | Feature versioning | `src/features.py`, New `src/feature_store.py` |
 | Tests | New `tests/` directory |
 | Concept drift | New `src/drift.py`, `src/trainer.py` |
 | Paper trading | `src/portfolio.py`, `app.py` |
+| XIRR / holdings | `src/holdings.py` |
+| Docker + CI | New `Dockerfile`, `.github/workflows/` |
+
+---
+
+## Recommended Execution Order (Summary)
+
+| Phase | Focus | Duration | Key Question |
+|-------|-------|----------|--------------|
+| **1** | Foundations | 2-3 weeks | Is the data clean? Is the backtest honest? |
+| **2** | Statistical rigor | 1-2 weeks | Is the signal real or noise? |
+| **3** | Modeling | 2-4 weeks | Can we make the edge bigger and more robust? |
+| **4** | Portfolio framework | 1-2 weeks | How to apply this to real holdings? |
+
+**After Phase 2, you'll know:** Is the 45-50% signal statistically significant? If yes, proceed. If no, the problem is fundamental, not engineering — pivot to volatility forecasting or cross-sectional ranking.
+
+The realistic, still genuinely valuable target: a statistically validated small edge (2-5 percentage points over a coin flip), sized correctly with Kelly, compounding over years with controlled drawdowns. That's the real version of "best in class open source," and it's an achievable one.
