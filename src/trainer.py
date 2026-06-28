@@ -25,6 +25,8 @@ FEATURE_COLS = [
     "volatility_5d", "volatility_10d", "volatility_20d",
     "return_lag_1", "return_lag_2", "return_lag_3", "return_lag_5",
     "day_of_week", "month", "quarter", "day_of_month",
+    "sentiment_score", "fii_net", "dii_net", "flow_signal",
+    "pcr", "mtf_signal", "mtf_confidence",
 ]
 
 SEQ_LENGTH = 60
@@ -79,7 +81,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     df = fetch_stock_data(ticker, period="5y", force_refresh=force_retrain)
     print(f"Fetched {len(df)} rows")
 
-    df_feat = add_technical_indicators(df)
+    df_feat = add_technical_indicators(df, ticker=ticker)
     df_feat = df_feat.replace([np.inf, -np.inf], np.nan).dropna()
     print(f"After features: {len(df_feat)} rows")
 

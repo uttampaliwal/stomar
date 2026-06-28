@@ -1,9 +1,91 @@
 import pandas as pd
 import numpy as np
 import ta
+import os
+import time
+import json
 
 
-def add_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
+def add_sentiment_features(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    df = df.copy()
+    cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+    cache_file = os.path.join(cache_dir, f"sentiment_{ticker.replace('.','_')}.json")
+
+    score = 0.0
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file) as f:
+                data = json.load(f)
+            score = data.get("score", 0.0)
+        except Exception:
+            pass
+
+    df["sentiment_score"] = score
+    return df
+
+
+def add_flow_features(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+    cache_file = os.path.join(cache_dir, "fii_dii.parquet")
+
+    fii_net = 0.0
+    dii_net = 0.0
+    if os.path.exists(cache_file):
+        try:
+            flow_df = pd.read_parquet(cache_file)
+            if len(flow_df) > 0:
+                fii_net = float(flow_df.iloc[0]["fii_net"])
+                dii_net = float(flow_df.iloc[0]["dii_net"])
+        except Exception:
+            pass
+
+    df["fii_net"] = fii_net
+    df["dii_net"] = dii_net
+    df["flow_signal"] = 1.0 if fii_net > 0 and dii_net > 0 else (-1.0 if fii_net < -500 else 0.0)
+    return df
+
+
+def add_pcr_features(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+    cache_file = os.path.join(cache_dir, "options_pcr.json")
+
+    pcr = 1.0
+    max_pain = 0.0
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file) as f:
+                data = json.load(f)
+            pcr = data.get("pcr_oi", 1.0)
+            max_pain = data.get("max_pain", 0.0)
+        except Exception:
+            pass
+
+    df["pcr"] = pcr
+    df["max_pain"] = max_pain
+    return df
+
+
+def add_multitimeframe_features(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    df = df.copy()
+    try:
+        from src.multitimeframe import fetch_mtf_data, get_combined_signal
+        mtf = fetch_mtf_data(ticker)
+        if mtf:
+            signal = get_combined_signal(mtf)
+            df["mtf_signal"] = signal["direction"]
+            df["mtf_confidence"] = signal["confidence"]
+        else:
+            df["mtf_signal"] = 0
+            df["mtf_confidence"] = 0
+    except Exception:
+        df["mtf_signal"] = 0
+        df["mtf_confidence"] = 0
+    return df
+
+
+def add_technical_indicators(df: pd.DataFrame, ticker: str = None) -> pd.DataFrame:
     df = df.copy()
     close = df["close"]
     high = df["high"]
@@ -53,6 +135,12 @@ def add_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # Target
     df["target"] = close.shift(-1) / close - 1
     df["target_direction"] = (df["target"] > 0).astype(int)
+
+    if ticker:
+        df = add_sentiment_features(df, ticker)
+        df = add_flow_features(df)
+        df = add_pcr_features(df)
+        df = add_multitimeframe_features(df, ticker)
 
     return df
 

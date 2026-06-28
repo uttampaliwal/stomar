@@ -192,7 +192,7 @@ def tab_predictions():
         st.error(f"Failed to fetch data: {e}")
         return
 
-    df_feat = add_technical_indicators(df)
+    df_feat = add_technical_indicators(df, ticker=ticker)
     curr = df["close"].iloc[-1]
     prev_c = df["close"].iloc[-2]
     chg = curr - prev_c
@@ -381,7 +381,7 @@ def tab_backtest():
     if st.button("▶ Run Backtest", type="primary", width='stretch'):
         with st.spinner("Running backtest..."):
             df = fetch_stock_data(ticker, period="5y")
-            df_feat = add_technical_indicators(df)
+            df_feat = add_technical_indicators(df, ticker=ticker)
             try:
                 lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
             except Exception as e:
@@ -434,7 +434,7 @@ def tab_scanner():
         for i, ticker in enumerate(trained):
             try:
                 df = fetch_stock_data(ticker, period="6mo")
-                df_feat = add_technical_indicators(df)
+                df_feat = add_technical_indicators(df, ticker=ticker)
                 lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
                 d, conf, det = predict_ensemble(lstm, gru, transformer, xgb, scaler, feat, df_feat)
                 price = df["close"].iloc[-1]
