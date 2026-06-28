@@ -15,7 +15,7 @@ from src.model import load_models, models_exist, DEVICE
 from src.trainer import train_for_ticker, FEATURE_COLS
 from src.ensemble import predict_ensemble
 from src.portfolio import Portfolio
-from src.backtester import run_backtest, generate_model_signals
+from src.backtester import run_simple_backtest as run_backtest, generate_model_signals, run_walk_forward_backtest, compute_metrics
 from src.sentiment import get_stock_sentiment
 from src.flow import get_flow_sentiment, fetch_options_pcr
 from src.multitimeframe import fetch_mtf_data, get_combined_signal
@@ -371,53 +371,88 @@ def tab_portfolio():
 
 
 def tab_backtest():
-    st.markdown(f'<div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:1rem;"><span class="gradient-text" style="font-size:2rem;font-weight:800;">Backtest</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:1rem;"><span class="gradient-text" style="font-size:2rem;font-weight:800;">Walk-Forward Backtest</span></div>', unsafe_allow_html=True)
+    st.caption("Out-of-sample testing: trains on 3y, tests on 1y, rolls forward — no data leakage")
     ticker = st.selectbox("Stock", NSE_STOCKS, key="bt_ticker")
-    if not models_exist(ticker):
-        st.warning("Train models first (Predictions tab)")
-        return
-    capital = st.number_input("Initial Capital (₹)", 10000, 10_000_000, 100000, step=50000)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        capital = st.number_input("Capital (₹)", 10000, 10_000_000, 100000, step=50000)
+    with c2:
+        stop_loss = st.slider("Stop Loss %", 1, 20, 5)
+    with c3:
+        take_profit = st.slider("Take Profit %", 5, 50, 15)
 
-    if st.button("▶ Run Backtest", type="primary", width='stretch'):
-        with st.spinner("Running backtest..."):
+    if st.button("▶ Run Walk-Forward Backtest", type="primary", width='stretch'):
+        with st.spinner(f"Training & testing {ticker} across rolling windows... (2-5 min)"):
             df = fetch_stock_data(ticker, period="5y")
             df_feat = add_technical_indicators(df, ticker=ticker)
-            try:
-                lstm, gru, transformer, xgb, scaler, feat = load_models(ticker)
-            except Exception as e:
-                st.error(f"Failed to load models: {e}")
-                st.stop()
-            signals = generate_model_signals(ticker, df_feat, lstm, gru, transformer, xgb, scaler, feat)
-            stats, portfolio = run_backtest(df_feat, signals, capital)
+            from src.trainer import FEATURE_COLS
+            metrics, portfolio, results = run_walk_forward_backtest(
+                ticker, df_feat, FEATURE_COLS,
+                train_years=3, test_years=1, step_months=6,
+                initial_capital=capital,
+                stop_loss_pct=stop_loss / 100,
+                take_profit_pct=take_profit / 100,
+            )
             st.session_state.portfolio = portfolio
 
-        if stats:
-            r1, r2, r3, r4 = st.columns(4)
-            colr = "00d4aa" if stats["total_return"] >= 0 else "ff4444"
-            r1.markdown(metric_card("Return", f'<span style="color:#{colr}">{stats["total_return"]:.1%}</span>'), unsafe_allow_html=True)
-            r2.markdown(metric_card("Sharpe", stats["sharpe_ratio"]), unsafe_allow_html=True)
-            r3.markdown(metric_card("Max DD", f'{stats["max_drawdown"]:.1f}%'), unsafe_allow_html=True)
-            r4.markdown(metric_card("Win Rate", f'{stats["win_rate"]:.1f}%'), unsafe_allow_html=True)
+        if metrics:
+            st.markdown('<div class="section-header">Walk-Forward Results (Out-of-Sample)</div>', unsafe_allow_html=True)
+            r1, r2, r3, r4, r5 = st.columns(5)
+            acc = metrics.get("ensemble_accuracy", 0)
+            acc_c = "#00d4aa" if acc > 0.5 else "#ff4444"
+            r1.markdown(f'<div class="glass" style="text-align:center"><div class="metric-label">Ensemble Accuracy</div><div style="font-size:1.5rem;font-weight:700;color:{acc_c}">{acc:.1%}</div></div>', unsafe_allow_html=True)
 
-            eq = pd.DataFrame(portfolio.equity_curve)
-            if len(eq) > 1:
-                eq["date"] = pd.to_datetime(eq["date"])
-                bh = capital * (df["close"] / df["close"].iloc[0])
+            sim_ret = metrics.get("simulated_annual_return", 0)
+            ret_c = "#00d4aa" if sim_ret > 0 else "#ff4444"
+            r2.markdown(f'<div class="glass" style="text-align:center"><div class="metric-label">Simulated Annual</div><div style="font-size:1.5rem;font-weight:700;color:{ret_c}">{sim_ret:.1%}</div></div>', unsafe_allow_html=True)
+
+            r3.markdown(f'<div class="glass" style="text-align:center"><div class="metric-label">Simulated Sharpe</div><div style="font-size:1.5rem;font-weight:700">{metrics.get("simulated_sharpe", 0):.2f}</div></div>', unsafe_allow_html=True)
+
+            r4.markdown(f'<div class="glass" style="text-align:center"><div class="metric-label">Test Days</div><div style="font-size:1.5rem;font-weight:700">{metrics.get("total_test_days", 0)}</div></div>', unsafe_allow_html=True)
+
+            r5.markdown(f'<div class="glass" style="text-align:center"><div class="metric-label">Windows</div><div style="font-size:1.5rem;font-weight:700">{metrics.get("n_windows", 0)}</div></div>', unsafe_allow_html=True)
+
+            if results:
+                st.markdown('<div class="section-header">Prediction Distribution</div>', unsafe_allow_html=True)
+                rdf = pd.DataFrame(results)
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=eq["date"], y=eq["equity"], mode="lines",
-                    name="Strategy", line=dict(color="#00d4aa", width=2)))
-                bhd = df.index[:len(eq)]
-                fig.add_trace(go.Scatter(x=bhd, y=bh.values[:len(bhd)], name="Buy & Hold",
-                    line=dict(color="rgba(255,255,255,0.3)", width=1, dash="dash")))
-                fig.update_layout(template="plotly_dark", height=400,
+                buys = rdf[rdf["predicted"] == 1]
+                sells = rdf[rdf["predicted"] == 0]
+                fig.add_trace(go.Histogram(x=buys["ensemble_prob"], name="BUY", marker_color="#00d4aa", opacity=0.7))
+                fig.add_trace(go.Histogram(x=sells["ensemble_prob"], name="SELL", marker_color="#ff4444", opacity=0.7))
+                fig.update_layout(template="plotly_dark", height=300, barmode="overlay",
                     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                    margin=dict(l=10,r=10,t=10,b=10),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                    margin=dict(l=10,r=10,t=10,b=10), xaxis_title="Ensemble Probability")
                 st.plotly_chart(fig, width='stretch')
 
-            df_t = pd.DataFrame(portfolio.trades)
-            st.markdown(f'<div class="section-header">Trades ({len(df_t)})</div>', unsafe_allow_html=True)
-            st.dataframe(df_t.iloc[::-1], width='stretch')
+                acc_by_model = {}
+                for m in ["lstm", "gru", "transformer"]:
+                    correct = (rdf[m] == rdf["actual"]).sum()
+                    acc_by_model[m.upper()] = correct / len(rdf) * 100
+                xgb_correct = ((rdf["xgb_prob"] > 0.5).astype(int) == rdf["actual"]).sum()
+                acc_by_model["XGBoost"] = xgb_correct / len(rdf) * 100
+
+                st.markdown('<div class="section-header">Individual Model Accuracy</div>', unsafe_allow_html=True)
+                mc = st.columns(4)
+                for i, (nm, a) in enumerate(acc_by_model.items()):
+                    c = "#00d4aa" if a > 50 else "#ff4444"
+                    mc[i].markdown(f'<div class="glass" style="text-align:center;padding:0.6rem"><div class="metric-label">{nm}</div><div style="font-size:1.2rem;font-weight:700;color:{c}">{a:.1f}%</div></div>', unsafe_allow_html=True)
+
+                st.markdown(f'<div class="section-header">Per-Window Breakdown</div>', unsafe_allow_html=True)
+                window_size = len(results) // metrics.get("n_windows", 1)
+                for w in range(metrics.get("n_windows", 0)):
+                    start = w * window_size
+                    end = min(start + window_size, len(results))
+                    window_results = results[start:end]
+                    if window_results:
+                        wr = sum(1 for r in window_results if r["predicted"] == r["actual"]) / len(window_results) * 100
+                        first_date = window_results[0]["date"]
+                        last_date = window_results[-1]["date"]
+                        bar_c = "#00d4aa" if wr > 50 else "#ff4444"
+                        st.markdown(f'<div style="display:flex;align-items:center;gap:1rem;margin:0.3rem 0;"><span style="color:var(--text-dim);min-width:200px;font-size:0.85rem">{first_date} → {last_date}</span><div style="flex:1;height:8px;background:var(--card-border);border-radius:4px;overflow:hidden;"><div style="width:{wr}%;height:100%;background:{bar_c};border-radius:4px;"></div></div><span style="font-weight:600;min-width:50px;text-align:right;">{wr:.1f}%</span></div>', unsafe_allow_html=True)
+        else:
+            st.warning("Not enough data for walk-forward backtest.")
 
 
 def tab_scanner():
