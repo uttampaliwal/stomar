@@ -181,6 +181,18 @@ class ModelRegistry:
 
         self._save_registry(ticker, versions)
 
+        prod_dir = os.path.join(MODELS_DIR, "production")
+        os.makedirs(prod_dir, exist_ok=True)
+        if os.path.exists(target["model_path"]):
+            dst = os.path.join(
+                prod_dir, f"{ticker.replace('.', '_')}_v{to_version}.pt"
+            )
+            shutil.copy2(target["model_path"], dst)
+        else:
+            logger.warning(
+                f"Model file not found for {ticker} v{to_version}: {target['model_path']}"
+            )
+
         logger.info(f"Rolled back {ticker} to v{to_version}")
         return ModelVersion(**target)
 
@@ -190,8 +202,17 @@ class ModelRegistry:
         for fname in os.listdir(self.registry_dir):
             if not fname.endswith("_registry.json"):
                 continue
-            ticker = fname.replace("_registry.json", "").replace("_", ".")
-            versions = self._load_registry(ticker)
+            encoded = fname.replace("_registry.json", "")
+            path = os.path.join(self.registry_dir, fname)
+            try:
+                with open(path) as f:
+                    versions = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+            if versions and "ticker" in versions[0]:
+                ticker = versions[0]["ticker"]
+            else:
+                ticker = encoded.replace("_", ".")
             tickers[ticker] = {
                 "total_versions": len(versions),
                 "production": next(

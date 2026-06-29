@@ -166,7 +166,9 @@ def compute_ic_series(df, feature_col, target_col, window=60):
     if len(valid_data) < window:
         return pd.Series(dtype=float)
 
-    ic_values = valid_data[target_col].rolling(window).corr(valid_data[feature_col])
+    ranks_feat = valid_data[feature_col].rolling(window).rank()
+    ranks_tgt = valid_data[target_col].rolling(window).rank()
+    ic_values = ranks_tgt.corr(ranks_feat)
     return ic_values
 
 

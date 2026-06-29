@@ -687,8 +687,12 @@ def tab_portfolio():
         <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Portfolio</span>
         <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Performance Overview</span>
     </div>""", unsafe_allow_html=True)
-    p = st.session_state.portfolio
-    stats = p.get_stats()
+    try:
+        p = st.session_state.portfolio
+        stats = p.get_stats()
+    except Exception as e:
+        st.error(f"Failed to load portfolio: {e}")
+        return
     if not stats:
         st.markdown(f"""<div class="glass" style="text-align:center;padding:3rem;">
             <div style="font-size:2rem;margin-bottom:0.5rem;">📊</div>
@@ -891,6 +895,7 @@ def tab_consensus():
                 mc = _pickle.load(f)
 
     results = []
+    errors = []
     progress = st.progress(0, text="Scanning all stocks...")
 
     for i, ticker in enumerate(NSE_STOCKS):
@@ -1039,9 +1044,14 @@ def tab_consensus():
                 "_color": consensus_color,
             })
         except Exception as e:
-            pass
+            errors.append((ticker, str(e)))
 
     progress.empty()
+
+    if errors:
+        with st.expander(f"⚠ {len(errors)} stocks skipped (click to view)", expanded=False):
+            for t, err in errors:
+                st.caption(f"{t}: {err}")
 
     if results:
         df_c = pd.DataFrame(results)
@@ -1251,41 +1261,41 @@ def tab_optimizer():
 
             result = optimize_portfolio(prices)
 
-        st.markdown('<div class="section-header" style="margin-top:1.5rem;">Optimal Portfolios</div>', unsafe_allow_html=True)
-        for ptype, label in [("max_sharpe", "MAX SHARPE"), ("min_variance", "MIN VARIANCE"), ("black_litterman", "BLACK-LITTERMAN")]:
-            p = result[ptype]
-            c1, c2, c3 = st.columns([2, 1, 1])
-            with c1:
-                st.markdown(f'<span style="font-weight:700;font-size:0.85rem;letter-spacing:0.03em;">{label}</span>', unsafe_allow_html=True)
-                for i, t in enumerate(selected):
-                    w = p["weights"][i]
-                    bar = "█" * int(w * 30)
-                    st.markdown(f"  {t.replace('.NS','')}: **{w:.1%}** `{bar}`")
-            with c2:
-                ret_val = p.get("return", 0)
-                st.markdown(f'<div class="stat-item"><div class="metric-label">EXP. RETURN</div><div class="metric-val" style="font-size:1.2rem;">{ret_val:.1%}</div></div>', unsafe_allow_html=True)
-            with c3:
-                vol_val = p.get("volatility", 0)
-                st.markdown(f'<div class="stat-item"><div class="metric-label">VOLATILITY</div><div class="metric-val" style="font-size:1.2rem;">{vol_val:.1%}</div></div>', unsafe_allow_html=True)
-            st.markdown('<hr style="border:none;border-top:1px solid var(--border-primary);margin:1rem 0;">', unsafe_allow_html=True)
+            st.markdown('<div class="section-header" style="margin-top:1.5rem;">Optimal Portfolios</div>', unsafe_allow_html=True)
+            for ptype, label in [("max_sharpe", "MAX SHARPE"), ("min_variance", "MIN VARIANCE"), ("black_litterman", "BLACK-LITTERMAN")]:
+                p = result[ptype]
+                c1, c2, c3 = st.columns([2, 1, 1])
+                with c1:
+                    st.markdown(f'<span style="font-weight:700;font-size:0.85rem;letter-spacing:0.03em;">{label}</span>', unsafe_allow_html=True)
+                    for i, t in enumerate(selected):
+                        w = p["weights"][i]
+                        bar = "█" * int(w * 30)
+                        st.markdown(f"  {t.replace('.NS','')}: **{w:.1%}** `{bar}`")
+                with c2:
+                    ret_val = p.get("return", 0)
+                    st.markdown(f'<div class="stat-item"><div class="metric-label">EXP. RETURN</div><div class="metric-val" style="font-size:1.2rem;">{ret_val:.1%}</div></div>', unsafe_allow_html=True)
+                with c3:
+                    vol_val = p.get("volatility", 0)
+                    st.markdown(f'<div class="stat-item"><div class="metric-label">VOLATILITY</div><div class="metric-val" style="font-size:1.2rem;">{vol_val:.1%}</div></div>', unsafe_allow_html=True)
+                st.markdown('<hr style="border:none;border-top:1px solid var(--border-primary);margin:1rem 0;">', unsafe_allow_html=True)
 
-        if result["efficient_frontier"]:
-            ef = pd.DataFrame(result["efficient_frontier"])
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=ef["volatility"], y=ef["return"], mode="lines+markers",
-                name="Efficient Frontier", line=dict(color="#22d3ee", width=2),
-                marker=dict(size=6, color="#22d3ee")))
-            ms = result["max_sharpe"]
-            fig.add_trace(go.Scatter(x=[ms["volatility"]], y=[ms["return"]], mode="markers",
-                name="Max Sharpe", marker=dict(color="#8b5cf6", size=16, symbol="star",
-                line=dict(width=2, color="white"))))
-            fig.update_layout(template="plotly_dark", height=380,
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(family="Inter, sans-serif"),
-                xaxis_title="Volatility", yaxis_title="Return",
-                margin=dict(l=0,r=0,t=20,b=0),
-                xaxis=dict(gridcolor="rgba(51,65,85,0.3)"), yaxis=dict(gridcolor="rgba(51,65,85,0.3)"))
-            st.plotly_chart(fig, width='stretch')
+            if result["efficient_frontier"]:
+                ef = pd.DataFrame(result["efficient_frontier"])
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=ef["volatility"], y=ef["return"], mode="lines+markers",
+                    name="Efficient Frontier", line=dict(color="#22d3ee", width=2),
+                    marker=dict(size=6, color="#22d3ee")))
+                ms = result["max_sharpe"]
+                fig.add_trace(go.Scatter(x=[ms["volatility"]], y=[ms["return"]], mode="markers",
+                    name="Max Sharpe", marker=dict(color="#8b5cf6", size=16, symbol="star",
+                    line=dict(width=2, color="white"))))
+                fig.update_layout(template="plotly_dark", height=380,
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(family="Inter, sans-serif"),
+                    xaxis_title="Volatility", yaxis_title="Return",
+                    margin=dict(l=0,r=0,t=20,b=0),
+                    xaxis=dict(gridcolor="rgba(51,65,85,0.3)"), yaxis=dict(gridcolor="rgba(51,65,85,0.3)"))
+                st.plotly_chart(fig, width='stretch')
         except Exception as e:
             st.error(f"Portfolio optimization failed: {e}")
 
@@ -1864,33 +1874,36 @@ def tab_pipeline():
     max_dd = st.slider("Max Drawdown", 0.10, 0.50, 0.30, 0.05, key="pipe_max_dd")
 
     if st.button("🚀 Run Pipeline", type="primary", width='stretch', key="pipe_run_btn"):
-        config = PipelineConfig(
-            tickers=selected,
-            min_oos_accuracy=min_acc,
-            min_oos_sharpe=min_sharpe,
-            max_drawdown_threshold=max_dd,
-        )
-        pipeline = RetrainingPipeline(config)
+        try:
+            config = PipelineConfig(
+                tickers=selected,
+                min_oos_accuracy=min_acc,
+                min_oos_sharpe=min_sharpe,
+                max_drawdown_threshold=max_dd,
+            )
+            pipeline = RetrainingPipeline(config)
 
-        progress = st.progress(0)
-        status_text = st.empty()
+            progress = st.progress(0)
+            status_text = st.empty()
 
-        for i, ticker in enumerate(selected):
-            status_text.text(f"Running pipeline for {ticker}...")
-            progress.progress((i) / len(selected))
-            result = pipeline.run(ticker)
-            icon = {"success": "✅", "failed": "❌", "rejected": "⚠️"}.get(result.status, "❓")
-            st.markdown(f'{icon} **{ticker}** [{result.stage}] {result.message}')
+            for i, ticker in enumerate(selected):
+                status_text.text(f"Running pipeline for {ticker}...")
+                progress.progress((i) / len(selected))
+                result = pipeline.run(ticker)
+                icon = {"success": "✅", "failed": "❌", "rejected": "⚠️"}.get(result.status, "❓")
+                st.markdown(f'{icon} **{ticker}** [{result.stage}] {result.message}')
 
-        progress.progress(1.0)
-        status_text.text("Pipeline complete!")
+            progress.progress(1.0)
+            status_text.text("Pipeline complete!")
 
-        summary = pipeline.get_summary()
-        sc1, sc2, sc3, sc4 = st.columns(4)
-        sc1.metric("Total", summary["total"])
-        sc2.metric("Success", summary["success"])
-        sc3.metric("Failed", summary["failed"])
-        sc4.metric("Rejected", summary["rejected"])
+            summary = pipeline.get_summary()
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            sc1.metric("Total", summary["total"])
+            sc2.metric("Success", summary["success"])
+            sc3.metric("Failed", summary["failed"])
+            sc4.metric("Rejected", summary["rejected"])
+        except Exception as e:
+            st.error(f"Pipeline failed: {e}")
 
 
 def tab_paper_trading():
@@ -1898,16 +1911,23 @@ def tab_paper_trading():
     st.caption("Simulate trades with real delayed prices. No real money at risk.")
 
     if "paper_trader" not in st.session_state:
-        st.session_state.paper_trader = PaperTrader(
-            initial_capital=100_000,
-            slippage_bps=5,
-            risk_limits=RiskLimits(),
-        )
+        try:
+            st.session_state.paper_trader = PaperTrader(
+                initial_capital=100_000,
+                slippage_bps=5,
+                risk_limits=RiskLimits(),
+            )
+        except Exception as e:
+            st.error(f"Failed to initialize paper trader: {e}")
+            return
 
     trader = st.session_state.paper_trader
 
-    # ── Portfolio Summary ──
-    summary = trader.get_summary()
+    try:
+        summary = trader.get_summary()
+    except Exception as e:
+        st.error(f"Failed to load paper trading summary: {e}")
+        return
     c1, c2, c3, c4 = st.columns(4)
     equity = summary["current_equity"]
     ret = summary["total_return_pct"]
@@ -1938,23 +1958,26 @@ def tab_paper_trading():
                                step=0.05, key="paper_stop") if "STOP" in otype else 0
 
     if st.button("Submit Order", type="primary", key="paper_submit"):
-        order = trader.place_order(
-            ticker=ticker,
-            side=OrderSide.BUY if side == "BUY" else OrderSide.SELL,
-            order_type={
-                "MARKET": OrderType.MARKET,
-                "LIMIT": OrderType.LIMIT,
-                "STOP_LOSS": OrderType.STOP_LOSS,
-                "STOP_MARKET": OrderType.STOP_MARKET,
-            }[otype],
-            quantity=quantity,
-            price=price,
-            stop_price=stop,
-        )
-        if order.status.value == "REJECTED":
-            st.error(f"Order rejected: {order.notes}")
-        else:
-            st.success(f"Order submitted: {order.order_id}")
+        try:
+            order = trader.place_order(
+                ticker=ticker,
+                side=OrderSide.BUY if side == "BUY" else OrderSide.SELL,
+                order_type={
+                    "MARKET": OrderType.MARKET,
+                    "LIMIT": OrderType.LIMIT,
+                    "STOP_LOSS": OrderType.STOP_LOSS,
+                    "STOP_MARKET": OrderType.STOP_MARKET,
+                }[otype],
+                quantity=quantity,
+                price=price,
+                stop_price=stop,
+            )
+            if order.status.value == "REJECTED":
+                st.error(f"Order rejected: {order.notes}")
+            else:
+                st.success(f"Order submitted: {order.order_id}")
+        except Exception as e:
+            st.error(f"Order failed: {e}")
 
     # ── Simulate Bar ──
     st.divider()
@@ -1976,13 +1999,16 @@ def tab_paper_trading():
         sim_v = st.number_input("Volume", min_value=0, value=100000, step=1000, key="sim_v")
 
     if st.button("Feed Bar", key="feed_bar"):
-        records = trader.on_bar(sim_ticker, sim_o, sim_h, sim_l, sim_c, sim_v)
-        if records:
-            for r in records:
-                st.info(f"Filled: {r.side} {r.quantity} {r.ticker} @ ₹{r.fill_price:.2f} "
-                        f"(P&L: ₹{r.pnl:+.2f})")
-        else:
-            st.warning("No orders filled on this bar.")
+        try:
+            records = trader.on_bar(sim_ticker, sim_o, sim_h, sim_l, sim_c, sim_v)
+            if records:
+                for r in records:
+                    st.info(f"Filled: {r.side} {r.quantity} {r.ticker} @ ₹{r.fill_price:.2f} "
+                            f"(P&L: ₹{r.pnl:+.2f})")
+            else:
+                st.warning("No orders filled on this bar.")
+        except Exception as e:
+            st.error(f"Bar processing failed: {e}")
 
     # ── Positions ──
     st.divider()
@@ -2031,18 +2057,27 @@ def tab_paper_trading():
     ac1, ac2, ac3 = st.columns(3)
     with ac1:
         if st.button("Cancel All Orders", key="cancel_all"):
-            cancelled = trader.cancel_all()
-            st.success(f"Cancelled {len(cancelled)} orders.")
+            try:
+                cancelled = trader.cancel_all()
+                st.success(f"Cancelled {len(cancelled)} orders.")
+            except Exception as e:
+                st.error(f"Cancel failed: {e}")
     with ac2:
         if st.button("Export Session", key="export_session"):
-            path = os.path.join("data", "paper_session.json")
-            trader.export_session(path)
-            st.success(f"Exported to {path}")
+            try:
+                path = os.path.join("data", "paper_session.json")
+                trader.export_session(path)
+                st.success(f"Exported to {path}")
+            except Exception as e:
+                st.error(f"Export failed: {e}")
     with ac3:
         if st.button("Reset Session", key="reset_session"):
-            trader.reset()
-            st.success("Session reset.")
-            st.rerun()
+            try:
+                trader.reset()
+                st.success("Session reset.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Reset failed: {e}")
 
 
 def tab_mf_tracker():
@@ -2053,8 +2088,12 @@ def tab_mf_tracker():
     from src.mf_tracker import MFTracker
     from src.holdings import INDIAN_MF_MAP
 
-    tracker = MFTracker()
-    tracker.load_state("mf_state.json")
+    try:
+        tracker = MFTracker()
+        tracker.load_state("mf_state.json")
+    except Exception as e:
+        st.error(f"Failed to load MF tracker: {e}")
+        return
 
     # --- Add Holding ---
     with st.expander("➕ Add / Update Holding", expanded=False):
@@ -2069,11 +2108,14 @@ def tab_mf_tracker():
         with c4:
             category = st.selectbox("Category", ["Equity", "Debt", "Hybrid", "Index", "ELSS", "Other"], key="mf_cat")
         if st.button("Add Holding", key="mf_add"):
-            ticker = INDIAN_MF_MAP.get(selected_fund, selected_fund)
-            tracker.add_holding(ticker, units, avg_nav, fund_name=selected_fund, category=category)
-            tracker.save_state("mf_state.json")
-            st.success(f"Added {selected_fund} ({units} units @ ₹{avg_nav})")
-            st.rerun()
+            try:
+                ticker = INDIAN_MF_MAP.get(selected_fund, selected_fund)
+                tracker.add_holding(ticker, units, avg_nav, fund_name=selected_fund, category=category)
+                tracker.save_state("mf_state.json")
+                st.success(f"Added {selected_fund} ({units} units @ ₹{avg_nav})")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to add holding: {e}")
 
     if not tracker.holdings:
         st.info("No MF holdings yet. Add your first fund above.")
@@ -2081,12 +2123,15 @@ def tab_mf_tracker():
 
     # --- Fetch NAVs ---
     if st.button("🔄 Refresh NAV Data", key="mf_refresh"):
-        with st.spinner("Fetching NAV history..."):
-            for ticker in tracker.holdings:
-                tracker.fetch_nav_history(ticker, period="2y")
-        tracker.save_state("mf_state.json")
-        st.success("NAV data refreshed.")
-        st.rerun()
+        try:
+            with st.spinner("Fetching NAV history..."):
+                for ticker in tracker.holdings:
+                    tracker.fetch_nav_history(ticker, period="2y")
+            tracker.save_state("mf_state.json")
+            st.success("NAV data refreshed.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"NAV refresh failed: {e}")
 
     # --- Portfolio Summary ---
     st.subheader("Portfolio Summary")
@@ -2153,9 +2198,12 @@ def tab_mf_tracker():
                     st.plotly_chart(fig, use_container_width=True)
 
             if st.button("Remove", key=f"mf_remove_{ticker}"):
-                tracker.remove_holding(ticker)
-                tracker.save_state("mf_state.json")
-                st.rerun()
+                try:
+                    tracker.remove_holding(ticker)
+                    tracker.save_state("mf_state.json")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to remove: {e}")
 
     # --- Benchmark Comparison ---
     st.subheader("Benchmark Comparison (vs Nifty 50)")
@@ -2189,13 +2237,16 @@ def tab_ledger():
 
     from src.ledger import Ledger
 
-    from src.constants import LEDGER_DB
-    db_path = LEDGER_DB
+    db_path = os.path.join(os.path.dirname(__file__), "data", "stomar.db")
     if not os.path.exists(db_path):
         st.info("No ledger found. Run `python run_daily.py` to start logging decisions.")
         return
 
-    ledger = Ledger(db_path)
+    try:
+        ledger = Ledger(db_path)
+    except Exception as e:
+        st.error(f"Failed to open ledger: {e}")
+        return
 
     # --- Portfolio Summary ---
     st.subheader("Portfolio Overview")

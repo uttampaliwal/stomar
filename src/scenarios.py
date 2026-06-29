@@ -8,6 +8,8 @@ Allows users to test different strategies:
 """
 import numpy as np
 
+RISK_FREE_RATE = 0.065
+
 
 def _max_drawdown(returns):
     """Compute max drawdown from returns array."""
@@ -15,8 +17,9 @@ def _max_drawdown(returns):
         return 0.0
     equity = np.cumprod(1 + returns)
     running_max = np.maximum.accumulate(equity)
-    drawdown = (equity - running_max) / running_max
-    return float(drawdown.min())
+    with np.errstate(divide="ignore", invalid="ignore"):
+        drawdown = np.where(running_max > 0, (equity - running_max) / running_max, 0.0)
+    return float(np.nanmin(drawdown))
 
 
 def scenario_buy_and_hold(df):
@@ -24,11 +27,11 @@ def scenario_buy_and_hold(df):
     close = df["close"]
     returns = close.pct_change().dropna()
 
-    total_return = float(close.iloc[-1] / close.iloc[0] - 1)
+    total_return = float(close.iloc[-1] / close.iloc[0] - 1) if close.iloc[0] > 0 else 0.0
     n_years = max(len(returns) / 252, 0.01)
-    ann_return = float((1 + total_return) ** (1 / n_years) - 1)
+    ann_return = float((1 + total_return) ** (1 / n_years) - 1) if total_return > -1 else -1.0
     ann_vol = float(returns.std() * np.sqrt(252))
-    sharpe = (ann_return - 0.065) / ann_vol if ann_vol > 0 else 0
+    sharpe = (ann_return - RISK_FREE_RATE) / ann_vol if ann_vol > 0 else 0
 
     return {
         "name": "Buy & Hold",
@@ -59,7 +62,7 @@ def scenario_momentum(df, lookback=20):
     n_years = max(len(strategy_returns) / 252, 0.01)
     ann_return = float((1 + total_return) ** (1 / n_years) - 1)
     ann_vol = float(np.std(strategy_returns) * np.sqrt(252))
-    sharpe = (ann_return - 0.065) / ann_vol if ann_vol > 0 else 0
+    sharpe = (ann_return - RISK_FREE_RATE) / ann_vol if ann_vol > 0 else 0
     n_trades = int(np.sum(np.abs(np.diff(signals))))
 
     return {
@@ -97,7 +100,7 @@ def scenario_mean_reversion(df, window=20):
     n_years = max(len(strategy_returns) / 252, 0.01)
     ann_return = float((1 + total_return) ** (1 / n_years) - 1)
     ann_vol = float(np.std(strategy_returns) * np.sqrt(252))
-    sharpe = (ann_return - 0.065) / ann_vol if ann_vol > 0 else 0
+    sharpe = (ann_return - RISK_FREE_RATE) / ann_vol if ann_vol > 0 else 0
     n_trades = int(np.sum(np.abs(np.diff(signals))))
 
     return {
@@ -130,7 +133,7 @@ def scenario_volatility_target(df, target_vol=0.15, window=20):
     n_years = max(len(strategy_returns) / 252, 0.01)
     ann_return = float((1 + total_return) ** (1 / n_years) - 1)
     ann_vol = float(np.std(strategy_returns) * np.sqrt(252))
-    sharpe = (ann_return - 0.065) / ann_vol if ann_vol > 0 else 0
+    sharpe = (ann_return - RISK_FREE_RATE) / ann_vol if ann_vol > 0 else 0
 
     return {
         "name": f"Vol Target ({target_vol:.0%})",
@@ -166,7 +169,7 @@ def scenario_sma_crossover(df, short_window=10, long_window=50):
     n_years = max(len(strategy_returns) / 252, 0.01)
     ann_return = float((1 + total_return) ** (1 / n_years) - 1)
     ann_vol = float(np.std(strategy_returns) * np.sqrt(252))
-    sharpe = (ann_return - 0.065) / ann_vol if ann_vol > 0 else 0
+    sharpe = (ann_return - RISK_FREE_RATE) / ann_vol if ann_vol > 0 else 0
     n_trades = int(np.sum(np.abs(np.diff(signals))))
 
     return {

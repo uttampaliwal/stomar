@@ -179,7 +179,10 @@ def list_versions() -> list:
         if fname == "latest.json" or not fname.endswith(".json"):
             continue
         path = os.path.join(FEATURE_VERSIONS_DIR, fname)
-        with open(path) as f:
-            versions.append(json.load(f))
+        try:
+            with open(path) as f:
+                versions.append(json.load(f))
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Skipping corrupted feature version file %s: %s", fname, e)
 
     return sorted(versions, key=lambda v: v.get("created_at", ""))
