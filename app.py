@@ -433,7 +433,12 @@ def metric_card(label, value, delta=None, help_text=None, icon=None):
     icon_html = f'<span style="font-size:1.2rem;margin-right:0.3rem;">{icon}</span>' if icon else ""
     if delta is not None:
         d_str = str(delta)
-        is_up = "+" in d_str or (d_str.replace('.','').replace('-','').isdigit() and not d_str.startswith('-'))
+        numeric_str = d_str.replace('%', '').replace('+', '').strip()
+        try:
+            numeric_val = float(numeric_str)
+            is_up = numeric_val > 0
+        except ValueError:
+            is_up = "+" in d_str
         color = "#10b981" if is_up else "#f43f5e"
         arrow = "▲" if is_up else "▼"
         delta_html = f'<div style="font-size:0.75rem;font-weight:600;color:{color};margin-top:0.25rem;">{arrow} {d_str}</div>'
@@ -661,9 +666,6 @@ def tab_predictions():
                     mc[i].markdown(f'<div class="stat-item" style="padding:0.6rem 0.4rem;"><div class="metric-label">{nm}</div><div style="font-weight:700;color:{c};font-size:0.8rem;font-family:var(--font-mono);">{a}</div></div>', unsafe_allow_html=True)
 
     # Long term chart
-    st.markdown('<div class="section-header" style="margin-top:0.5rem">Long Term Trend</div>', unsafe_allow_html=True)
-    sma_200 = df["close"].rolling(200).mean()
-    # ─── Long Term Trend ───
     st.markdown('<div class="section-header" style="margin-top:0.5rem">Long Term Trend</div>', unsafe_allow_html=True)
     sma_200 = df["close"].rolling(200).mean()
     fig2 = go.Figure()
@@ -924,7 +926,6 @@ def tab_consensus():
             meta_conf = 0
             if mc is not None and mc.model is not None:
                 try:
-                    from src.ensemble import predict_ensemble as pe
                     from src.meta_controller import SIGNAL_NAMES
                     from src.risk import compute_var, compute_cvar, compute_sharpe
                     from src.volatility import forecast_volatility
@@ -943,14 +944,46 @@ def tab_consensus():
                     ens_dir = 1 if ensemble_signal == "BUY" else (0 if ensemble_signal == "SELL" else 0)
                     ens_conf_val = ensemble_conf / 100.0 if ensemble_conf > 0 else 0.5
 
+                    # Fetch real sentiment, flow, and MTF signals
+                    sent_score = 0.0
+                    fii_n = 0.0
+                    dii_n = 0.0
+                    pcr_val = 1.0
+                    mtf_val = 0.0
+                    try:
+                        sent_result = get_stock_sentiment(ticker)
+                        sent_score = sent_result.get("weighted_score", sent_result.get("score", 0.0))
+                    except Exception:
+                        pass
+                    try:
+                        flow_sent = get_flow_sentiment(fii_n, dii_n)
+                        flow_map = {"Strong Bullish": 1.0, "Bullish": 0.5, "Positive": 0.5,
+                                    "Neutral": 0.0, "Negative": -0.5, "Bearish": -0.5,
+                                    "Strong Bearish": -1.0, "Divergent": 0.0}
+                        fii_n = flow_map.get(flow_sent, 0.0)
+                    except Exception:
+                        pass
+                    try:
+                        pcr_data = fetch_options_pcr()
+                        pcr_val = pcr_data.get("pcr_oi", 1.0)
+                    except Exception:
+                        pass
+                    try:
+                        mtf_raw = fetch_mtf_data(ticker)
+                        if mtf_raw:
+                            mtf_combined = get_combined_signal(mtf_raw)
+                            mtf_val = mtf_combined.get("direction", 0) * mtf_combined.get("confidence", 0) / 100.0
+                    except Exception:
+                        pass
+
                     state = {
                         "ensemble_direction": float(ens_dir),
                         "ensemble_confidence": float(ens_conf_val),
-                        "sentiment_score": 0.0,
-                        "fii_net": 0.0,
-                        "dii_net": 0.0,
-                        "pcr": 1.0,
-                        "mtf_signal": 0.0,
+                        "sentiment_score": float(sent_score),
+                        "fii_net": float(fii_n),
+                        "dii_net": float(dii_n),
+                        "pcr": float(pcr_val),
+                        "mtf_signal": float(mtf_val),
                         "regime_bull": regime_bull,
                         "regime_bear": regime_bear,
                         "var_95": float(var_val),
@@ -972,23 +1005,24 @@ def tab_consensus():
             except Exception:
                 regime = "N/A"
 
-            # 4. Consensus
-            buy_votes = sum(1 for s in [ensemble_signal, meta_signal] if s == "BUY")
-            sell_votes = sum(1 for s in [ensemble_signal, meta_signal] if s == "SELL")
+            # 4. Consensus — Ensemble, Meta-Controller, Regime vote
+            vote_signals = [s for s in [ensemble_signal, meta_signal, regime] if s not in ("N/A", None, "Unknown")]
+            buy_votes = sum(1 for s in vote_signals if s in ("BUY", "Bull"))
+            sell_votes = sum(1 for s in vote_signals if s in ("SELL", "Bear"))
 
-            if buy_votes >= 2:
+            if buy_votes >= 3 or (buy_votes >= 2 and meta_signal == "BUY"):
                 consensus = "STRONG BUY"
                 consensus_color = "#10b981"
-            elif buy_votes == 1 and sell_votes == 0 and meta_signal == "BUY":
+            elif buy_votes >= 1 and sell_votes == 0 and meta_signal == "BUY":
                 consensus = "BUY"
                 consensus_color = "#10b981"
-            elif sell_votes >= 2:
+            elif sell_votes >= 3 or (sell_votes >= 2 and meta_signal == "SELL"):
                 consensus = "STRONG SELL"
                 consensus_color = "#f43f5e"
-            elif sell_votes == 1 and buy_votes == 0 and meta_signal == "SELL":
+            elif sell_votes >= 1 and buy_votes == 0 and meta_signal == "SELL":
                 consensus = "SELL"
                 consensus_color = "#f43f5e"
-            elif buy_votes == 1 and sell_votes == 1:
+            elif buy_votes >= 1 and sell_votes >= 1:
                 consensus = "CONFLICTED"
                 consensus_color = "#f59e0b"
             else:
@@ -1025,8 +1059,8 @@ def tab_consensus():
         c4.markdown(f'<div class="stat-item"><div class="metric-label">CONFLICTED</div><div class="metric-val" style="color:#f59e0b">{conflict_count}</div></div>', unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("""**How to read:** Meta-Controller is the authoritative signal (combines all 14 modules).
-        Ensemble is the raw ML prediction. Regime shows market direction. **Consensus** requires Meta-Controller + Ensemble to agree.""")
+        st.markdown("""**How to read:** Consensus combines 3 signals: Ensemble (ML prediction), Meta-Controller (all 14 modules), and Regime (market direction).
+                Meta-Controller is authoritative. If all 3 agree → STRONG BUY/SELL. If Meta-Controller agrees with at least 1 other → BUY/SELL. If signals conflict → CONFLICTED.</div>""", unsafe_allow_html=True)
         st.markdown("---")
 
         display_cols = ["Stock", "Ensemble", "Meta-Ctrl", "Regime", "Confidence", "Consensus"]
@@ -1199,12 +1233,13 @@ def tab_optimizer():
     period = st.selectbox("History", ["6mo", "1y", "2y", "5y"], index=2, key="opt_period")
 
     if st.button("⚡ Optimize Portfolio", type="primary", width='stretch', key="opt_btn"):
-        with st.spinner("Fetching prices and optimizing..."):
-            prices = pd.DataFrame()
-            for t in selected:
-                df = fetch_stock_data(t, period=period)
-                prices[t] = df["close"]
-            prices = prices.dropna()
+        try:
+            with st.spinner("Fetching prices and optimizing..."):
+                prices = pd.DataFrame()
+                for t in selected:
+                    df = fetch_stock_data(t, period=period)
+                    prices[t] = df["close"]
+                prices = prices.dropna()
 
             if len(prices) < 60:
                 st.markdown(f"""<div class="glass" style="text-align:center;padding:2rem;">
@@ -1251,6 +1286,8 @@ def tab_optimizer():
                 margin=dict(l=0,r=0,t=20,b=0),
                 xaxis=dict(gridcolor="rgba(51,65,85,0.3)"), yaxis=dict(gridcolor="rgba(51,65,85,0.3)"))
             st.plotly_chart(fig, width='stretch')
+        except Exception as e:
+            st.error(f"Portfolio optimization failed: {e}")
 
 
 def tab_holdings():
@@ -1263,8 +1300,17 @@ def tab_holdings():
     uploaded = st.file_uploader("Upload Zerodha Holdings CSV", type=["csv"], key="holdings_upload")
 
     if uploaded:
-        holdings_df = parse_holdings_csv(uploaded)
-        stats = compute_portfolio_stats(holdings_df)
+        try:
+            holdings_df = parse_holdings_csv(uploaded)
+        except Exception as e:
+            st.error(f"Failed to parse holdings CSV: {e}")
+            holdings_df = pd.DataFrame()
+        if not holdings_df.empty:
+            try:
+                stats = compute_portfolio_stats(holdings_df)
+            except Exception as e:
+                st.error(f"Failed to compute portfolio stats: {e}")
+                stats = {}
 
         if stats:
             r1, r2, r3, r4 = st.columns(4)
@@ -1338,12 +1384,16 @@ def tab_risk():
     period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=2, key="risk_period")
 
     if st.button("⚡ Analyze Risk", type="primary", width='stretch', key="risk_btn"):
-        with st.spinner("Computing risk metrics..."):
-            df = fetch_stock_data(ticker, period=period)
-            returns = df["close"].pct_change().dropna().values
-            equity = (1 + returns).cumprod() * 100000
-            report = generate_risk_report(returns, equity)
-            regime = detect_regime(df["close"])
+        try:
+            with st.spinner("Computing risk metrics..."):
+                df = fetch_stock_data(ticker, period=period)
+                returns = df["close"].pct_change().dropna().values
+                equity = (1 + returns).cumprod() * 100000
+                report = generate_risk_report(returns, equity)
+                regime = detect_regime(df["close"])
+        except Exception as e:
+            st.error(f"Risk analysis failed: {e}")
+            return
 
         c1, c2 = st.columns(2)
         with c1:
@@ -1430,10 +1480,14 @@ def tab_volatility():
     period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=2, key="vol_period")
 
     if st.button("⚡ Analyze Volatility", type="primary", width='stretch', key="vol_btn"):
-        with st.spinner("Computing volatility metrics..."):
-            df = fetch_stock_data(ticker, period=period)
-            df_feat = add_technical_indicators(df, ticker=ticker)
-            result = full_volatility_analysis(df_feat)
+        try:
+            with st.spinner("Computing volatility metrics..."):
+                df = fetch_stock_data(ticker, period=period)
+                df_feat = add_technical_indicators(df, ticker=ticker)
+                result = full_volatility_analysis(df_feat)
+        except Exception as e:
+            st.error(f"Volatility analysis failed: {e}")
+            return
 
         c1, c2 = st.columns(2)
         with c1:
@@ -1592,9 +1646,13 @@ def tab_scenarios():
     period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=2, key="scenario_period")
 
     if st.button("⚡ Run Scenarios", type="primary", width='stretch', key="scenario_btn"):
-        with st.spinner("Running all scenarios..."):
-            df = fetch_stock_data(ticker, period=period)
-            scenarios = run_all_scenarios(df)
+        try:
+            with st.spinner("Running all scenarios..."):
+                df = fetch_stock_data(ticker, period=period)
+                scenarios = run_all_scenarios(df)
+        except Exception as e:
+            st.error(f"Scenario analysis failed: {e}")
+            return
 
         st.markdown('<div class="section-header">Scenario Results</div>', unsafe_allow_html=True)
         for s in scenarios:
@@ -1642,11 +1700,15 @@ def tab_regime_strategy():
     period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=2, key="regime_strat_period")
 
     if st.button("⚡ Analyze Regime Strategy", type="primary", width='stretch', key="regime_strat_btn"):
-        with st.spinner("Analyzing regime strategy..."):
-            df = fetch_stock_data(ticker, period=period)
-            returns = df["close"].pct_change().dropna()
-            regime_result = detect_regime(returns)
-            bt = backtest_regime_strategy(df, regime_result)
+        try:
+            with st.spinner("Analyzing regime strategy..."):
+                df = fetch_stock_data(ticker, period=period)
+                returns = df["close"].pct_change().dropna()
+                regime_result = detect_regime(returns)
+                bt = backtest_regime_strategy(df, regime_result)
+        except Exception as e:
+            st.error(f"Regime strategy analysis failed: {e}")
+            return
 
         c1, c2 = st.columns(2)
         with c1:
