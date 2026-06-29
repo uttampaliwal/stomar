@@ -23,6 +23,9 @@ from src.risk import generate_risk_report, kelly_criterion
 from src.optimizer import optimize_portfolio
 from src.holdings import parse_holdings_csv, compute_portfolio_stats
 from src.regime import detect_regime
+from src.paper_trader import PaperTrader
+from src.engine import OrderSide, OrderType
+from src.risk_controls import RiskLimits
 
 st.set_page_config(page_title="StoMar | Quant Intelligence", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 
@@ -1430,7 +1433,6 @@ def tab_regime_strategy():
     </div>""", unsafe_allow_html=True)
 
     from src.regime_strategy import backtest_regime_strategy, get_regime_allocation
-    from src.regime import detect_regime
 
     ticker = st.selectbox("Stock", NSE_STOCKS, key="regime_strat_ticker", label_visibility="collapsed")
     period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=2, key="regime_strat_period")
@@ -1625,9 +1627,161 @@ def tab_pipeline():
         sc4.metric("Rejected", summary["rejected"])
 
 
+def tab_paper_trading():
+    st.markdown("### 📝 Paper Trading Simulator")
+    st.caption("Simulate trades with real delayed prices. No real money at risk.")
+
+    if "paper_trader" not in st.session_state:
+        st.session_state.paper_trader = PaperTrader(
+            initial_capital=100_000,
+            slippage_bps=5,
+            risk_limits=RiskLimits(),
+        )
+
+    trader = st.session_state.paper_trader
+
+    # ── Portfolio Summary ──
+    summary = trader.get_summary()
+    c1, c2, c3, c4 = st.columns(4)
+    equity = summary["current_equity"]
+    ret = summary["total_return_pct"]
+    c1.metric("Equity", f"₹{equity:,.0f}", f"{ret:+.2%}")
+    c2.metric("Cash", f"₹{summary['cash']:,.0f}")
+    c3.metric("Realized P&L", f"₹{summary['realized_pnl']:,.0f}")
+    c4.metric("Unrealized P&L", f"₹{summary['unrealized_pnl']:,.0f}")
+
+    st.divider()
+
+    # ── Place Order ──
+    st.markdown("#### Place Order")
+    oc1, oc2, oc3, oc4, oc5 = st.columns(5)
+
+    with oc1:
+        ticker = st.selectbox("Ticker", NSE_STOCKS[:20], key="paper_ticker")
+    with oc2:
+        side = st.selectbox("Side", ["BUY", "SELL"], key="paper_side")
+    with oc3:
+        otype = st.selectbox("Type", ["MARKET", "LIMIT", "STOP_LOSS", "STOP_MARKET"],
+                             key="paper_otype")
+    with oc4:
+        quantity = st.number_input("Quantity", min_value=1, value=10, key="paper_qty")
+    with oc5:
+        price = st.number_input("Price (Limit)", min_value=0.0, value=0.0,
+                                step=0.05, key="paper_price") if otype == "LIMIT" else 0
+        stop = st.number_input("Stop Price", min_value=0.0, value=0.0,
+                               step=0.05, key="paper_stop") if "STOP" in otype else 0
+
+    if st.button("Submit Order", type="primary", key="paper_submit"):
+        order = trader.place_order(
+            ticker=ticker,
+            side=OrderSide.BUY if side == "BUY" else OrderSide.SELL,
+            order_type={
+                "MARKET": OrderType.MARKET,
+                "LIMIT": OrderType.LIMIT,
+                "STOP_LOSS": OrderType.STOP_LOSS,
+                "STOP_MARKET": OrderType.STOP_MARKET,
+            }[otype],
+            quantity=quantity,
+            price=price,
+            stop_price=stop,
+        )
+        if order.status.value == "REJECTED":
+            st.error(f"Order rejected: {order.notes}")
+        else:
+            st.success(f"Order submitted: {order.order_id}")
+
+    # ── Simulate Bar ──
+    st.divider()
+    st.markdown("#### Simulate Price Feed")
+    st.caption("Enter current bar OHLC to fill pending orders")
+
+    bc1, bc2, bc3, bc4, bc5, bc6 = st.columns(6)
+    with bc1:
+        sim_ticker = st.selectbox("Ticker", NSE_STOCKS[:20], key="sim_ticker")
+    with bc2:
+        sim_o = st.number_input("Open", min_value=0.0, value=100.0, step=0.5, key="sim_o")
+    with bc3:
+        sim_h = st.number_input("High", min_value=0.0, value=105.0, step=0.5, key="sim_h")
+    with bc4:
+        sim_l = st.number_input("Low", min_value=0.0, value=95.0, step=0.5, key="sim_l")
+    with bc5:
+        sim_c = st.number_input("Close", min_value=0.0, value=102.0, step=0.5, key="sim_c")
+    with bc6:
+        sim_v = st.number_input("Volume", min_value=0, value=100000, step=1000, key="sim_v")
+
+    if st.button("Feed Bar", key="feed_bar"):
+        records = trader.on_bar(sim_ticker, sim_o, sim_h, sim_l, sim_c, sim_v)
+        if records:
+            for r in records:
+                st.info(f"Filled: {r.side} {r.quantity} {r.ticker} @ ₹{r.fill_price:.2f} "
+                        f"(P&L: ₹{r.pnl:+.2f})")
+        else:
+            st.warning("No orders filled on this bar.")
+
+    # ── Positions ──
+    st.divider()
+    st.markdown("#### Open Positions")
+    if summary["open_positions"]:
+        pos_df = pd.DataFrame(summary["open_positions"]).T
+        pos_df.columns = ["Qty", "Avg Cost", "Current", "Mkt Value", "Unrl P&L", "P&L %"]
+        st.dataframe(pos_df, use_container_width=True)
+    else:
+        st.info("No open positions.")
+
+    # ── Pending Orders ──
+    st.markdown("#### Pending Orders")
+    pending = trader.engine.pending_orders
+    if pending:
+        pending_data = [
+            {"ID": o.order_id, "Ticker": o.ticker, "Side": o.side.value,
+             "Type": o.order_type.value, "Qty": o.quantity,
+             "Price": o.price, "Stop": o.stop_price}
+            for o in pending
+        ]
+        st.dataframe(pd.DataFrame(pending_data), use_container_width=True)
+    else:
+        st.info("No pending orders.")
+
+    # ── Trade Log ──
+    st.markdown("#### Trade Log")
+    log = trader.get_trade_log()
+    if log:
+        st.dataframe(pd.DataFrame(log), use_container_width=True)
+    else:
+        st.info("No trades yet.")
+
+    # ── Risk Status ──
+    st.markdown("#### Risk Status")
+    risk_status = summary["risk_status"]
+    rc1, rc2, rc3, rc4 = st.columns(4)
+    rc1.metric("Drawdown", f"{risk_status['drawdown_pct']:.2%}")
+    rc2.metric("Daily P&L", f"₹{risk_status['daily_pnl']:,.0f}")
+    rc3.metric("Weekly P&L", f"₹{risk_status['weekly_pnl']:,.0f}")
+    halt_status = "🛑 HALTED" if risk_status["halted"] else "✅ Active"
+    rc4.metric("Status", halt_status)
+
+    # ── Actions ──
+    st.divider()
+    ac1, ac2, ac3 = st.columns(3)
+    with ac1:
+        if st.button("Cancel All Orders", key="cancel_all"):
+            cancelled = trader.cancel_all()
+            st.success(f"Cancelled {len(cancelled)} orders.")
+    with ac2:
+        if st.button("Export Session", key="export_session"):
+            path = "paper_session.json"
+            trader.export_session(path)
+            st.success(f"Exported to {path}")
+    with ac3:
+        if st.button("Reset Session", key="reset_session"):
+            trader.reset()
+            st.success("Session reset.")
+            st.rerun()
+
+
 def main():
     # (header is now rendered inside tab_predictions)
-    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime", "📡 Monitoring", "🔄 Pipeline"])
+    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime", "📡 Monitoring", "🔄 Pipeline", "📝 Paper Trading"])
     with tabs[0]: tab_predictions()
     with tabs[1]: tab_portfolio()
     with tabs[2]: tab_backtest()
@@ -1643,6 +1797,7 @@ def main():
     with tabs[12]: tab_regime_strategy()
     with tabs[13]: tab_monitoring()
     with tabs[14]: tab_pipeline()
+    with tabs[15]: tab_paper_trading()
     st.markdown("""
     <div style="text-align:center;padding:2rem 0 1rem;margin-top:2rem;border-top:1px solid var(--border-primary);">
         <div style="font-size:0.7rem;color:var(--text-muted);letter-spacing:0.05em;">
