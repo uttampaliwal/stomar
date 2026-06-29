@@ -288,8 +288,11 @@ class MFTracker:
             "correlation": float(fund_ret.corr(bench_ret)),
         }
 
-    def save_state(self, path: str = "mf_state.json"):
+    def save_state(self, path: str = None):
         """Persist holdings + cached NAVs."""
+        if path is None:
+            from src.constants import MF_STATE_PATH
+            path = MF_STATE_PATH
         state = {
             "holdings": {
                 t: {"units": h.units, "avg_nav": h.avg_nav,
@@ -305,9 +308,12 @@ class MFTracker:
             json.dump(state, f, indent=2, default=str)
         logger.info("MF state saved to %s", path)
 
-    def load_state(self, path: str = "mf_state.json") -> bool:
+    def load_state(self, path: str = None) -> bool:
         """Load from disk."""
         import os
+        if path is None:
+            from src.constants import MF_STATE_PATH
+            path = MF_STATE_PATH
         if not os.path.exists(path):
             return False
         with open(path) as f:

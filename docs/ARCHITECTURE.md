@@ -8,28 +8,39 @@ System design, data flow, and module dependencies for StoMar.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     STREAMLIT UI (app.py)                       │
+│                STREAMLIT DASHBOARD (19 tabs, app.py)             │
 │  ┌──────────┬──────────┬──────────┬──────────┬──────────┐      │
-│  │ Predict  │Portfolio │ Backtest │ Scanner  │Sentiment │      │
+│  │ Predict  │Portfolio │ Backtest │ Scanner  │Consensus │      │
 │  ├──────────┼──────────┼──────────┼──────────┼──────────┤      │
-│  │ Mkt Pulse│Optimizer │ Holdings │  Risk    │          │      │
+│  │Sentiment │Mkt Pulse│Optimizer │ Holdings │  Risk    │      │
+│  ├──────────┼──────────┼──────────┼──────────┼──────────┤      │
+│  │Volatility│ Ranking  │Scenarios │ Regime   │Monitoring│      │
+│  ├──────────┼──────────┼──────────┼──────────┼──────────┤      │
+│  │ Pipeline │Paper Trd │MF Tracker│ Ledger   │          │      │
 │  └──────────┴──────────┴──────────┴──────────┴──────────┘      │
 │         │           │           │           │                   │
-│    ┌────▼────┐ ┌────▼────┐ ┌───▼────┐ ┌───▼────┐              │
-│    │ensemble │ │optimizer│ │holdings│ │ risk   │              │
-│    └────┬────┘ └────┬────┘ └───┬────┘ └───┬────┘              │
-│         │           │          │           │                    │
 │  ┌──────▼───────────▼──────────▼───────────▼──────┐            │
+│  │              Orchestration Layer                 │            │
+│  │  orchestrator.py  meta_controller.py  ledger.py │            │
+│  └──────────────────┬──────────────────────────────┘            │
+│                     │                                           │
+│  ┌──────────────────▼──────────────────────────────┐            │
+│  │              Signal Layer (14 modules)           │            │
+│  │  ensemble  sentiment  flow  regime  volatility  │            │
+│  │  ranking   risk  optimizer  mf_tracker  mtf     │            │
+│  │  backtester  execution_quality  benchmarks      │            │
+│  └──────────────────┬──────────────────────────────┘            │
+│                     │                                           │
+│  ┌──────────────────▼──────────────────────────────┐            │
 │  │              Core Engine Layer                   │            │
-│  │  trainer.py  backtester.py  sentiment.py  flow.py│           │
-│  │  features.py  model.py  multitimeframe.py regime.py│         │
+│  │  trainer.py  features.py  model.py  backfill.py │            │
 │  └──────────────────┬──────────────────────────────┘            │
 │                     │                                           │
 │  ┌──────────────────▼──────────────────────────────┐            │
 │  │              Data Layer                          │            │
-│  │  data_fetcher.py  (yfinance + NSE APIs)         │            │
-│  │  models/           (saved .pt, .pkl, .json)     │            │
-│  │  data/             (cached .parquet, .json)     │            │
+│  │  data_fetcher.py  data_sources.py  flow.py      │            │
+│  │  data/ (parquet cache, SQLite ledger)            │            │
+│  │  models/ (trained weights, meta-controller)      │            │
 │  └─────────────────────────────────────────────────┘            │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -42,7 +53,7 @@ System design, data flow, and module dependencies for StoMar.
 app.py
 ├── src/data_fetcher.py     (no internal deps)
 ├── src/features.py
-│   └── uses: sentiment.py, flow.py, multitimeframe.py (for alt features)
+│   └── uses: sentiment.py, flow.py, multitimeframe.py
 ├── src/model.py            (no internal deps — pure PyTorch/sklearn)
 ├── src/trainer.py
 │   ├── src/data_fetcher.py
@@ -52,6 +63,24 @@ app.py
 │   └── src/model.py (for DEVICE)
 ├── src/backtester.py
 │   └── src/portfolio.py
+├── src/orchestrator.py
+│   ├── src/data_fetcher.py
+│   ├── src/features.py
+│   ├── src/ensemble.py
+│   ├── src/meta_controller.py
+│   ├── src/ledger.py
+│   ├── src/sentiment.py
+│   ├── src/flow.py
+│   ├── src/multitimeframe.py
+│   ├── src/risk.py
+│   ├── src/regime.py
+│   ├── src/volatility.py
+│   └── src/paper_trader.py
+├── src/meta_controller.py
+│   └── src/ledger.py (for training data)
+├── src/ledger.py           (no internal deps — pure sqlite3)
+├── src/paper_trader.py
+│   └── src/risk_controls.py
 ├── src/portfolio.py        (no internal deps)
 ├── src/sentiment.py        (no internal deps — uses yfinance + HuggingFace)
 ├── src/flow.py             (no internal deps — uses requests + NSE APIs)
@@ -59,228 +88,198 @@ app.py
 ├── src/risk.py             (no internal deps — pure numpy)
 ├── src/optimizer.py        (no internal deps — uses scipy)
 ├── src/holdings.py         (no internal deps — uses yfinance)
-└── src/regime.py           (no internal deps — pure pandas/numpy)
+├── src/regime.py           (no internal deps — pure pandas/numpy)
+├── src/ranking.py          (no internal deps — pure pandas/numpy)
+├── src/volatility.py       (no internal deps — pure numpy)
+├── src/backfill.py
+│   ├── src/ledger.py
+│   ├── src/data_fetcher.py
+│   ├── src/features.py
+│   ├── src/ensemble.py
+│   └── src/regime.py
+└── src/constants.py        (path constants, trading costs)
 ```
 
-**Key insight:** Most `src/` modules are independent leaf nodes. Only `trainer.py` and `backtester.py` have internal dependencies. This makes the system highly modular — any module can be tested or replaced in isolation.
+**Key insight:** Most `src/` modules are independent leaf nodes. The orchestrator is the only module with many internal dependencies — it ties everything together.
 
 ---
 
 ## Data Flow
 
-### 1. Training Pipeline
+### 1. Daily Autonomous Loop
 
 ```
-User clicks "Train" in UI
+python run_daily.py
     │
     ▼
-train_for_ticker(ticker)                    [trainer.py:76]
+DailyOrchestrator.run()                      [orchestrator.py]
     │
-    ├── fetch_stock_data(ticker, "2y")      [data_fetcher.py:17]
-    │       │
-    │       ├── Check cache (data/*.parquet)
-    │       ├── If miss: yf.download(ticker)
-    │       └── Save to parquet cache
+    ├── For each ticker:
+    │   ├── fetch_stock_data(ticker)         [data_fetcher.py]
+    │   ├── add_technical_indicators(df)     [features.py]
+    │   │
+    │   ├── Collect 14 signals:
+    │   │   ├── predict_ensemble(...)        [ensemble.py]
+    │   │   ├── get_stock_sentiment(...)     [sentiment.py]
+    │   │   ├── get_flow_sentiment(...)      [flow.py]
+    │   │   ├── fetch_options_pcr(...)       [flow.py]
+    │   │   ├── get_combined_signal(...)     [multitimeframe.py]
+    │   │   ├── detect_regime(...)           [regime.py]
+    │   │   ├── compute_var/cvar/sharpe(...) [risk.py]
+    │   │   ├── forecast_volatility(...)     [volatility.py]
+    │   │   └── fetch_fundamentals(...)      [ranking.py]
+    │   │
+    │   ├── meta_controller.decide(state)    [meta_controller.py]
+    │   │   └── 14 inputs → 1 decision (BUY/SELL/HOLD)
+    │   │
+    │   ├── ledger.log_decision(...)         [ledger.py]
+    │   │
+    │   └── (optional) paper_trader.on_bar() [paper_trader.py]
     │
-    ├── add_technical_indicators(df)         [features.py:88]
-    │       │
-    │       ├── 33 technical indicators (ta library)
-    │       ├── Sentiment features (sentiment.py)
-    │       ├── FII/DII flow features (flow.py)
-    │       ├── Options PCR features (flow.py)
-    │       └── Multi-timeframe features (multitimeframe.py)
-    │
-    ├── prepare_lstm_data(df, FEATURE_COLS)  [features.py:148]
-    │       │
-    │       └── MinMaxScaler + sliding window (60 days)
-    │
-    ├── Train 5 models in sequence:
-    │   ├── StockLSTM   (PyTorch, 40 epochs, batch=32)
-    │   ├── StockGRU    (PyTorch, 40 epochs, batch=32)
-    │   ├── StockTransformer (PyTorch, 40 epochs, batch=32)
-    │   ├── XGBClassifier (sklearn API, 100 estimators)
-    │   └── LGBMClassifier (sklearn API, 100 estimators)
-    │
-    └── save_models(...)                    [model.py:105]
-            │
-            └── Save 8 files to models/:
-                ├── {ticker}_lstm.pt
-                ├── {ticker}_gru.pt
-                ├── {ticker}_transformer.pt
-                ├── {ticker}_xgb.pkl
-                ├── {ticker}_lgb.pkl
-                ├── {ticker}_scaler.pkl
-                ├── {ticker}_features.pkl
-                └── {ticker}_lstm_dim.pkl
+    └── Returns summary dict
 ```
 
-### 2. Prediction Pipeline
+### 2. Meta-Controller Decision Flow
 
 ```
-User selects stock in Predictions tab
+14 signal module outputs
     │
     ▼
-load_models(ticker)                         [model.py:119]
+MetaController.decide(state)                 [meta_controller.py]
     │
-    └── Returns: (lstm, gru, transformer, xgb, scaler, features, lgb)
+    ├── Build feature vector from state:
+    │   ├── ensemble_direction, ensemble_confidence
+    │   ├── sentiment_score, fii_net, dii_net
+    │   ├── pcr, mtf_signal
+    │   ├── regime_bull, regime_bear
+    │   ├── var_95, cvar_95, sharpe
+    │   ├── volatility_forecast
+    │   └── fundamental_score
+    │
+    ├── LogisticRegression.predict_proba(features)
+    │   └── Returns: action probabilities [sell_prob, hold_prob, buy_prob]
+    │
+    ├── Confidence scaling:
+    │   ├── confidence = max(probabilities)
+    │   ├── If confidence < 0.3 → HOLD (too uncertain)
+    │   └── If confidence < 0.5 → HOLD (not confident enough)
+    │
+    ├── Position sizing:
+    │   ├── base_size = 0.10 (10% of capital)
+    │   ├── scaled_size = base_size * confidence
+    │   └── capped at 0.20 (max 20% per position)
+    │
+    └── Returns: {"action", "confidence", "position_size", "reasoning"}
+```
+
+### 3. Training Pipeline
+
+```
+python run_daily.py --backfill
     │
     ▼
-predict_ensemble(...)                       [ensemble.py:6]
+HistoricalBackfill.run()                     [backfill.py]
     │
-    ├── LSTM forward pass   → lstm_dir, lstm_conf
-    ├── GRU forward pass    → gru_dir, gru_conf
-    ├── Transformer forward → trans_dir, trans_conf
-    ├── XGBoost predict     → xgb_dir, xgb_conf
-    ├── LightGBM predict    → lgb_dir, lgb_conf
+    ├── For each day in lookback period:
+    │   ├── Simulate what signals would have been
+    │   ├── Log decision to ledger
+    │   └── Compute actual outcome (next-day return)
     │
-    └── Weighted vote (20% each):
-        ├── direction = round(sum(weight * dir))
-        └── confidence = sum(weight * conf) * 100
+    └── Returns summary with accuracy metrics
+
     │
     ▼
-Returns: (ensemble_direction, confidence, details_dict)
+MetaController.train(ledger)                 [meta_controller.py]
+    │
+    ├── Query ledger for all resolved decisions
+    ├── Build feature matrix (14 features per decision)
+    ├── Train LogisticRegression on features → outcomes
+    ├── Save to models/meta_controller.pkl
+    └── Returns: {"accuracy", "n_samples", "weights"}
 ```
 
-### 3. Walk-Forward Backtest Pipeline
+### 4. Model Training Pipeline
 
 ```
-User clicks "Run Walk-Forward Backtest"
+train_for_ticker(ticker)                     [trainer.py]
     │
-    ▼
-run_walk_forward_backtest(...)               [backtester.py:88]
+    ├── fetch_stock_data(ticker, "1y")       [data_fetcher.py]
+    ├── add_technical_indicators(df)         [features.py] (48 features)
+    ├── prepare_lstm_data(df, FEATURE_COLS)  [features.py] (sliding window)
     │
-    ├── walk_forward_split(df)               [backtester.py:6]
-    │       │
-    │       └── Rolling windows:
-    │           ├── Window 1: Train [2020-2023], Test [2023-2024]
-    │           ├── Window 2: Train [2021-2024], Test [2024-2025]
-    │           └── (step = 6 months)
+    ├── Walk-forward validation (5 folds):
+    │   ├── For each fold:
+    │   │   ├── Train 5 models on training split
+    │   │   ├── Predict on test split
+    │   │   └── Record accuracy
+    │   └── Average accuracy across folds
     │
-    ├── For each window:
-    │   ├── Train all 5 models on training data
-    │   ├── Predict on test data
-    │   ├── Generate signals (BUY/SELL)
-    │   ├── Simulate trades with Portfolio class
-    │   └── Record per-day results
+    ├── Train final models on full data
+    ├── save_models(...)                     [model.py]
+    │   └── Save 8 files to models/
     │
-    ├── compute_metrics(equity_curve, trades) [backtester.py:25]
-    │       │
-    │       └── Returns: accuracy, annual return, Sharpe, etc.
-    │
-    └── Returns: (metrics, portfolio, all_test_results)
-```
-
-### 4. Sentiment Pipeline
-
-```
-get_stock_sentiment(ticker)                 [sentiment.py:133]
-    │
-    ├── Check cache (data/sentiment_cache/*.json, TTL=30min)
-    │
-    ├── fetch_news_headlines(ticker)        [sentiment.py:28]
-    │       │
-    │       ├── Google News RSS search
-    │       ├── Extract headlines + snippets
-    │       └── Return list of article dicts
-    │
-    ├── analyze_sentiment(articles)         [sentiment.py:84]
-    │       │
-    │       ├── Load FinBERT pipeline (ProsusAI/finbert)
-    │       ├── Classify each headline: positive/negative/neutral
-    │       └── Compute weighted average score (-1 to +1)
-    │
-    └── Returns: {"score": float, "label": str, "articles": list}
-```
-
-### 5. Market Pulse Pipeline
-
-```
-tab_market_pulse()                          [app.py:895]
-    │
-    ├── FII/DII Flow
-    │   └── fetch_fii_dii()                 [flow.py:29]
-    │       ├── NSE API request
-    │       └── Parse JSON → DataFrame
-    │
-    ├── Options PCR
-    │   └── fetch_options_pcr()             [flow.py:87]
-    │       ├── NSE options chain API
-    │       ├── Compute PCR = Put OI / Call OI
-    │       └── Find Max Pain strike price
-    │
-    └── Multi-Timeframe
-        └── fetch_mtf_data(ticker)          [multitimeframe.py:13]
-            ├── yfinance: 15m, 1h, 1d, 1wk data
-            ├── Add 8 indicators per timeframe
-            ├── Compute per-TF signal
-            └── Weighted combination → combined signal
+    └── (optional) Train meta-learner per ticker
 ```
 
 ---
 
 ## Model Architecture Details
 
-### StockLSTM (`model.py:12`)
+### StockLSTM
 ```
-Input (batch, 60, 41)
-  → LSTM(input_dim=41, hidden=128, num_layers=2, dropout=0.2)
-  → Linear(128, 64) → ReLU → Dropout(0.3)
-  → Linear(64, 1) → Sigmoid
-Output: probability ∈ [0, 1]
-```
-
-### StockGRU (`model.py:30`)
-```
-Input (batch, 60, 41)
-  → GRU(input_dim=41, hidden=128, num_layers=2, dropout=0.2)
-  → Linear(128, 64) → ReLU → Dropout(0.3)
-  → Linear(64, 1) → Sigmoid
-Output: probability ∈ [0, 1]
-```
-
-### StockTransformer (`model.py:48`)
-```
-Input (batch, 60, 41)
-  → Linear(41, 64) → Positional Encoding
-  → TransformerEncoder(d_model=64, nhead=4, num_layers=2)
-  → Linear(64, 32) → ReLU → Dropout(0.3)
+Input (batch, 60, 48)
+  → LSTM(input_dim=48, hidden=64, num_layers=2, dropout=0.3)
+  → Linear(64, 32) → ReLU
   → Linear(32, 1) → Sigmoid
 Output: probability ∈ [0, 1]
 ```
 
-### XGBoost (`model.py:86`)
+### StockGRU
 ```
-XGBClassifier(
-    n_estimators=100,
-    max_depth=6,
-    learning_rate=0.1,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    eval_metric='logloss'
-)
-Input: 41 features (flattened, no sequence)
+Input (batch, 60, 48)
+  → GRU(input_dim=48, hidden=64, num_layers=2, dropout=0.3)
+  → Linear(64, 32) → ReLU
+  → Linear(32, 1) → Sigmoid
 Output: probability ∈ [0, 1]
 ```
 
-### LightGBM (`model.py:95`)
+### StockTransformer
+```
+Input (batch, 60, 48)
+  → Linear(48, 64) → Positional Encoding
+  → TransformerEncoder(d_model=64, nhead=4, num_layers=2, norm_first=True)
+  → Linear(64, 32) → ReLU
+  → Linear(32, 1) → Sigmoid
+Output: probability ∈ [0, 1]
+```
+
+### XGBoost
+```
+XGBClassifier(
+    n_estimators=100, max_depth=4, learning_rate=0.03,
+    min_child_weight=5, gamma=0.1, reg_lambda=1.0,
+    subsample=0.8, colsample_bytree=0.8
+)
+Input: 48 features (flattened, no sequence)
+Output: probability ∈ [0, 1]
+```
+
+### LightGBM
 ```
 LGBMClassifier(
-    n_estimators=100,
-    max_depth=6,
-    learning_rate=0.1,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    verbose=-1
+    n_estimators=100, max_depth=4, learning_rate=0.03,
+    min_child_samples=30, reg_alpha=0.5, reg_lambda=0.1,
+    subsample=0.8, colsample_bytree=0.8
 )
-Input: 41 features (flattened, no sequence)
+Input: 48 features (flattened, no sequence)
 Output: probability ∈ [0, 1]
 ```
 
 ---
 
-## Feature Engineering (41 Features)
+## Feature Engineering (48 Features)
 
-### Technical Indicators (33)
+### Technical Indicators (40)
 | Feature | Source | Description |
 |---------|--------|-------------|
 | `rsi` | ta.RSIIndicator | Relative Strength Index (14) |
@@ -290,11 +289,11 @@ Output: probability ∈ [0, 1]
 | `bb_high` | ta.BollingerBands | Upper Bollinger Band |
 | `bb_low` | ta.BollingerBands | Lower Bollinger Band |
 | `bb_width` | computed | (High - Low) / Close |
-| `sma_20` | ta.SMAIndicator | 20-day Simple Moving Average |
-| `sma_50` | ta.SMAIndicator | 50-day Simple Moving Average |
-| `sma_200` | ta.SMAIndicator | 200-day Simple Moving Average |
-| `ema_12` | ta.EMAIndicator | 12-day Exponential MA |
-| `ema_26` | ta.EMAIndicator | 26-day Exponential MA |
+| `sma_20` | ta.SMAIndicator | 20-day SMA |
+| `sma_50` | ta.SMAIndicator | 50-day SMA |
+| `sma_200` | ta.SMAIndicator | 200-day SMA |
+| `ema_12` | ta.EMAIndicator | 12-day EMA |
+| `ema_26` | ta.EMAIndicator | 26-day EMA |
 | `adx` | ta.ADXIndicator | Average Directional Index |
 | `atr` | ta.AverageTrueRange | Average True Range (14) |
 | `obv` | ta.OnBalanceVolume | On-Balance Volume |
@@ -316,6 +315,13 @@ Output: probability ∈ [0, 1]
 | `momentum_20` | computed | 20-day momentum |
 | `volume_sma_20` | computed | 20-day volume MA |
 | `price_sma_ratio` | computed | Price / SMA(20) |
+| `high_low_ratio` | computed | High / Low |
+| `open_close_ratio` | computed | Open / Close |
+| `skew_20` | computed | 20-day rolling skew |
+| `kurt_20` | computed | 20-day rolling kurtosis |
+| `return_vol_corr` | computed | Return-volatility correlation |
+| `sma_diff` | computed | (SMA20 - SMA50) / SMA50 |
+| `ema_diff` | computed | (EMA12 - EMA26) / EMA26 |
 
 ### Alternative Data Features (8)
 | Feature | Source | Description |
@@ -323,7 +329,7 @@ Output: probability ∈ [0, 1]
 | `sentiment_score` | sentiment.py | FinBERT news sentiment (-1 to +1) |
 | `fii_net` | flow.py | FII net buy/sell (₹ Cr) |
 | `dii_net` | flow.py | DII net buy/sell (₹ Cr) |
-| `flow_signal` | computed | Combined FII+DII signal (1=bullish, 0=bearish) |
+| `flow_signal` | computed | Combined FII+DII signal |
 | `pcr` | flow.py | Put-Call Ratio |
 | `mtf_signal` | multitimeframe.py | Multi-timeframe combined signal |
 | `mtf_confidence` | multitimeframe.py | Multi-timeframe confidence |
@@ -335,34 +341,30 @@ Output: probability ∈ [0, 1]
 
 | Cache Type | Location | TTL | Mechanism |
 |-----------|----------|-----|-----------|
-| Stock data | `data/*.parquet` | Until retrain | `@st.cache_data` + parquet files |
-| Sentiment | `data/sentiment_cache/*.json` | 30 minutes | File-based with timestamp check |
-| FII/DII | `data/fii_dii/*.json` | 24 hours | File-based |
-| Options PCR | `data/options/*.json` | 1 hour | File-based |
-| MTF data | `data/mtf/*.json` | 24 hours | File-based |
-| Streamlit cache | In-memory | 1 hour | `@st.cache_data(ttl=3600)` |
+| Stock data | `data/*.parquet` | Until retrain | Parquet files |
+| Sentiment | `data/sentiment_*.json` | 30 minutes | File-based |
+| FII/DII | `data/fii_dii.parquet` | 24 hours | File-based |
+| Options PCR | `data/options_pcr.json` | 1 hour | File-based |
+| MTF data | `data/mtf_*.pkl` | 24 hours | File-based |
+| Meta-controller | `models/meta_controller.pkl` | Until retrain | Pickle |
 
 ---
 
 ## State Management
 
-### Session State Variables
+### Persistent State (survives restarts)
+| State | Location | Updated By |
+|-------|----------|------------|
+| Trading decisions | `data/stomar.db` | orchestrator.py |
+| Paper trading positions | `data/paper_state.json` | paper_trader.py |
+| Paper trading session | `data/paper_session.json` | paper_trader.py |
+| MF tracker holdings | `data/mf_state.json` | mf_tracker.py |
+| Meta-controller weights | `models/meta_controller.pkl` | meta_controller.py |
+
+### Session State (Streamlit only)
 | Variable | Type | Default | Purpose |
 |----------|------|---------|---------|
-| `portfolio` | `Portfolio` | `Portfolio(100000)` | Shared portfolio across Backtest + Portfolio tabs |
-| `last_ticker` | `str` | `NSE_STOCKS[0]` | Remembers last selected ticker |
-
-### Widget Keys (Implicit State)
-| Key | Tab | Widget |
-|-----|-----|--------|
-| `bt_ticker` | Backtest | Stock selector |
-| `sent_ticker` | Sentiment | Stock selector |
-| `tf_ticker` | Market Pulse | Stock selector |
-| `opt_stocks` | Optimizer | Multi-select |
-| `opt_period` | Optimizer | Period selector |
-| `holdings_upload` | Holdings | File uploader |
-| `risk_ticker` | Risk | Stock selector |
-| `risk_period` | Risk | Period selector |
+| `portfolio` | `Portfolio` | `Portfolio(100000)` | Shared portfolio across tabs |
 
 ---
 
@@ -370,20 +372,8 @@ Output: probability ∈ [0, 1]
 
 1. **Data fetch failures:** Caught at UI level, displayed as styled error card
 2. **Model load failures:** Warning displayed, user prompted to retrain
-3. **Sentiment failures:** FinBERT import wrapped in try/except, falls back gracefully
-4. **NSE API failures:** FII/DII and PCR show "unavailable" state when market closed
-5. **Training failures:** Caught per-model, other models continue training
-
----
-
-## File Size & Performance
-
-| Metric | Value |
-|--------|-------|
-| Total source lines (src/) | ~2,322 |
-| Total app.py lines | 1,258 |
-| Model files per stock | 8 files (~5-20 MB total) |
-| Training time per stock | ~30-90 seconds |
-| Walk-forward backtest | ~2-5 minutes per stock |
-| Sentiment analysis | ~5-15 seconds (cached 30 min) |
-| Streamlit startup | ~3-5 seconds |
+3. **Sentiment failures:** FinBERT import try/except, keyword fallback
+4. **NSE API failures:** FII/DII and PCR show "unavailable" when market closed
+5. **Training failures:** Caught per-model, other models continue
+6. **Meta-controller:** Falls back to ensemble if not trained
+7. **Ledger:** Creates tables on first use, handles missing columns

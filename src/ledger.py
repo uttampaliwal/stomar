@@ -4,7 +4,7 @@ Stores every decision, trade, portfolio snapshot, and outcome.
 This is the dataset for meta-controller training and performance analysis.
 
 Usage:
-    ledger = Ledger("stomar.db")
+    ledger = Ledger()  # uses data/stomar.db by default
     decision_id = ledger.log_decision(date="2025-01-15", ticker="RELIANCE.NS", ...)
     ledger.log_trade(decision_id, ticker="RELIANCE.NS", side="BUY", ...)
     ledger.log_outcome(decision_id, actual_return=0.012, actual_direction=1)
@@ -88,7 +88,10 @@ SIGNAL_COLUMNS = [
 class Ledger:
     """Persistent trading journal in SQLite."""
 
-    def __init__(self, db_path: str = "stomar.db"):
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            from src.constants import LEDGER_DB
+            db_path = LEDGER_DB
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path)
         self.conn.row_factory = sqlite3.Row

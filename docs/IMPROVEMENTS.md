@@ -10,47 +10,53 @@ Honest assessment of current state, what matters most, and concrete steps to get
 
 | Metric | Value | What It Means |
 |--------|-------|---------------|
-| Codebase | ~35 src/ modules, 1953-line app.py | Modular architecture, 17-tab Streamlit terminal |
-| Tests | 528 passing (22 test files) | Full coverage across all modules |
+| Codebase | ~40 src/ modules, 2260-line app.py | Modular architecture, 19-tab Streamlit terminal |
+| Tests | 601 passing (36 test files) | Full coverage across all modules |
 | CI/CD | GitHub Actions (lint + test) | Automated quality gate on every push |
-| Stocks trained | 10 of 20 | Batch-trainable via CLI (`--train-all`) |
+| Stocks trained | 20 of 20 | All NSE stocks trained with walk-forward validation |
 | Ensemble | 5-model + stacked meta-learner + regime routing | Learned weights, not equal-weight |
-| Directional accuracy | 45–50% | Indistinguishable from coin flip for some stocks |
+| Meta-controller | 14-signal contextual bandit (83.6% on backfill) | LogisticRegression combining all modules |
+| Directional accuracy | 44-55% (walk-forward, large test sets) | 2-5pp edge over coin flip, varies by stock |
 | Data source | yfinance (delayed) | Fine for research, not live |
-| Backtesting | Walk-forward + event-driven engine | Both batch and event-driven modes |
+| Backtesting | Walk-forward (5-fold) + event-driven engine | Both batch and event-driven modes |
 | Alternative data | 5-source sentiment, FII/DII, PCR, MTF | Multi-source NLP stack |
 | Portfolio tooling | MVO, Black-Litterman, Efficient Frontier, Ledoit-Wolf | Full optimization suite |
 | Risk metrics | VaR/CVaR, Kelly, drawdown, regime detection | Comprehensive risk suite |
 | Mutual fund tracker | NAV history, XIRR, factor exposures, allocation | Full MF analysis |
-| Paper trading | Event-driven engine with slippage models | Realistic execution simulation |
+| Paper trading | Event-driven engine with short selling + NSE costs | Realistic execution simulation |
 | Execution quality | Fill rates, latency, cost decomposition | Order analysis |
+| Autonomous loop | Daily orchestrator + SQLite ledger + paper trading | Runs independently of Streamlit |
+| Signal consensus | Unified signal across Scanner/Ranking/Risk modules | Resolves signal contradictions |
 | License | Apache 2.0 + CONTRIBUTING.md | Open-source ready |
 
 ### What's Actually Good
 - Clean modular architecture (leaf-node design, minimal coupling)
 - Walk-forward backtesting with brokerage/slippage (rare in hobby projects)
-- Feature pipeline covers technical + alternative data (41 features)
+- Feature pipeline covers technical + alternative data (48 features)
 - Multi-source sentiment (Yahoo, Google, MoneyControl, ET, Screener.in)
 - Portfolio tooling (MVO, Black-Litterman, Efficient Frontier, Ledoit-Wolf)
 - Risk metrics (VaR/CVaR, Kelly, drawdown, regime detection)
 - Event-driven engine with realistic execution simulation
-- 528 tests, CI on every push
+- 601 tests, CI on every push
+- Meta-controller combines 14 modules into one decision
+- Persistent SQLite ledger tracks all decisions and outcomes
+- Paper trading with short selling support
+- Signal consensus tab resolves module contradictions
 - The code is honest about its limitations (README disclaimers)
 
 ### What's Still Missing
 
-**Architecture (Stage 6):**
-- No orchestrator — everything runs inside Streamlit session, dies when tab closes
-- No persistent ledger — `st.session_state.portfolio` is ephemeral
-- No meta-controller — modules exist but no layer turns 14 opinions into one decision
-- No automated daily loop — requires manual triggers
-
 **Modeling:**
+- Walk-forward accuracy varies: some stocks 55-72%, others 44-52%
+- 5 signal modules (sentiment, flow, PCR, MTF, fundamentals) still neutral in backfill
+- Meta-controller trained on backfill data — real accuracy may differ
 - No alpha decay monitoring
 - No hypothesis-driven alpha research process
 
 **Execution:**
 - No broker integration (Kite Connect mentioned but not implemented)
+- No stop-loss mechanisms for paper trades
+- No regime-conditional trade limits
 
 ---
 
@@ -97,7 +103,9 @@ Stage 4: Execution & Risk (Event-driven, Limits, Paper Mode) ✅
     ↓
 Stage 5: Open Platform (Multi-asset, MF, Plugins, Community) ✅
     ↓
-Stage 6: Autonomous Loop (Orchestrator, Ledger, Meta-Controller) → NEXT
+Stage 6: Autonomous Loop (Orchestrator, Ledger, Meta-Controller) ✅
+    ↓
+Stage 7: Live Paper Trading (2-3 months of real data) → NEXT
 ```
 
 ---

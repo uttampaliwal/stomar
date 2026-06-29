@@ -377,7 +377,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
             X_meta, y_meta = meta_features
             if len(X_meta) >= 50:
                 meta_model = train_meta_learner(X_meta, y_meta)
-                meta_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), f"meta_{ticker.replace('.', '_')}.pkl")
+                meta_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", f"meta_{ticker.replace('.', '_')}.pkl")
                 save_meta_model(meta_model, meta_path)
                 logger.info("meta_learner_trained ticker=%s samples=%d", ticker, len(X_meta))
     except Exception as e:

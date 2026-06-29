@@ -11,7 +11,7 @@ Usage:
     from src.backfill import HistoricalBackfill
     from src.ledger import Ledger
 
-    ledger = Ledger("stomar.db")
+    ledger = Ledger()  # uses data/stomar.db by default
     backfill = HistoricalBackfill(ledger)
     summary = backfill.run(tickers=["RELIANCE.NS", "TCS.NS"], lookback_days=252)
 """

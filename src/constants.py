@@ -1,5 +1,16 @@
 """Shared constants across the StoMar project."""
 
+import os
+
+# ─── Paths ───
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
+LEDGER_DB = os.path.join(DATA_DIR, "stomar.db")
+META_CONTROLLER_PATH = os.path.join(MODELS_DIR, "meta_controller.pkl")
+PAPER_STATE_PATH = os.path.join(DATA_DIR, "paper_state.json")
+MF_STATE_PATH = os.path.join(DATA_DIR, "mf_state.json")
+
 # ─── Trading Costs (NSE India) ───
 BROKERAGE_RATE = 0.0003          # 0.03% per side (Zerodha delivery)
 SLIPPAGE_RATE = 0.001            # 0.1% slippage estimate

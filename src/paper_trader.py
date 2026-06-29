@@ -12,6 +12,7 @@ Usage:
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -304,8 +305,11 @@ class PaperTrader:
             for r in self.trade_log
         ]
 
-    def export_session(self, path: str = "paper_session.json"):
+    def export_session(self, path: str = None):
         """Export session data to JSON."""
+        if path is None:
+            from src.constants import DATA_DIR
+            path = os.path.join(DATA_DIR, "paper_session.json")
         data = {
             "summary": self.get_summary(),
             "trade_log": self.get_trade_log(),
@@ -315,8 +319,11 @@ class PaperTrader:
             json.dump(data, f, indent=2, default=str)
         logger.info("Session exported to %s", path)
 
-    def save_state(self, path: str = "paper_state.json"):
+    def save_state(self, path: str = None):
         """Save paper trading state to disk for persistence across restarts."""
+        if path is None:
+            from src.constants import PAPER_STATE_PATH
+            path = PAPER_STATE_PATH
         state = {
             "initial_capital": self.initial_capital,
             "cash": self.cash,
@@ -336,8 +343,11 @@ class PaperTrader:
             json.dump(state, f, indent=2, default=str)
         logger.info("State saved to %s", path)
 
-    def load_state(self, path: str = "paper_state.json") -> bool:
+    def load_state(self, path: str = None) -> bool:
         """Load paper trading state from disk. Returns True if loaded."""
+        if path is None:
+            from src.constants import PAPER_STATE_PATH
+            path = PAPER_STATE_PATH
         import os
         if not os.path.exists(path):
             return False

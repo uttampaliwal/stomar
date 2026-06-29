@@ -1,6 +1,6 @@
-# StoMar — Stock Market Prediction & Trading Suite
+# StoMar — Autonomous Quant Trading System
 
-A quantitative analysis platform for the Indian NSE market. Built with a 5-model ML ensemble, stacked meta-learner with regime routing, walk-forward backtesting, Black-Litterman portfolio optimization, and a professional 17-tab Streamlit terminal.
+An autonomous quantitative trading system for the Indian NSE market. 5-model ML ensemble, meta-controller combining 14 signal modules, persistent SQLite ledger, paper trading with short selling, and a 19-tab Streamlit terminal.
 
 [![CI](https://github.com/uttamkumar66/stomar/actions/workflows/ci.yml/badge.svg)](https://github.com/uttamkumar66/stomar/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -22,63 +22,250 @@ venv\Scripts\activate          # Windows
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Run the app
+# 4. Run the dashboard
 python -m streamlit run app.py
+
+# 5. Train all models
+python run_pipeline.py --train-all
+
+# 6. Backfill history + train meta-controller
+python run_daily.py --backfill
+
+# 7. Start paper trading
+python run_daily.py --paper-trade --capital 200000
+```
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  STREAMLIT DASHBOARD (19 tabs)                   │
+│  Scanner | Consensus | Ranking | Portfolio | Backtest | Risk     │
+│  Sentiment | Market Pulse | Optimizer | Paper Trading | Ledger   │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ reads from
+┌───────────────────────────▼─────────────────────────────────────┐
+│                    META-CONTROLLER                               │
+│  14 signal modules → 1 decision (contextual bandit)              │
+│  Regime routing, confidence scaling, position sizing             │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ signals from
+┌───────────────────────────▼─────────────────────────────────────┐
+│                     SIGNAL LAYER (14 modules)                    │
+│  Ensemble | Sentiment | Flow | PCR | MTF | Regime | Volatility  │
+│  Ranking | Risk | Fundamentals | Execution Quality | Monitoring  │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ data from
+┌───────────────────────────▼─────────────────────────────────────┐
+│                       DATA LAYER                                 │
+│  yfinance | NSE APIs | Google News | MoneyControl | ET           │
+│  data/ (parquet cache) | models/ (trained weights)               │
+│  data/stomar.db (SQLite ledger)                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Features
 
-### 5-Model ML Ensemble + Meta-Learner
+### 5-Model ML Ensemble
 
-| Model | Type | Base Weight |
-|-------|------|-------------|
-| LSTM | Deep Learning (PyTorch) | 20% |
-| GRU | Deep Learning (PyTorch) | 20% |
-| Transformer | Deep Learning (PyTorch) | 20% |
-| XGBoost | Gradient Boosting | 20% |
-| LightGBM | Gradient Boosting | 20% |
+| Model | Type | Hyperparameters |
+|-------|------|-----------------|
+| LSTM | Deep Learning (PyTorch) | hidden=64, dropout=0.3, fc=32 |
+| GRU | Deep Learning (PyTorch) | hidden=64, dropout=0.3 |
+| Transformer | Deep Learning (PyTorch) | d_model=64, nhead=4, norm_first |
+| XGBoost | Gradient Boosting | depth=4, lr=0.03, min_child_weight=5 |
+| LightGBM | Gradient Boosting | depth=4, lr=0.03, min_child_samples=30 |
 
 - **Stacked meta-learner** learns optimal model combinations from base predictions
-- **Regime-conditional routing** — Bull favors tree models, Bear favors DL, Sideways uses equal weights
-- **41 technical features** per prediction (RSI, MACD, Bollinger Bands, ATR, ADX, etc.)
+- **Regime-conditional routing** — Bull favors tree models, Bear favors DL
+- **Walk-forward validation** — 5-fold chronological splits, no data leakage
+- **48 technical features** (RSI, MACD, Bollinger, ATR, ADX, Stochastic, Williams %R, CCI, MFI, VWAP, skew/kurtosis)
 
-### Walk-Forward Backtesting
-- **No data leakage:** Trains on 3 years, tests on 1 year, rolls forward
-- **Out-of-sample metrics:** Accuracy, simulated annual return, Sharpe ratio
-- **Brokerage + slippage** simulation (configurable slippage models)
+### Meta-Controller (14 → 1 decision)
 
-### Alternative Data Integration
-- **Multi-source Sentiment:** Yahoo Finance, Google News RSS, MoneyControl, Economic Times, Screener.in with source-weighted aggregation
-- **FII/DII Flow:** NSE institutional flow data
-- **Options PCR:** Put-Call Ratio + Max Pain from NSE options chain
-- **Multi-Timeframe:** 15min / 1h / Daily / Weekly analysis
+| Input Signal | Source | Weight |
+|-------------|--------|--------|
+| Ensemble direction + confidence | ML models | +3.03 (strongest) |
+| Options PCR | NSE options chain | -0.62 |
+| Ensemble confidence | ML models | +0.41 |
+| Sharpe ratio | Risk module | +0.28 |
+| Regime bull/bear | Regime detection | +0.28 |
+| Sentiment score | 5-source NLP | — |
+| FII/DII flow | NSE institutional | — |
+| MTF signal | Multi-timeframe | — |
+| VaR/CVaR | Risk module | — |
+| Volatility forecast | GARCH | — |
+| Fundamental score | Screener.in | — |
 
-### Portfolio Management
-- **Mean-Variance Optimization:** Max Sharpe + Min Variance portfolios
-- **Black-Litterman:** Combines market equilibrium with custom views
-- **Efficient Frontier** visualization
-- **Ledoit-Wolf shrinkage** for stable covariance estimation
+### Autonomous Daily Loop
 
-### Risk Management
-- **VaR / CVaR** (Value at Risk, Conditional VaR)
-- **Sharpe / Sortino / Calmar** ratios
-- **Kelly Criterion** position sizing
-- **Market Regime Detection** (Bull / Bear / Sideways)
+```bash
+python run_daily.py                          # Run all 20 NSE stocks
+python run_daily.py --ticker RELIANCE.NS     # Specific tickers
+python run_daily.py --backfill               # Backfill 1 year + train meta
+python run_daily.py --train-meta             # Retrain meta-controller
+python run_daily.py --paper-trade            # Auto-execute paper trades
+python run_daily.py --dry-run                # Signals only, no ledger writes
+```
 
-### Event-Driven Engine & Paper Trading
-- **Event-driven backtesting engine** with realistic order matching
-- **Volume-weighted slippage** and adaptive slippation models
-- **Paper trading** with state persistence
-- **Execution quality analysis** (fill rates, latency, cost decomposition)
+### Paper Trading (with short selling)
 
-### Mutual Fund Tracker
-- **NAV history** via yfinance (21 Indian MF schemes)
-- **XIRR computation** per fund and portfolio level
-- **Factor exposure analysis** (value, momentum, quality)
-- **Concentration risk detection** and allocation breakdown
-- **Benchmark comparison** vs Nifty 50
+- **Short positions** — SELL without existing position opens short
+- **Cover** — BUY covers short position
+- **Position sizing** — Meta-controller confidence scales trade size
+- **State persistence** — `data/paper_state.json` survives restarts
+- **NSE costs** — Brokerage, STT, stamp duty, exchange charges, GST
+
+### Dashboard (19 tabs)
+
+| # | Tab | Purpose |
+|---|-----|---------|
+| 1 | Predictions | ML model predictions + confidence |
+| 2 | Portfolio | Current holdings + allocation |
+| 3 | Backtest | Walk-forward backtest results |
+| 4 | Scanner | Multi-stock screening (absolute direction) |
+| 5 | **Consensus** | **Unified signal across all modules** |
+| 6 | Sentiment | News sentiment analysis |
+| 7 | Market Pulse | FII/DII flow, PCR, market health |
+| 8 | Optimizer | Portfolio optimization (MVO, Black-Litterman) |
+| 9 | Holdings | Zerodha CSV import + stats |
+| 10 | Risk | VaR, CVaR, drawdown, Kelly |
+| 11 | Volatility | Volatility forecasting |
+| 12 | Ranking | Cross-sectional stock ranking (relative quality) |
+| 13 | Scenarios | What-if scenario analysis |
+| 14 | Regime Strategy | Regime-conditional trading signals |
+| 15 | Monitoring | System health + model drift |
+| 16 | Pipeline | Retraining pipeline status |
+| 17 | Paper Trading | Simulated trading engine |
+| 18 | MF Tracker | Mutual fund NAV, XIRR, allocation |
+| 19 | Ledger | Historical decisions, signal accuracy, P&L |
+
+### Signal Type Labels
+
+Each module now has a clear label explaining what its signal measures:
+- **Scanner** → Absolute direction ("price goes up or down")
+- **Ranking** → Relative quality ("better/worse than peers")
+- **Risk/Regime** → Portfolio-level market conditions
+- **Consensus** → Meta-Controller + Ensemble agreement (authoritative signal)
+
+---
+
+## Project Structure
+
+```
+stomar/
+├── app.py                     # Main Streamlit app (19 tabs)
+├── run_daily.py               # Autonomous daily loop
+├── run_pipeline.py            # Retraining pipeline
+├── schedule_pipeline.py       # Windows Task Scheduler
+├── verify_system.py           # System verification
+├── run.bat                    # Windows launcher
+├── requirements.txt
+├── pyproject.toml
+├── Dockerfile
+├── LICENSE                    # Apache 2.0
+├── CONTRIBUTING.md
+├── src/
+│   ├── __init__.py
+│   ├── constants.py           # Paths + global constants
+│   ├── data_fetcher.py        # yfinance + NSE stock list
+│   ├── data_sources.py        # Multi-source data with fallback
+│   ├── data_validation.py     # Data quality checks
+│   ├── features.py            # 48-feature engineering pipeline
+│   ├── feature_store.py       # Feature versioning
+│   ├── model.py               # 5 model architectures
+│   ├── model_registry.py      # Model versioning
+│   ├── trainer.py             # Training + walk-forward validation
+│   ├── ensemble.py            # Meta-learner + DL probability scaling
+│   ├── backtester.py          # Walk-forward backtesting
+│   ├── backfill.py            # Historical decision reconstruction
+│   ├── engine.py              # Event-driven backtesting engine
+│   ├── orchestrator.py        # Daily signal pipeline
+│   ├── meta_controller.py     # Contextual bandit (14 → 1 decision)
+│   ├── ledger.py              # SQLite trading journal
+│   ├── paper_trader.py        # Paper trading + short selling
+│   ├── portfolio.py           # Portfolio class
+│   ├── sentiment.py           # 5-source sentiment + FinBERT
+│   ├── flow.py                # FII/DII flow + options PCR
+│   ├── multitimeframe.py      # 4-timeframe analysis
+│   ├── risk.py                # VaR, CVaR, Sharpe, Kelly
+│   ├── risk_controls.py       # Slippage models, risk limits
+│   ├── optimizer.py           # MVO, Black-Litterman
+│   ├── holdings.py            # Zerodha CSV parser
+│   ├── regime.py              # Bull/Bear/Sideways + ADX
+│   ├── regime_strategy.py     # Regime-conditional signals
+│   ├── mf_tracker.py          # Mutual fund NAV, XIRR
+│   ├── execution_quality.py   # Execution quality analysis
+│   ├── monitoring.py          # System health monitoring
+│   ├── benchmarks.py          # Benchmark comparison
+│   ├── alpha_research.py      # Alpha factor research
+│   ├── volatility.py          # Volatility forecasting
+│   ├── ranking.py             # Cross-sectional ranking
+│   ├── scenarios.py           # Scenario analysis
+│   ├── significance.py        # Statistical significance tests
+│   ├── logging_config.py      # Logging setup
+│   └── pipeline.py            # Retraining pipeline
+├── tests/                     # 601 tests
+├── models/                    # Trained weights (gitignored)
+│   ├── *.pt, *.pkl            # Per-ticker models
+│   └── meta_controller.pkl    # Meta-controller
+├── data/                      # Runtime data (gitignored)
+│   ├── *.parquet              # OHLCV cache
+│   ├── *.json                 # Sentiment/MTF cache
+│   ├── stomar.db              # SQLite ledger
+│   ├── paper_state.json       # Paper trading state
+│   └── mf_state.json          # MF tracker state
+└── docs/
+    ├── ARCHITECTURE.md        # System design
+    ├── API.md                 # Module interfaces
+    ├── DESIGN.md              # UI/UX design system
+    ├── DEPLOYMENT.md          # Setup guide
+    ├── PLAN.md                # Development plan
+    └── IMPROVEMENTS.md        # Roadmap
+```
+
+---
+
+## CLI Usage
+
+```bash
+# Daily autonomous loop
+python run_daily.py                              # All 20 NSE stocks
+python run_daily.py --ticker RELIANCE.NS         # Specific tickers
+python run_daily.py --backfill                   # Backfill 1 year
+python run_daily.py --train-meta                 # Retrain meta-controller
+python run_daily.py --paper-trade                # Auto paper trades
+python run_daily.py --paper-trade --capital 500000
+
+# Retraining pipeline
+python run_pipeline.py --train-all               # Train all 20 stocks
+python run_pipeline.py --train RELIANCE.NS       # Specific tickers
+python run_pipeline.py --paper                   # Train + paper trade
+
+# Windows scheduler
+python schedule_pipeline.py                      # Install daily 4 PM IST
+python schedule_pipeline.py --remove             # Remove task
+python schedule_pipeline.py --run-now            # Run immediately
+```
+
+---
+
+## Tests
+
+```bash
+# Run all 601 tests
+python -m pytest tests/ -v
+
+# Run with coverage
+python -m pytest tests/ --cov=src --cov-report=term-missing
+
+# Lint check
+ruff check src/ tests/ --output-format=concise
+```
 
 ---
 
@@ -93,124 +280,7 @@ python -m streamlit run app.py
 | **Optimization** | SciPy, scikit-learn (Ledoit-Wolf) |
 | **Visualization** | Plotly (interactive charts) |
 | **Technical Analysis** | `ta` library (30+ indicators) |
-
----
-
-## Project Structure
-
-```
-stomar/
-├── app.py                     # Main Streamlit app (17 tabs)
-├── run_pipeline.py            # CLI entry point (train, paper trade)
-├── run.bat                    # Windows launcher
-├── requirements.txt           # Python dependencies
-├── pyproject.toml             # Project metadata + ruff/pytest config
-├── Dockerfile                 # Container deployment
-├── LICENSE                    # Apache 2.0
-├── CONTRIBUTING.md            # Contribution guidelines
-├── src/
-│   ├── data_fetcher.py        # yfinance data + NSE stock list
-│   ├── data_sources.py        # Multi-source data with fallback
-│   ├── data_validation.py     # Data quality checks
-│   ├── features.py            # 41-feature engineering pipeline
-│   ├── feature_store.py       # Feature versioning + caching
-│   ├── model.py               # 5 model architectures + save/load
-│   ├── model_registry.py      # Model versioning
-│   ├── trainer.py             # Training loop + batch training
-│   ├── ensemble.py            # Meta-learner + regime routing
-│   ├── backtester.py          # Walk-forward backtesting engine
-│   ├── engine.py              # Event-driven backtesting engine
-│   ├── portfolio.py           # Portfolio class (buy/sell/equity)
-│   ├── sentiment.py           # 5-source sentiment analysis
-│   ├── flow.py                # FII/DII flow + options PCR
-│   ├── multitimeframe.py      # 4-timeframe analysis
-│   ├── risk.py                # VaR, CVaR, Sharpe, Kelly, etc.
-│   ├── risk_controls.py       # Slippage models, risk limits
-│   ├── optimizer.py           # MVO, Black-Litterman, efficient frontier
-│   ├── holdings.py            # Zerodha CSV parser + portfolio stats
-│   ├── regime.py              # Bull/Bear/Sideways detection
-│   ├── regime_strategy.py     # Regime-conditional trading signals
-│   ├── mf_tracker.py          # Mutual fund NAV, XIRR, factors
-│   ├── paper_trader.py        # Paper trading with state persistence
-│   ├── execution_quality.py   # Execution quality analysis
-│   ├── monitoring.py          # System health monitoring
-│   ├── benchmarks.py          # Benchmark comparison
-│   ├── alpha_research.py      # Alpha factor research
-│   ├── volatility.py          # Volatility forecasting
-│   ├── ranking.py             # Fundamental + technical ranking
-│   ├── scenarios.py           # Scenario analysis
-│   ├── significance.py        # Statistical significance tests
-│   ├── constants.py           # Global constants
-│   ├── logging_config.py      # Logging setup
-│   └── __init__.py
-├── tests/                     # 507 tests (20 files)
-├── models/                    # Saved model weights (per ticker, gitignored)
-├── data/                      # Cached data (gitignored)
-└── docs/
-    ├── ARCHITECTURE.md        # System design & data flow
-    ├── DESIGN.md              # UI/UX design system
-    ├── API.md                 # Module interfaces & function signatures
-    ├── DEPLOYMENT.md          # Setup & configuration
-    ├── PLAN.md                # Stage-by-stage development plan
-    └── IMPROVEMENTS.md        # Feature requirements & roadmap
-```
-
----
-
-## 17-Tab Dashboard
-
-| # | Tab | Purpose |
-|---|-----|---------|
-| 1 | Predictions | ML model predictions + confidence |
-| 2 | Portfolio | Current holdings + allocation |
-| 3 | Backtest | Walk-forward backtest results |
-| 4 | Scanner | Multi-stock screening |
-| 5 | Sentiment | News sentiment analysis |
-| 6 | Market Pulse | FII/DII flow, PCR, market health |
-| 7 | Optimizer | Portfolio optimization (MVO, Black-Litterman) |
-| 8 | Holdings | Zerodha CSV import + stats |
-| 9 | Risk | VaR, CVaR, drawdown, Kelly |
-| 10 | Volatility | Volatility forecasting |
-| 11 | Ranking | Fundamental + technical stock ranking |
-| 12 | Scenarios | What-if scenario analysis |
-| 13 | Regime Strategy | Regime-conditional trading signals |
-| 14 | Monitoring | System health + model drift |
-| 15 | Pipeline | Retraining pipeline status |
-| 16 | Paper Trading | Simulated trading engine |
-| 17 | MF Tracker | Mutual fund NAV, XIRR, allocation |
-
----
-
-## CLI Usage
-
-```bash
-# Train all 20 NSE stocks
-python run_pipeline.py --train-all
-
-# Train specific tickers
-python run_pipeline.py --train RELIANCE.NS TCS.NS
-
-# Full pipeline with paper trading
-python run_pipeline.py --paper
-
-# Run specific tickers through pipeline
-python run_pipeline.py RELIANCE.NS HDFCBANK.NS
-```
-
----
-
-## Tests
-
-```bash
-# Run all 507 tests
-python -m pytest tests/ -v
-
-# Run with coverage
-python -m pytest tests/ --cov=src --cov-report=term-missing
-
-# Lint check
-python -m ruff check src/ tests/ --output-format=concise
-```
+| **Storage** | SQLite (ledger), Parquet (data cache) |
 
 ---
 
@@ -220,6 +290,8 @@ python -m ruff check src/ tests/ --output-format=concise
 - Past performance does not guarantee future results
 - Always do your own research before investing
 - Start with paper trading before using real money
+- Walk-forward accuracy varies: some stocks 55-72%, others 44-52%
+- Meta-controller trained on backfill data — real accuracy may differ
 
 ---
 

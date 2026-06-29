@@ -28,7 +28,7 @@ from src.meta_controller import MetaController
 
 
 def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
-                     state_path: str = "paper_state.json"):
+                     state_path: str = None):
     """Auto-execute paper trades based on orchestrator decisions."""
     from src.paper_trader import PaperTrader
     from src.engine import OrderSide, OrderType
@@ -126,8 +126,8 @@ def main():
                         help="Tickers to process (default: all NSE stocks)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Run signals but don't write to ledger")
-    parser.add_argument("--db", default="stomar.db",
-                        help="SQLite ledger path (default: stomar.db)")
+    parser.add_argument("--db", default=None,
+                        help="SQLite ledger path (default: data/stomar.db)")
     parser.add_argument("--backfill", action="store_true",
                         help="Backfill historical data, then train meta-controller")
     parser.add_argument("--days", type=int, default=252,
@@ -141,7 +141,7 @@ def main():
     args = parser.parse_args()
 
     tickers = args.ticker if args.ticker else NSE_STOCKS
-    ledger = Ledger(args.db)
+    ledger = Ledger(args.db)  # None uses default data/stomar.db
 
     # --- Backfill mode ---
     if args.backfill:
@@ -180,7 +180,7 @@ def main():
 
             # Save trained model
             import pickle
-            model_path = os.path.join(os.path.dirname(__file__), "meta_controller.pkl")
+            model_path = os.path.join(os.path.dirname(__file__), "models", "meta_controller.pkl")
             with open(model_path, "wb") as f:
                 pickle.dump(mc, f)
             print(f"\nMeta-controller saved to {model_path}")
@@ -203,7 +203,7 @@ def main():
 
     # Try loading pre-trained meta-controller
     import pickle
-    model_path = os.path.join(os.path.dirname(__file__), "meta_controller.pkl")
+    model_path = os.path.join(os.path.dirname(__file__), "models", "meta_controller.pkl")
     if args.train_meta:
         print("Training meta-controller on ledger history...")
         result = meta_controller.train(ledger)

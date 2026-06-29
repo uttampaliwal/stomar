@@ -881,7 +881,7 @@ def tab_consensus():
 
     # Load meta-controller
     mc = None
-    mc_path = os.path.join(os.path.dirname(__file__), "meta_controller.pkl")
+    mc_path = os.path.join(os.path.dirname(__file__), "models", "meta_controller.pkl")
     if os.path.exists(mc_path):
         with _warnings.catch_warnings():
             _warnings.simplefilter("ignore")
@@ -1973,7 +1973,7 @@ def tab_paper_trading():
             st.success(f"Cancelled {len(cancelled)} orders.")
     with ac2:
         if st.button("Export Session", key="export_session"):
-            path = "paper_session.json"
+            path = os.path.join("data", "paper_session.json")
             trader.export_session(path)
             st.success(f"Exported to {path}")
     with ac3:
@@ -2127,7 +2127,8 @@ def tab_ledger():
 
     from src.ledger import Ledger
 
-    db_path = "stomar.db"
+    from src.constants import LEDGER_DB
+    db_path = LEDGER_DB
     if not os.path.exists(db_path):
         st.info("No ledger found. Run `python run_daily.py` to start logging decisions.")
         return
@@ -2204,7 +2205,7 @@ def tab_ledger():
     import pickle as _pickle
     import warnings as _warnings
     mc = MetaController()
-    _model_path = os.path.join(os.path.dirname(__file__), "meta_controller.pkl")
+    _model_path = os.path.join(os.path.dirname(__file__), "models", "meta_controller.pkl")
     if os.path.exists(_model_path):
         with _warnings.catch_warnings():
             _warnings.simplefilter("ignore")

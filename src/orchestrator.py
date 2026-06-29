@@ -7,7 +7,7 @@ Usage:
     from src.orchestrator import DailyOrchestrator
     from src.ledger import Ledger
 
-    ledger = Ledger("stomar.db")
+    ledger = Ledger()  # uses data/stomar.db by default
     orch = DailyOrchestrator(tickers=["RELIANCE.NS", "TCS.NS"], ledger=ledger)
     summary = orch.run()
 """
