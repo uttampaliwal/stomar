@@ -1,10 +1,12 @@
 """Daily autonomous loop. Run via scheduler or manually.
 
 Usage:
-    python run_daily.py                  # Run for all NSE stocks
-    python run_daily.py --ticker RELIANCE.NS TCS.NS  # Specific tickers
-    python run_daily.py --dry-run        # Run but don't log to ledger
-    python run_daily.py --db stomar.db   # Custom ledger path
+    python run_daily.py                          # Run for all NSE stocks
+    python run_daily.py --ticker RELIANCE.NS     # Specific tickers
+    python run_daily.py --dry-run                # Don't write to ledger
+    python run_daily.py --backfill               # Backfill 1 year history + train meta
+    python run_daily.py --backfill --days 126    # Backfill 6 months + train
+    python run_daily.py --train-meta             # Train meta-controller only
 """
 
 import argparse
@@ -34,11 +36,65 @@ def main():
                         help="Run signals but don't write to ledger")
     parser.add_argument("--db", default="stomar.db",
                         help="SQLite ledger path (default: stomar.db)")
+    parser.add_argument("--backfill", action="store_true",
+                        help="Backfill historical data, then train meta-controller")
+    parser.add_argument("--days", type=int, default=252,
+                        help="Trading days to backfill (default: 252 = ~1 year)")
     parser.add_argument("--train-meta", action="store_true",
-                        help="Train meta-controller on ledger history before running")
+                        help="Train meta-controller on ledger history")
     args = parser.parse_args()
 
     tickers = args.ticker if args.ticker else NSE_STOCKS
+    ledger = Ledger(args.db)
+
+    # --- Backfill mode ---
+    if args.backfill:
+        print("=== StoMar Historical Backfill ===")
+        print(f"Tickers:  {len(tickers)}")
+        print(f"Days:     {args.days}")
+        print(f"Ledger:   {args.db}")
+        print()
+
+        from src.backfill import HistoricalBackfill
+        backfill = HistoricalBackfill(ledger)
+        bf_summary = backfill.run(tickers=tickers, lookback_days=args.days)
+
+        print(f"\n=== Backfill Summary ===")
+        print(f"Total decisions: {bf_summary['total_decisions']}")
+        print(f"Total outcomes:  {bf_summary['total_outcomes']}")
+        for ticker, result in bf_summary["tickers"].items():
+            if "error" in result:
+                print(f"  [ERR]  {ticker}: {result['error']}")
+            else:
+                print(f"  [OK]   {ticker}: {result['decisions']} decisions, {result['outcomes']} outcomes")
+
+        # Auto-train meta-controller after backfill
+        print(f"\n=== Training Meta-Controller ===")
+        mc = MetaController()
+        result = mc.train(ledger)
+        print(f"Status: {result['status']}")
+        if result["status"] == "trained":
+            print(f"Accuracy: {result['accuracy']:.1%}")
+            print(f"Samples:  {result['n_samples']}")
+            weights = mc.get_weights()
+            print("Top signals:")
+            for name, weight in list(weights.items())[:5]:
+                direction = "positive" if weight > 0 else "negative"
+                print(f"  {name}: {weight:+.4f} ({direction})")
+
+            # Save trained model
+            import pickle
+            model_path = os.path.join(os.path.dirname(__file__), "meta_controller.pkl")
+            with open(model_path, "wb") as f:
+                pickle.dump(mc, f)
+            print(f"\nMeta-controller saved to {model_path}")
+        else:
+            print(f"Not enough data: {result.get('n_samples', 0)} samples (need {result.get('required', 100)})")
+
+        ledger.close()
+        sys.exit(0)
+
+    # --- Normal daily mode ---
     print(f"=== StoMar Daily Signal Loop ===")
     print(f"Date:     {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}")
     print(f"Tickers:  {len(tickers)}")
@@ -46,10 +102,16 @@ def main():
     print(f"Dry run:  {args.dry_run}")
     print()
 
-    ledger = Ledger(args.db)
     meta_controller = MetaController()
 
-    if args.train_meta:
+    # Try loading pre-trained meta-controller
+    import pickle
+    model_path = os.path.join(os.path.dirname(__file__), "meta_controller.pkl")
+    if os.path.exists(model_path):
+        with open(model_path, "rb") as f:
+            meta_controller = pickle.load(f)
+        print("Loaded pre-trained meta-controller.")
+    elif args.train_meta:
         print("Training meta-controller on ledger history...")
         result = meta_controller.train(ledger)
         print(f"  Status: {result['status']}")
@@ -61,7 +123,7 @@ def main():
             for name, weight in list(weights.items())[:5]:
                 direction = "positive" if weight > 0 else "negative"
                 print(f"    {name}: {weight:+.4f} ({direction})")
-        print()
+    print()
 
     orchestrator = DailyOrchestrator(
         tickers=tickers,
