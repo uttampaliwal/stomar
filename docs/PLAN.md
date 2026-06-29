@@ -1,1287 +1,914 @@
-# Stage 3 — Live Data + Scheduling: Execution Plan
+# Stage 4 — Execution & Risk: Execution Plan
 
-## Status: Stage 2 Complete (Signal NOT significant → pivot to volatility/ranking done)
+## Status: Stage 3 Complete (Data validation, feature store, pipeline, monitoring, registry — 335 tests)
 
-Stage 3 answers the question: **Can we get reliable data, retrain automatically, and catch model degradation before it costs money?**
+Stage 4 answers the question: **Can we execute with proper risk controls and validate signals in paper trading before risking real money?**
 
-This stage is about infrastructure — not improving the signal. The signal was proven noise in Stage 2 (p > 0.05). We built volatility/ranking/regime tools as the pivot. Stage 3 makes the system production-grade so that when we DO find a real edge (or use the volatility tools), the data and pipelines are trustworthy.
-
----
-
-## Stage 3 Exit Criteria (from IMPROVEMENTS.md)
-
-| # | Criterion | Status | Notes |
-|---|-----------|--------|-------|
-| 1 | Primary data feed with SLA (validation, fallback) | ⚠️ PARTIAL | yfinance + NSE archive fallback (free). No SLA — Kite Connect (₹500/mo) needed for production SLA. |
-| 2 | Data validation (gaps, splits, dividends checked) | ✅ DONE | `src/data_validation.py` — gap detection, corporate actions, price sanity, stale data |
-| 3 | Feature store with versioning | ✅ DONE | `src/feature_store.py` — hash pinning, compatibility check |
-| 4 | Nightly retraining pipeline running | ✅ DONE | `src/pipeline.py` + `run_pipeline.py` + `schedule_pipeline.py` (Windows Task Scheduler) |
-| 5 | Monitoring dashboard with drift alerts | ✅ DONE | `src/monitoring.py` + UI tab (performance drift, feature drift via KS test, data freshness) |
-| 6 | Model registry with promotion logic | ✅ DONE | `src/model_registry.py` — staging → production → archived lifecycle |
-
-### Honest Assessment
-
-- **Data feed**: Free sources (yfinance, NSE archive) have no SLA. For real money, you need Kite Connect (₹500/month). For research/learning, the current setup is sufficient.
-- **Scheduling**: `schedule_pipeline.py` uses Windows Task Scheduler (schtasks). Run `python schedule_pipeline.py` to install. Requires Windows — not cross-platform.
-- **Monitoring dashboard**: Basic UI tab with health checks and alert history. Not a real-time streaming dashboard — checks are on-demand.
+This stage builds the execution layer — event-driven order management, paper trading, risk limits, and realistic execution simulation. The goal is to run in paper mode for 3+ months before considering real capital.
 
 ---
 
-## Pre-Stage 3: Current State Assessment
+## Stage 4 Exit Criteria (from IMPROVEMENTS.md)
+
+| # | Criterion | Status | Priority |
+|---|-----------|--------|----------|
+| 1 | Event-driven engine with backtest-live parity | ❌ NOT DONE | CRITICAL |
+| 2 | Paper trading mode running for 3+ months | ❌ NOT DONE | CRITICAL |
+| 3 | Risk controls (position limits, loss limits, Kelly caps) | ❌ NOT DONE | HIGH |
+| 4 | Realistic execution simulation (slippage, impact, fill probability) | ❌ NOT DONE | HIGH |
+
+---
+
+## Pre-Stage 4: Current State Assessment
 
 | Component | Current State | What Needs to Change |
 |-----------|--------------|---------------------|
-| Data source | yfinance only, no validation | Add validation, fallback, gap detection |
-| Cache | Parquet files, stale after 2 days | TTL-based invalidation, hash integrity |
-| Features | 41 features, computed on-the-fly | Version-pinned, deterministic hashing |
-| Training | Manual "Train" button in UI | Nightly cron with validation gates |
-| Monitoring | None | Track OOS metrics, drift, alerting |
-| Model registry | Files on disk (`models/`) | Versioned, with promotion logic |
-| Logging | Python `logging` module | Structured JSON logs for ML pipeline |
+| Backtester | Batch-oriented walk-forward | Event-driven with same code path for backtest and live |
+| Portfolio | `Portfolio` class with NSE costs, buy/sell/trades | Add order queue, fill simulation, paper mode |
+| Risk | Kelly, VaR, CVaR, position sizing functions | Enforce limits at order time, not after |
+| Slippage | Fixed 0.1% `SLIPPAGE_RATE` | Volume-based, order-type-aware slippage |
+| Order types | Market orders only | Limit, stop-loss, stop-market |
+| Paper trading | None | Live data + simulated execution |
 
 ---
 
-## Execution Plan: 6 Tasks
+## Design Decisions
 
-### Task 1: Data Validation Layer
-**Impact:** Critical — garbage in, garbage out
-**Effort:** 4-5 hours
-**Files:** New `src/data_validation.py`, update `src/data_fetcher.py`
+### Why lightweight event engine (not NautilusTrader/LEAN)?
 
-**Why this matters:**
-yfinance for NSE is unreliable — it silently drops dates, doesn't handle splits/dividends properly, and can return stale data. Without validation, we train on incomplete data and don't know it.
+The IMPROVEMENTS.md suggests wrapping NautilusTrader or LEAN. After assessment:
 
-**What to implement:**
+| Factor | NautilusTrader/LEAN | Custom Lightweight |
+|--------|--------------------|--------------------|
+| Installation | Complex (Rust/C++ deps, Docker) | Pure Python, `pip install` |
+| Learning curve | Weeks | Hours |
+| Customization | Hard (large codebase) | Full control |
+| Our needs | Overkill (single asset, EOD) | Perfect fit |
+| User constraint | Must be free, must work on Windows | Meets constraint |
 
-#### 1a. Gap Detection
-```python
-def detect_gaps(df: pd.DataFrame, expected_freq: str = "B") -> list:
-    """
-    Find missing trading days in price data.
-    
-    Args:
-        df: DataFrame with DatetimeIndex
-        expected_freq: Expected frequency ('B' = business days)
-    
-    Returns:
-        List of (start, end, n_days) tuples for each gap
-    """
-    # Reindex to expected frequency
-    full_range = pd.date_range(df.index.min(), df.index.max(), freq=expected_freq)
-    missing = full_range.difference(df.index)
-    
-    # Group consecutive missing dates into gaps
-    gaps = []
-    if len(missing) > 0:
-        gap_starts = [missing[0]]
-        for i in range(1, len(missing)):
-            if (missing[i] - missing[i-1]).days > 3:  # New gap
-                gaps.append((gap_starts[-1], missing[i-1], i - gap_starts.index(gap_starts[-1])))
-        gaps.append((gap_starts[-1], missing[-1], len(missing) - gap_starts.index(gap_starts[-1])))
-    
-    return gaps
+**Decision:** Build a lightweight event engine (~300 lines) that gives backtest-live parity for our use case (daily signals, single-asset or small portfolio, NSE delivery trades). If we later need microsecond latency or multi-asset futures, we can migrate to NautilusTrader.
+
+### Event-driven parity principle
+
 ```
+Same code path for backtest and live:
 
-#### 1b. Corporate Action Detection (Splits/Dividends)
-```python
-def detect_corporate_actions(df: pd.DataFrame, threshold: float = 0.15) -> list:
-    """
-    Detect potential stock splits or dividends by looking for
-    unnatural price jumps (>15% overnight without volume spike).
-    
-    Returns:
-        List of (date, type, old_price, new_price) tuples
-    """
-    returns = df["close"].pct_change()
-    volume_change = df["volume"].pct_change()
-    
-    suspicious = []
-    for date in df.index[1:]:
-        ret = abs(returns.loc[date])
-        vol_ratio = volume_change.loc[date] if date in volume_change.index else 0
-        
-        if ret > threshold:
-            # Large price move with low volume = likely corporate action
-            if vol_ratio < 2.0:  # Volume didn't spike
-                suspicious.append({
-                    "date": date,
-                    "type": "split_or_dividend" if returns.loc[date] > 0 else "reverse_split",
-                    "return": returns.loc[date],
-                    "volume_change": vol_ratio,
-                })
-    
-    return suspicious
+  Signal → Risk Check → Order → Fill Simulation → Portfolio Update
+    │                                                    │
+    └──── Backtest: uses historical data ─────────────────┘
+    └──── Paper:    uses live data + simulated fills ─────┘
+    └──── Live:     uses live data + real broker API ─────┘ (Stage 5)
 ```
-
-#### 1c. Stale Data Detection
-```python
-def detect_stale_data(df: pd.DataFrame, max_age_days: int = 2) -> dict:
-    """
-    Check if the data is stale (last date is too old).
-    
-    Returns:
-        Dict with is_stale, last_date, age_days
-    """
-    last_date = df.index[-1]
-    now = pd.Timestamp.now()
-    if last_date.tz is not None:
-        now = now.tz_localize(last_date.tz)
-    
-    age_days = (now - last_date).days
-    return {
-        "is_stale": age_days > max_age_days,
-        "last_date": str(last_date.date()),
-        "age_days": age_days,
-        "max_age_days": max_age_days,
-    }
-```
-
-#### 1d. Price Sanity Checks
-```python
-def validate_prices(df: pd.DataFrame) -> list:
-    """
-    Check for impossible prices (negative, zero, >100% daily moves).
-    
-    Returns:
-        List of validation errors
-    """
-    errors = []
-    
-    # Negative or zero prices
-    for col in ["open", "high", "low", "close"]:
-        bad = df[df[col] <= 0]
-        if len(bad) > 0:
-            errors.append(f"{col} has {len(bad)} non-positive values")
-    
-    # High < Low
-    bad_hl = df[df["high"] < df["low"]]
-    if len(bad_hl) > 0:
-        errors.append(f"high < low on {len(bad_hl)} days")
-    
-    # Close outside high-low range
-    bad_close = df[(df["close"] > df["high"]) | (df["close"] < df["low"])]
-    if len(bad_close) > 0:
-        errors.append(f"close outside high-low range on {len(bad_close)} days")
-    
-    # Extreme daily moves (>30%)
-    returns = df["close"].pct_change()
-    extreme = df[abs(returns) > 0.30]
-    if len(extreme) > 0:
-        errors.append(f"Extreme daily moves (>30%) on {len(extreme)} days")
-    
-    return errors
-```
-
-#### 1e. Full Validation Pipeline
-```python
-def validate_data(df: pd.DataFrame, ticker: str) -> dict:
-    """
-    Run all validations on price data.
-    
-    Returns:
-        Dict with passed, errors, warnings, gaps, corporate_actions
-    """
-    errors = []
-    warnings = []
-    
-    # Price sanity
-    price_errors = validate_prices(df)
-    errors.extend(price_errors)
-    
-    # Gap detection
-    gaps = detect_gaps(df)
-    if gaps:
-        total_missing = sum(g[2] for g in gaps)
-        warnings.append(f"{len(gaps)} gaps found, {total_missing} missing trading days")
-    
-    # Stale data
-    stale = detect_stale_data(df)
-    if stale["is_stale"]:
-        warnings.append(f"Data is {stale['age_days']} days old (last: {stale['last_date']})")
-    
-    # Corporate actions
-    corp_actions = detect_corporate_actions(df)
-    if corp_actions:
-        warnings.append(f"{len(corp_actions)} potential corporate actions detected")
-    
-    return {
-        "ticker": ticker,
-        "passed": len(errors) == 0,
-        "errors": errors,
-        "warnings": warnings,
-        "gaps": gaps,
-        "corporate_actions": corp_actions,
-        "stale_info": stale,
-        "data_points": len(df),
-        "date_range": f"{df.index[0].date()} to {df.index[-1].date()}",
-    }
-```
-
-#### 1f. Integrate with data_fetcher.py
-- Call `validate_data()` after every fetch
-- Log validation results
-- Surface warnings in the UI (Trader tab)
-- Return validation metadata alongside the DataFrame
-
-**Tests:** `tests/test_data_validation.py`
-- `test_detect_gaps_empty` — no gaps in clean data
-- `test_detect_gaps_found` — correctly identifies gaps
-- `test_detect_corporate_actions` — detects splits
-- `test_validate_prices_clean` — clean data passes
-- `test_validate_prices_negative` — catches negative prices
-- `test_validate_prices_extreme_move` — catches >30% moves
-- `test_detect_stale_data` — old data flagged
-- `test_validate_data_full` — end-to-end validation
-- `test_validate_data_with_gaps` — gap + price check combined
 
 ---
 
-### Task 2: Multi-Source Data with Fallback
-**Impact:** High — single point of failure with yfinance only
-**Effort:** 3-4 hours
-**Files:** New `src/data_sources.py`, update `src/data_fetcher.py`
+## Execution Plan: 4 Tasks
 
-**Why this matters:**
-yfinance is rate-limited, can be down, and sometimes returns wrong data for NSE stocks. A fallback source prevents silent failures.
-
-**Free data sources for Indian market:**
-
-| Source | Type | Reliability | Rate Limit |
-|--------|------|-------------|------------|
-| yfinance (current) | Primary | Medium | 2000 req/hr |
-| NSE website (archives) | Fallback | Medium (breaks often) | No official limit |
-| Upstox API (free tier) | Alternative | High | 5000 req/day |
-
-**Implementation:**
-
-```python
-# src/data_sources.py
-
-class DataSource:
-    """Base class for data sources."""
-    
-    def fetch(self, ticker: str, period: str, interval: str) -> pd.DataFrame:
-        raise NotImplementedError
-    
-    def validate(self, df: pd.DataFrame) -> bool:
-        raise NotImplementedError
-
-
-class YFinanceSource(DataSource):
-    """Primary source: yfinance."""
-    
-    def fetch(self, ticker, period="2y", interval="1d"):
-        import yfinance as yf
-        stock = yf.Ticker(ticker)
-        df = stock.history(period=period, interval=interval)
-        # ... standardize columns
-        return df
-    
-    def validate(self, df):
-        return len(df) > 50 and not df.empty
-
-
-class NSEArchiveSource(DataSource):
-    """Fallback: NSE India archive data."""
-    
-    def fetch(self, ticker, period="2y", interval="1d"):
-        # Download from NSE archives (if available)
-        # Convert to same format as yfinance
-        ...
-    
-    def validate(self, df):
-        return len(df) > 50 and not df.empty
-
-
-def fetch_with_fallback(ticker, period="2y", interval="1d"):
-    """
-    Try primary source, fall back to secondary if it fails.
-    
-    Returns:
-        Dict with df, source, validation, timestamp
-    """
-    sources = [YFinanceSource(), NSEArchiveSource()]
-    
-    for source in sources:
-        try:
-            df = source.fetch(ticker, period, interval)
-            if source.validate(df):
-                validation = validate_data(df, ticker)
-                return {
-                    "df": df,
-                    "source": source.__class__.__name__,
-                    "validation": validation,
-                    "timestamp": pd.Timestamp.now(),
-                }
-        except Exception as e:
-            logger.warning(f"{source.__class__.__name__} failed for {ticker}: {e}")
-            continue
-    
-    raise ValueError(f"All data sources failed for {ticker}")
-```
-
-**Tests:** `tests/test_data_sources.py`
-- `test_yfinance_source_fetch` — basic fetch works
-- `test_yfinance_source_validate` — validation logic
-- `test_fallback_on_failure` — falls back to secondary
-- `test_all_sources_fail` — raises ValueError
-- `test_fetch_returns_metadata` — returns source + validation
-
----
-
-### Task 3: Feature Store with Versioning
-**Impact:** High — prevents training/serving skew
-**Effort:** 4-5 hours
-**Files:** New `src/feature_store.py`, update `src/features.py`, update `src/model.py`
-
-**Why this matters:**
-If we train a model on v1 features but serve predictions using v3 features (different column order, different transforms), the model silently breaks. A feature store pins feature definitions to model versions.
-
-**Implementation:**
-
-```python
-# src/feature_store.py
-
-import hashlib
-import json
-import os
-from datetime import datetime
-
-FEATURE_VERSIONS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "data", "feature_versions"
-)
-
-
-def compute_feature_hash(feature_cols: list, transformations: dict = None) -> str:
-    """
-    Deterministic hash of feature definition.
-    
-    Args:
-        feature_cols: Sorted list of feature column names
-        transformations: Dict of column -> transformation applied
-    
-    Returns:
-        12-char hex hash
-    """
-    content = json.dumps({
-        "columns": sorted(feature_cols),
-        "transformations": transformations or {},
-    }, sort_keys=True)
-    return hashlib.sha256(content.encode()).hexdigest()[:12]
-
-
-def register_feature_version(
-    version_hash: str,
-    feature_cols: list,
-    transformations: dict = None,
-    description: str = "",
-) -> dict:
-    """
-    Register a feature version with metadata.
-    
-    Returns:
-        Version record dict
-    """
-    os.makedirs(FEATURE_VERSIONS_DIR, exist_ok=True)
-    
-    record = {
-        "hash": version_hash,
-        "columns": sorted(feature_cols),
-        "n_features": len(feature_cols),
-        "transformations": transformations or {},
-        "description": description,
-        "created_at": datetime.now().isoformat(),
-    }
-    
-    # Save version record
-    path = os.path.join(FEATURE_VERSIONS_DIR, f"{version_hash}.json")
-    with open(path, "w") as f:
-        json.dump(record, f, indent=2)
-    
-    # Also save as "latest" if it's the first or explicitly marked
-    latest_path = os.path.join(FEATURE_VERSIONS_DIR, "latest.json")
-    if not os.path.exists(latest_path):
-        with open(latest_path, "w") as f:
-            json.dump(record, f, indent=2)
-    
-    return record
-
-
-def load_feature_version(version_hash: str) -> dict:
-    """Load a feature version record."""
-    path = os.path.join(FEATURE_VERSIONS_DIR, f"{version_hash}.json")
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Feature version {version_hash} not found")
-    with open(path) as f:
-        return json.load(f)
-
-
-def verify_feature_compatibility(
-    model_version_hash: str, current_feature_hash: str
-) -> dict:
-    """
-    Check if current features match what the model was trained on.
-    
-    Returns:
-        Dict with compatible, model_hash, current_hash, differences
-    """
-    try:
-        model_record = load_feature_version(model_version_hash)
-    except FileNotFoundError:
-        return {
-            "compatible": False,
-            "error": f"Model feature version {model_version_hash} not found",
-        }
-    
-    if model_version_hash == current_feature_hash:
-        return {"compatible": True, "model_hash": model_version_hash, "current_hash": current_feature_hash}
-    
-    model_cols = set(model_record["columns"])
-    current_cols = set(json.loads(
-        open(os.path.join(FEATURE_VERSIONS_DIR, f"{current_feature_hash}.json")).read()
-    )["columns"])
-    
-    return {
-        "compatible": False,
-        "model_hash": model_version_hash,
-        "current_hash": current_feature_hash,
-        "missing_in_current": sorted(model_cols - current_cols),
-        "extra_in_current": sorted(current_cols - model_cols),
-    }
-```
-
-#### Integration with model.py
-- When saving a model, save the feature version hash alongside it
-- When loading a model, verify feature compatibility
-- Log a warning if features have drifted
-
-#### Integration with features.py
-- `add_technical_indicators` returns a `feature_hash` alongside the DataFrame
-- Hash is computed from the sorted list of columns produced
-
-**Tests:** `tests/test_feature_store.py`
-- `test_compute_feature_hash_deterministic` — same input = same hash
-- `test_compute_feature_hash_different` — different input = different hash
-- `test_register_and_load` — save/load roundtrip
-- `test_verify_compatibility_match` — same hash = compatible
-- `test_verify_compatibility_mismatch` — different hash = incompatible
-- `test_verify_compatibility_missing` — missing columns detected
-- `test_verify_compatibility_extra` — extra columns detected
-
----
-
-### Task 4: Automated Retraining Pipeline
-**Impact:** Critical — models go stale without retraining
+### Task 1: Event-Driven Order Engine
+**Impact:** Critical — foundation for backtest-live parity
 **Effort:** 5-6 hours
-**Files:** New `src/pipeline.py`, update `src/trainer.py`
+**Files:** New `src/engine.py`
 
-**Why this matters:**
-Currently, models are trained once via a UI button and never updated. Market regimes change, features drift, and stale models lose whatever edge they had. An automated pipeline with validation gates prevents deploying bad models.
-
-**Architecture:**
-
-```
-┌─────────────────────────────────────────────────┐
-│                 PIPELINE STAGE                   │
-│                                                  │
-│  1. FETCH  →  2. VALIDATE  →  3. FEATURES  →  4. TRAIN  │
-│                                                  │
-│  5. EVALUATE  →  6. DECISION  →  7. PROMOTE/REJECT  │
-└─────────────────────────────────────────────────┘
-```
+**Why:** The current backtester is batch-oriented — it processes all signals at once. An event engine processes one bar at a time, just like live trading. This means the same code runs in backtest and live modes.
 
 **Implementation:**
 
 ```python
-# src/pipeline.py
+# src/engine.py
 
-import logging
-from datetime import datetime
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Optional
+import logging
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class PipelineConfig:
-    """Configuration for the retraining pipeline."""
-    tickers: list = field(default_factory=lambda: [
-        "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS"
-    ])
-    lookback_period: str = "3y"
-    min_oos_accuracy: float = 0.50    # Minimum OOS accuracy to promote
-    min_oos_sharpe: float = -1.0      # Maximum acceptable negative Sharpe
-    max_drawdown_threshold: float = 0.30  # 30% max drawdown to reject
-    retrain_cooldown_days: int = 7    # Don't retrain same ticker within 7 days
+class OrderSide(Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+class OrderType(Enum):
+    MARKET = "MARKET"
+    LIMIT = "LIMIT"
+    STOP_LOSS = "STOP_LOSS"
+    STOP_MARKET = "STOP_MARKET"
+
+
+class OrderStatus(Enum):
+    PENDING = "PENDING"
+    FILLED = "FILLED"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    CANCELLED = "CANCELLED"
+    REJECTED = "REJECTED"
 
 
 @dataclass
-class PipelineResult:
-    """Result of a single pipeline run."""
+class Order:
+    order_id: str
     ticker: str
-    stage: str
-    status: str  # "success", "failed", "rejected"
-    message: str
-    metrics: dict = field(default_factory=dict)
-    model_path: Optional[str] = None
-    feature_hash: Optional[str] = None
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
-
-
-class RetrainingPipeline:
-    """
-    Automated retraining pipeline with validation gates.
-    
-    Stages:
-    1. Fetch latest data
-    2. Validate data quality
-    3. Compute features
-    4. Train models
-    5. Evaluate on OOS window
-    6. Decision: promote or reject
-    7. Log everything
-    """
-    
-    def __init__(self, config: PipelineConfig = None):
-        self.config = config or PipelineConfig()
-        self.results = []
-    
-    def run(self, ticker: str) -> PipelineResult:
-        """Run the full pipeline for a single ticker."""
-        logger.info(f"Starting retraining pipeline for {ticker}")
-        
-        # Stage 1: Fetch
-        result = self._fetch_data(ticker)
-        if result.status == "failed":
-            return result
-        
-        # Stage 2: Validate
-        result = self._validate_data(ticker, result)
-        if result.status == "failed":
-            return result
-        
-        # Stage 3: Features
-        result = self._compute_features(ticker, result)
-        if result.status == "failed":
-            return result
-        
-        # Stage 4: Train
-        result = self._train_model(ticker, result)
-        if result.status == "failed":
-            return result
-        
-        # Stage 5: Evaluate
-        result = self._evaluate_model(ticker, result)
-        if result.status in ("failed", "rejected"):
-            return result
-        
-        # Stage 6: Promote
-        result = self._promote_model(ticker, result)
-        
-        logger.info(f"Pipeline complete for {ticker}: {result.status}")
-        self.results.append(result)
-        return result
-    
-    def _fetch_data(self, ticker: str) -> PipelineResult:
-        """Stage 1: Fetch latest price data."""
-        try:
-            from src.data_fetcher import fetch_stock_data
-            df = fetch_stock_data(ticker, period=self.config.lookback_period, force_refresh=True)
-            return PipelineResult(
-                ticker=ticker, stage="fetch", status="success",
-                message=f"Fetched {len(df)} rows",
-                metrics={"rows": len(df), "date_range": f"{df.index[0]} to {df.index[-1]}"},
-            )
-        except Exception as e:
-            return PipelineResult(
-                ticker=ticker, stage="fetch", status="failed",
-                message=f"Fetch failed: {e}",
-            )
-    
-    def _validate_data(self, ticker: str, prev: PipelineResult) -> PipelineResult:
-        """Stage 2: Validate data quality."""
-        try:
-            from src.data_validation import validate_data
-            df = fetch_stock_data(ticker, period=self.config.lookback_period)
-            validation = validate_data(df, ticker)
-            
-            if not validation["passed"]:
-                return PipelineResult(
-                    ticker=ticker, stage="validate", status="failed",
-                    message=f"Validation failed: {validation['errors']}",
-                    metrics=validation,
-                )
-            
-            status = "success"
-            message = f"Validation passed ({validation['data_points']} points)"
-            if validation["warnings"]:
-                message += f" with {len(validation['warnings'])} warnings"
-            
-            return PipelineResult(
-                ticker=ticker, stage="validate", status=status,
-                message=message, metrics=validation,
-            )
-        except Exception as e:
-            return PipelineResult(
-                ticker=ticker, stage="validate", status="failed",
-                message=f"Validation error: {e}",
-            )
-    
-    def _compute_features(self, ticker: str, prev: PipelineResult) -> PipelineResult:
-        """Stage 3: Compute features with versioning."""
-        try:
-            from src.features import add_technical_indicators
-            from src.feature_store import compute_feature_hash, register_feature_version
-            
-            df = fetch_stock_data(ticker, period=self.config.lookback_period)
-            df = add_technical_indicators(df, ticker)
-            
-            feature_cols = [c for c in df.columns if c not in (
-                "open", "high", "low", "close", "volume", "target", "target_direction"
-            )]
-            feature_hash = compute_feature_hash(feature_cols)
-            
-            register_feature_version(
-                feature_hash, feature_cols,
-                description=f"Auto-registered for {ticker} pipeline run"
-            )
-            
-            return PipelineResult(
-                ticker=ticker, stage="features", status="success",
-                message=f"Computed {len(feature_cols)} features (hash: {feature_hash})",
-                metrics={"n_features": len(feature_cols), "feature_hash": feature_hash},
-                feature_hash=feature_hash,
-            )
-        except Exception as e:
-            return PipelineResult(
-                ticker=ticker, stage="features", status="failed",
-                message=f"Feature computation failed: {e}",
-            )
-    
-    def _train_model(self, ticker: str, prev: PipelineResult) -> PipelineResult:
-        """Stage 4: Train all 5 models."""
-        try:
-            from src.trainer import train_for_ticker
-            
-            result = train_for_ticker(ticker, epochs=40, save=True)
-            
-            return PipelineResult(
-                ticker=ticker, stage="train", status="success",
-                message=f"Training complete for {ticker}",
-                metrics=result.get("metrics", {}),
-                feature_hash=prev.feature_hash,
-            )
-        except Exception as e:
-            return PipelineResult(
-                ticker=ticker, stage="train", status="failed",
-                message=f"Training failed: {e}",
-            )
-    
-    def _evaluate_model(self, ticker: str, prev: PipelineResult) -> PipelineResult:
-        """Stage 5: Evaluate on OOS window."""
-        try:
-            from src.backtester import run_walk_forward_backtest
-            
-            results = run_walk_forward_backtest(ticker)
-            metrics = results.get("metrics", {})
-            
-            oos_accuracy = metrics.get("ensemble_accuracy", 0)
-            sharpe = metrics.get("simulated_sharpe", -999)
-            max_dd = metrics.get("max_drawdown", 1.0)
-            
-            # Validation gates
-            reasons = []
-            if oos_accuracy < self.config.min_oos_accuracy:
-                reasons.append(f"OOS accuracy {oos_accuracy:.1%} < {self.config.min_oos_accuracy:.1%}")
-            if sharpe < self.config.min_oos_sharpe:
-                reasons.append(f"Sharpe {sharpe:.2f} < {self.config.min_oos_sharpe}")
-            if max_dd > self.config.max_drawdown_threshold:
-                reasons.append(f"Max DD {max_dd:.1%} > {self.config.max_drawdown_threshold:.1%}")
-            
-            if reasons:
-                return PipelineResult(
-                    ticker=ticker, stage="evaluate", status="rejected",
-                    message=f"Model rejected: {'; '.join(reasons)}",
-                    metrics=metrics,
-                )
-            
-            return PipelineResult(
-                ticker=ticker, stage="evaluate", status="success",
-                message=f"Model passed: accuracy={oos_accuracy:.1%}, sharpe={sharpe:.2f}",
-                metrics=metrics,
-            )
-        except Exception as e:
-            return PipelineResult(
-                ticker=ticker, stage="evaluate", status="failed",
-                message=f"Evaluation failed: {e}",
-            )
-    
-    def _promote_model(self, ticker: str, prev: PipelineResult) -> PipelineResult:
-        """Stage 6: Promote model to production."""
-        try:
-            from src.model import promote_model
-            
-            promote_model(ticker, prev.feature_hash)
-            
-            return PipelineResult(
-                ticker=ticker, stage="promote", status="success",
-                message=f"Model promoted for {ticker}",
-                metrics=prev.metrics,
-                model_path=f"models/{ticker.replace('.', '_')}_production.pt",
-                feature_hash=prev.feature_hash,
-            )
-        except Exception as e:
-            return PipelineResult(
-                ticker=ticker, stage="promote", status="failed",
-                message=f"Promotion failed: {e}",
-                metrics=prev.metrics,
-            )
-    
-    def run_all(self) -> list:
-        """Run pipeline for all configured tickers."""
-        results = []
-        for ticker in self.config.tickers:
-            result = self.run(ticker)
-            results.append(result)
-            logger.info(f"{ticker}: {result.status} — {result.message}")
-        return results
-    
-    def get_summary(self) -> dict:
-        """Get summary of all pipeline runs."""
-        return {
-            "total": len(self.results),
-            "success": sum(1 for r in self.results if r.status == "success"),
-            "failed": sum(1 for r in self.results if r.status == "failed"),
-            "rejected": sum(1 for r in self.results if r.status == "rejected"),
-            "results": [
-                {"ticker": r.ticker, "stage": r.stage, "status": r.status, "message": r.message}
-                for r in self.results
-            ],
-        }
-```
-
-#### CLI Entry Point
-```python
-# run_pipeline.py (new file)
-if __name__ == "__main__":
-    import sys
-    from src.pipeline import RetrainingPipeline, PipelineConfig
-    
-    tickers = sys.argv[1:] if len(sys.argv) > 1 else None
-    config = PipelineConfig(tickers=tickers or ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS"])
-    
-    pipeline = RetrainingPipeline(config)
-    results = pipeline.run_all()
-    
-    summary = pipeline.get_summary()
-    print(f"\nPipeline Summary: {summary['success']} success, {summary['failed']} failed, {summary['rejected']} rejected")
-    
-    for r in results:
-        emoji = "✅" if r.status == "success" else ("❌" if r.status == "failed" else "⚠️")
-        print(f"  {emoji} {r.ticker}: [{r.stage}] {r.message}")
-```
-
-**Tests:** `tests/test_pipeline.py`
-- `test_pipeline_stages_exist` — all 6 stages callable
-- `test_fetch_stage` — fetch returns success
-- `test_validate_stage_clean_data` — clean data passes
-- `test_validate_stage_bad_data` — bad data fails
-- `test_evaluate_rejects_low_accuracy` — accuracy gate works
-- `test_evaluate_rejects_low_sharpe` — sharpe gate works
-- `test_evaluate_rejects_high_drawdown` — drawdown gate works
-- `test_evaluate_accepts_good_model` — good model passes
-- `test_run_all` — runs for multiple tickers
-- `test_get_summary` — summary counts correct
-
----
-
-### Task 5: Monitoring & Drift Detection
-**Impact:** High — catches model degradation early
-**Effort:** 4-5 hours
-**Files:** New `src/monitoring.py`
-
-**Why this matters:**
-Models degrade silently. A model that was 53% accurate last month might be 48% this month. Without monitoring, you don't know until you've lost money.
-
-**What to monitor:**
-
-| Metric | What It Catches | Threshold |
-|--------|----------------|-----------|
-| OOS accuracy drift | Model degradation | < 48% accuracy |
-| Feature distribution shift | Data regime change | KS test p < 0.01 |
-| Prediction distribution shift | Model bias shift | >10% shift in mean prediction |
-| Return distribution change | Strategy breakdown | Sharpe drops below 0 |
-| Data freshness | Stale data pipeline | >3 days old |
-
-**Implementation:**
-
-```python
-# src/monitoring.py
-
-import logging
-import json
-import os
-from datetime import datetime
-from dataclasses import dataclass, field
-from typing import Optional
-import numpy as np
-from scipy import stats
-
-logger = logging.getLogger(__name__)
-
-MONITORING_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "data", "monitoring"
-)
-
-
-@dataclass
-class DriftAlert:
-    """A single drift detection alert."""
-    metric: str
-    severity: str  # "info", "warning", "critical"
-    message: str
-    current_value: float
-    threshold: float
-    p_value: Optional[float] = None
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
-
-
-@dataclass
-class MonitoringReport:
-    """Complete monitoring report for a ticker."""
-    ticker: str
-    alerts: list = field(default_factory=list)
-    metrics: dict = field(default_factory=dict)
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
-    
-    @property
-    def has_critical(self) -> bool:
-        return any(a.severity == "critical" for a in self.alerts)
-    
-    @property
-    def has_warnings(self) -> bool:
-        return any(a.severity == "warning" for a in self.alerts)
-    
-    def to_dict(self) -> dict:
-        return {
-            "ticker": self.ticker,
-            "timestamp": self.timestamp,
-            "has_critical": self.has_critical,
-            "has_warnings": self.has_warnings,
-            "n_alerts": len(self.alerts),
-            "alerts": [
-                {"metric": a.metric, "severity": a.severity, "message": a.message}
-                for a in self.alerts
-            ],
-            "metrics": self.metrics,
-        }
-
-
-class ModelMonitor:
-    """
-    Monitor model health and data drift.
-    
-    Detects:
-    1. Performance degradation (OOS accuracy dropping)
-    2. Feature drift (distribution shift in input features)
-    3. Prediction drift (model output distribution shifting)
-    4. Data freshness (stale data in pipeline)
-    """
-    
-    def __init__(self, lookback_days: int = 30):
-        self.lookback_days = lookback_days
-        os.makedirs(MONITORING_DIR, exist_ok=True)
-    
-    def check_performance_drift(
-        self, ticker: str, current_accuracy: float, baseline_accuracy: float
-    ) -> DriftAlert:
-        """Check if model accuracy has degraded."""
-        drift = baseline_accuracy - current_accuracy
-        drift_pct = drift / baseline_accuracy if baseline_accuracy > 0 else 0
-        
-        if drift_pct > 0.10:  # >10% relative degradation
-            severity = "critical"
-        elif drift_pct > 0.05:  # >5% relative degradation
-            severity = "warning"
-        else:
-            severity = "info"
-        
-        alert = DriftAlert(
-            metric="oos_accuracy",
-            severity=severity,
-            message=f"OOS accuracy: {current_accuracy:.1%} (baseline: {baseline_accuracy:.1%}, drift: {drift_pct:.1%})",
-            current_value=current_accuracy,
-            threshold=baseline_accuracy * 0.90,
-        )
-        
-        self._log_alert(ticker, alert)
-        return alert
-    
-    def check_feature_drift(
-        self, ticker: str, baseline_features: np.ndarray, current_features: np.ndarray
-    ) -> DriftAlert:
-        """
-        Check for distribution shift in features using KS test.
-        
-        Args:
-            baseline_features: Feature matrix from training period
-            current_features: Feature matrix from recent period
-        """
-        # KS test on each feature
-        n_features = min(baseline_features.shape[1], current_features.shape[1])
-        p_values = []
-        
-        for i in range(n_features):
-            _, p_value = stats.ks_2samp(baseline_features[:, i], current_features[:, i])
-            p_values.append(p_value)
-        
-        mean_p = np.mean(p_values)
-        n_drifted = sum(1 for p in p_values if p < 0.01)
-        
-        if n_drifted > n_features * 0.3:  # >30% of features drifted
-            severity = "critical"
-        elif n_drifted > n_features * 0.15:  # >15% drifted
-            severity = "warning"
-        else:
-            severity = "info"
-        
-        alert = DriftAlert(
-            metric="feature_drift",
-            severity=severity,
-            message=f"Feature drift: {n_drifted}/{n_features} features shifted (mean KS p={mean_p:.3f})",
-            current_value=n_drifted / n_features,
-            threshold=0.15,
-            p_value=mean_p,
-        )
-        
-        self._log_alert(ticker, alert)
-        return alert
-    
-    def check_prediction_drift(
-        self, ticker: str, baseline_predictions: np.ndarray, current_predictions: np.ndarray
-    ) -> DriftAlert:
-        """Check for distribution shift in model predictions."""
-        baseline_mean = np.mean(baseline_predictions)
-        current_mean = np.mean(current_predictions)
-        
-        shift = abs(current_mean - baseline_mean)
-        
-        if shift > 0.15:  # >15% shift in mean prediction
-            severity = "critical"
-        elif shift > 0.10:  # >10% shift
-            severity = "warning"
-        else:
-            severity = "info"
-        
-        alert = DriftAlert(
-            metric="prediction_drift",
-            severity=severity,
-            message=f"Prediction drift: mean shifted from {baseline_mean:.3f} to {current_mean:.3f} (Δ={shift:.3f})",
-            current_value=current_mean,
-            threshold=baseline_mean + 0.10,
-        )
-        
-        self._log_alert(ticker, alert)
-        return alert
-    
-    def check_data_freshness(self, ticker: str, last_data_date: datetime) -> DriftAlert:
-        """Check if data is fresh enough."""
-        now = datetime.now()
-        age_days = (now - last_data_date).days
-        
-        if age_days > 7:
-            severity = "critical"
-        elif age_days > 3:
-            severity = "warning"
-        else:
-            severity = "info"
-        
-        alert = DriftAlert(
-            metric="data_freshness",
-            severity=severity,
-            message=f"Data is {age_days} days old (last: {last_data_date.date()})",
-            current_value=age_days,
-            threshold=3,
-        )
-        
-        self._log_alert(ticker, alert)
-        return alert
-    
-    def generate_report(self, ticker: str) -> MonitoringReport:
-        """Generate a full monitoring report for a ticker."""
-        report = MonitoringReport(ticker=ticker)
-        
-        # Load baseline metrics if available
-        baseline_path = os.path.join(MONITORING_DIR, f"{ticker.replace('.', '_')}_baseline.json")
-        if os.path.exists(baseline_path):
-            with open(baseline_path) as f:
-                baseline = json.load(f)
-            report.metrics["baseline"] = baseline
-        
-        # Store current report
-        report_path = os.path.join(MONITORING_DIR, f"{ticker.replace('.', '_')}_latest.json")
-        with open(report_path, "w") as f:
-            json.dump(report.to_dict(), f, indent=2)
-        
-        return report
-    
-    def _log_alert(self, ticker: str, alert: DriftAlert):
-        """Log an alert and store it."""
-        level = {"info": logging.INFO, "warning": logging.WARNING, "critical": logging.CRITICAL}
-        logger.log(level.get(alert.severity, logging.INFO), f"[{ticker}] {alert.message}")
-        
-        # Append to alert history
-        history_path = os.path.join(MONITORING_DIR, f"{ticker.replace('.', '_')}_alerts.json")
-        alerts = []
-        if os.path.exists(history_path):
-            with open(history_path) as f:
-                alerts = json.load(f)
-        
-        alerts.append({
-            "metric": alert.metric,
-            "severity": alert.severity,
-            "message": alert.message,
-            "current_value": alert.current_value,
-            "threshold": alert.threshold,
-            "p_value": alert.p_value,
-            "timestamp": alert.timestamp,
-        })
-        
-        # Keep last 100 alerts
-        alerts = alerts[-100:]
-        
-        with open(history_path, "w") as f:
-            json.dump(alerts, f, indent=2)
-```
-
-**Tests:** `tests/test_monitoring.py`
-- `test_check_performance_drift_none` — no drift = info
-- `test_check_performance_drift_warning` — 5-10% drift = warning
-- `test_check_performance_drift_critical` — >10% drift = critical
-- `test_check_feature_drift_clean` — no drift = info
-- `test_check_feature_drift_detected` — KS test catches shift
-- `test_check_prediction_drift_clean` — no shift = info
-- `test_check_prediction_drift_detected` — large shift caught
-- `test_check_data_freshness_fresh` — recent data = info
-- `test_check_data_freshness_stale` — old data = critical
-- `test_generate_report` — report contains expected fields
-- `test_alert_history_persisted` — alerts saved to disk
-
----
-
-### Task 6: Model Registry with Promotion Logic
-**Impact:** High — prevents accidentally deploying bad models
-**Effort:** 3-4 hours
-**Files:** New `src/model_registry.py`, update `src/model.py`
-
-**Why this matters:**
-Right now, training a model overwrites the previous version. If the new model is worse, we lose the old one. A registry keeps version history and requires explicit promotion.
-
-**Implementation:**
-
-```python
-# src/model_registry.py
-
-import os
-import json
-import shutil
-from datetime import datetime
-from dataclasses import dataclass, field
-from typing import Optional
-
-REGISTRY_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "models", "registry"
-)
-
-
-@dataclass
-class ModelVersion:
-    """A single model version record."""
-    ticker: str
-    version: int
-    model_path: str
-    feature_hash: str
-    metrics: dict = field(default_factory=dict)
-    status: str = "staging"  # "staging", "production", "archived"
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    promoted_at: Optional[str] = None
+    side: OrderSide
+    order_type: OrderType
+    quantity: int
+    price: float = 0.0           # Limit price (for LIMIT orders)
+    stop_price: float = 0.0      # Trigger price (for STOP orders)
+    status: OrderStatus = OrderStatus.PENDING
+    filled_price: float = 0.0
+    filled_quantity: int = 0
+    fill_cost: float = 0.0
+    timestamp: str = ""
     notes: str = ""
 
 
-class ModelRegistry:
+@dataclass
+class Bar:
+    """Single OHLCV bar."""
+    ticker: str
+    timestamp: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class ExecutionEngine:
     """
-    Version-controlled model registry.
+    Event-driven execution engine.
     
-    Workflow:
-    1. Train → save as "staging" version
-    2. Evaluate → if passes gates, promote to "production"
-    3. Old "production" → archived
-    4. Load always loads "production" version
+    Processes one bar at a time, checks pending orders against new
+    price data, fills orders based on order type and price action.
+    
+    Same code path for backtest and paper trading.
     """
     
-    def __init__(self):
-        os.makedirs(REGISTRY_DIR, exist_ok=True)
+    def __init__(self, slippage_model=None, fill_model=None):
+        self.pending_orders: list[Order] = []
+        self.filled_orders: list[Order] = []
+        self.rejected_orders: list[Order] = []
+        self.order_counter = 0
+        self.slippage_model = slippage_model or FixedSlippage(0.001)
+        self.fill_model = fill_model or MarketFillModel()
     
-    def _registry_path(self, ticker: str) -> str:
-        return os.path.join(REGISTRY_DIR, f"{ticker.replace('.', '_')}_registry.json")
+    def submit_order(self, order: Order) -> Order:
+        """Submit an order to the engine."""
+        self.order_counter += 1
+        order.order_id = f"ORD-{self.order_counter:06d}"
+        order.status = OrderStatus.PENDING
+        self.pending_orders.append(order)
+        logger.info(f"Order submitted: {order.order_id} {order.side.value} "
+                    f"{order.quantity} {order.ticker} @ {order.order_type.value}")
+        return order
     
-    def _load_registry(self, ticker: str) -> list:
-        path = self._registry_path(ticker)
-        if os.path.exists(path):
-            with open(path) as f:
-                return json.load(f)
-        return []
+    def on_bar(self, bar: Bar) -> list[Order]:
+        """
+        Process a new bar. Check all pending orders for fills.
+        Returns list of filled orders.
+        """
+        filled = []
+        remaining = []
+        
+        for order in self.pending_orders:
+            if order.ticker != bar.ticker:
+                remaining.append(order)
+                continue
+            
+            fill_price = self._check_fill(order, bar)
+            
+            if fill_price is not None:
+                # Apply slippage
+                slippage = self.slippage_model.calculate(
+                    order.side, fill_price, bar.volume
+                )
+                actual_fill = fill_price + slippage if order.side == OrderSide.BUY \
+                    else fill_price - slippage
+                
+                # Calculate costs
+                from src.constants import calculate_nse_costs
+                costs = calculate_nse_costs(actual_fill, order.quantity,
+                                           "buy" if order.side == OrderSide.BUY else "sell")
+                
+                order.filled_price = actual_fill
+                order.filled_quantity = order.quantity
+                order.fill_cost = actual_fill * order.quantity + costs["total"]
+                order.status = OrderStatus.FILLED
+                order.notes = f"Fill: {actual_fill:.2f}, costs: {costs['total']:.2f}"
+                
+                self.filled_orders.append(order)
+                filled.append(order)
+                logger.info(f"Order filled: {order.order_id} @ {actual_fill:.2f}")
+            else:
+                remaining.append(order)
+        
+        self.pending_orders = remaining
+        return filled
     
-    def _save_registry(self, ticker: str, versions: list):
-        path = self._registry_path(ticker)
-        with open(path, "w") as f:
-            json.dump(versions, f, indent=2)
-    
-    def register(
-        self, ticker: str, model_path: str, feature_hash: str,
-        metrics: dict = None, notes: str = ""
-    ) -> ModelVersion:
-        """Register a new model version as staging."""
-        versions = self._load_registry(ticker)
+    def _check_fill(self, order: Order, bar: Bar) -> Optional[float]:
+        """Check if an order would fill on this bar."""
+        if order.order_type == OrderType.MARKET:
+            return bar.open  # Market orders fill at open
         
-        # Determine next version number
-        max_version = max((v["version"] for v in versions), default=0)
-        new_version = max_version + 1
+        elif order.order_type == OrderType.LIMIT:
+            if order.side == OrderSide.BUY and bar.low <= order.price:
+                return min(order.price, bar.open)  # Fill at limit or better
+            elif order.side == OrderSide.SELL and bar.high >= order.price:
+                return max(order.price, bar.open)
         
-        version_record = ModelVersion(
-            ticker=ticker,
-            version=new_version,
-            model_path=model_path,
-            feature_hash=feature_hash,
-            metrics=metrics or {},
-            status="staging",
-            notes=notes,
-        )
+        elif order.order_type == OrderType.STOP_LOSS:
+            if order.side == OrderSide.SELL and bar.low <= order.stop_price:
+                return order.stop_price  # Stop triggered, sell at stop
+            elif order.side == OrderSide.BUY and bar.high >= order.stop_price:
+                return order.stop_price
         
-        versions.append(version_record.__dict__)
-        self._save_registry(ticker, versions)
+        elif order.order_type == OrderType.STOP_MARKET:
+            if order.side == OrderSide.SELL and bar.low <= order.stop_price:
+                return bar.open  # Stop triggered, sell at market
+            elif order.side == OrderSide.BUY and bar.high >= order.stop_price:
+                return bar.open
         
-        return version_record
-    
-    def promote(self, ticker: str, version: int) -> ModelVersion:
-        """Promote a staging model to production."""
-        versions = self._load_registry(ticker)
-        
-        target = None
-        for v in versions:
-            if v["version"] == version:
-                target = v
-                break
-        
-        if target is None:
-            raise ValueError(f"Version {version} not found for {ticker}")
-        
-        if target["status"] != "staging":
-            raise ValueError(f"Version {version} is {target['status']}, not staging")
-        
-        # Archive current production
-        for v in versions:
-            if v["status"] == "production":
-                v["status"] = "archived"
-        
-        # Promote new
-        target["status"] = "production"
-        target["promoted_at"] = datetime.now().isoformat()
-        
-        self._save_registry(ticker, versions)
-        
-        # Copy model file to production path
-        production_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            "models", f"{ticker.replace('.', '_')}_production.pt"
-        )
-        shutil.copy2(target["model_path"], production_path)
-        
-        return ModelVersion(**target)
-    
-    def get_production(self, ticker: str) -> Optional[ModelVersion]:
-        """Get the current production model version."""
-        versions = self._load_registry(ticker)
-        for v in versions:
-            if v["status"] == "production":
-                return ModelVersion(**v)
         return None
     
-    def get_version(self, ticker: str, version: int) -> Optional[ModelVersion]:
-        """Get a specific version."""
-        versions = self._load_registry(ticker)
-        for v in versions:
-            if v["version"] == version:
-                return ModelVersion(**v)
-        return None
+    def cancel_all(self, ticker: str = None):
+        """Cancel all pending orders, optionally for a specific ticker."""
+        cancelled = []
+        remaining = []
+        for order in self.pending_orders:
+            if ticker and order.ticker != ticker:
+                remaining.append(order)
+                continue
+            order.status = OrderStatus.CANCELLED
+            cancelled.append(order)
+        self.pending_orders = remaining
+        self.rejected_orders.extend(cancelled)
+        return cancelled
     
-    def list_versions(self, ticker: str) -> list:
-        """List all versions for a ticker."""
-        versions = self._load_registry(ticker)
-        return [ModelVersion(**v) for v in versions]
+    def get_pending(self, ticker: str = None) -> list:
+        if ticker:
+            return [o for o in self.pending_orders if o.ticker == ticker]
+        return self.pending_orders
     
-    def rollback(self, ticker: str, to_version: int) -> ModelVersion:
-        """Rollback to a previous production version."""
-        versions = self._load_registry(ticker)
-        
-        target = None
-        for v in versions:
-            if v["version"] == to_version and v["status"] == "archived":
-                target = v
-                break
-        
-        if target is None:
-            raise ValueError(f"Archived version {to_version} not found for {ticker}")
-        
-        return self.promote(ticker, to_version)
+    def get_filled(self, ticker: str = None) -> list:
+        if ticker:
+            return [o for o in self.filled_orders if o.ticker == ticker]
+        return self.filled_orders
+
+
+# ─── Slippage Models ───
+
+class FixedSlippage:
+    """Fixed percentage slippage."""
+    def __init__(self, rate: float = 0.001):
+        self.rate = rate
+    
+    def calculate(self, side: OrderSide, price: float, volume: float) -> float:
+        return price * self.rate
+
+
+class VolumeSlippage:
+    """Volume-based slippage: higher volume = lower slippage."""
+    def __init__(self, base_rate: float = 0.002, avg_volume: float = 1_000_000):
+        self.base_rate = base_rate
+        self.avg_volume = avg_volume
+    
+    def calculate(self, side: OrderSide, price: float, volume: float) -> float:
+        vol_ratio = self.avg_volume / max(volume, 1)
+        rate = self.base_rate * min(vol_ratio, 3.0)  # Cap at 3x base
+        return price * rate
+
+
+class AdaptiveSlippage:
+    """Slippage that increases with order size relative to volume."""
+    def __init__(self, base_rate: float = 0.001, impact_factor: float = 0.1):
+        self.base_rate = base_rate
+        self.impact_factor = impact_factor
+    
+    def calculate(self, side: OrderSide, price: float, volume: float,
+                  order_value: float = 0) -> float:
+        base = price * self.base_rate
+        impact = (order_value / max(volume * price, 1)) * self.impact_factor * price
+        return base + impact
+
+
+# ─── Fill Models ───
+
+class MarketFillModel:
+    """Market orders fill at next bar's open."""
+    pass
+
+
+class TWAPFillModel:
+    """Time-Weighted Average Price fill simulation."""
+    def __init__(self, slices: int = 3):
+        self.slices = slices
 ```
 
-**Tests:** `tests/test_model_registry.py`
-- `test_register_new_version` — version 1 created
-- `test_register_multiple` — versions increment
-- `test_promote_model` — status changes to production
-- `test_promote_archives_old` — old production archived
-- `test_promote_non_staging_fails` — can't promote non-staging
-- `test_get_production` — returns current production
-- `test_list_versions` — returns all versions
-- `test_rollback` — rolls back to archived version
-- `test_rollback_nonexistent_fails` — error on missing version
+**Tests:** `tests/test_engine.py`
+- `test_submit_order` — order gets ID and PENDING status
+- `test_market_order_fills_at_open` — market order fills at bar open
+- `test_limit_buy_fills_when_price_touches` — limit buy fills on low touch
+- `test_limit_sell_fills_when_price_touches` — limit sell fills on high touch
+- `test_stop_loss_triggers` — stop loss triggers when price hits stop
+- `test_stop_market_triggers_at_market` — stop market fills at open after trigger
+- `test_order_not_filled_if_price_misses` — pending order stays pending
+- `test_cancel_all` — cancels all pending orders
+- `test_slippage_applied` — slippage increases fill price for buys
+- `test_fill_cost_includes_nse_costs` — fill cost includes brokerage/STT
+- `test_partial_fill_not_happens_on_market` — market orders fill full quantity
+- `test_on_bar_returns_filled_list` — on_bar returns only filled orders
+
+---
+
+### Task 2: Risk Controls
+**Impact:** High — protects capital from catastrophic loss
+**Effort:** 3-4 hours
+**Files:** New `src/risk_controls.py`, update `src/engine.py`
+
+**Why:** The existing `risk.py` has sizing functions but nothing ENFORCES limits at order time. Risk controls must reject orders that violate limits before they reach the engine.
+
+**Implementation:**
+
+```python
+# src/risk_controls.py
+
+import logging
+from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RiskLimits:
+    """Configurable risk limits."""
+    max_position_pct: float = 0.25       # Max 25% in single stock
+    max_daily_loss_pct: float = 0.02     # Max 2% daily loss
+    max_weekly_loss_pct: float = 0.05    # Max 5% weekly loss
+    max_drawdown_pct: float = 0.15       # Max 15% drawdown triggers halt
+    max_open_orders: int = 10            # Max pending orders
+    kelly_fraction: float = 0.25         # Use quarter-Kelly (not full)
+    max_total_exposure_pct: float = 0.95 # Max 95% of capital deployed
+    halt_on_breach: bool = True          # Stop trading if limit breached
+
+
+class RiskController:
+    """
+    Pre-trade risk checks. Validates orders before submission.
+    
+    Checks:
+    1. Position size vs max single-stock limit
+    2. Daily P&L vs loss limit
+    3. Weekly P&L vs loss limit
+    4. Current drawdown vs max drawdown
+    5. Total exposure vs max exposure
+    6. Open order count vs limit
+    7. Kelly-capped position sizing
+    """
+    
+    def __init__(self, limits: RiskLimits = None, initial_capital: float = 100000):
+        self.limits = limits or RiskLimits()
+        self.initial_capital = initial_capital
+        self.daily_pnl = 0.0
+        self.weekly_pnl = 0.0
+        self.peak_equity = initial_capital
+        self.current_equity = initial_capital
+        self.halted = False
+        self.halt_reason = ""
+    
+    def check_order(self, order_value: float, current_holdings_value: float,
+                    ticker: str, holdings: dict, prices: dict) -> dict:
+        """
+        Check if an order passes all risk controls.
+        
+        Returns:
+            Dict with approved (bool), reason (str), adjusted_quantity (int or None)
+        """
+        checks = []
+        
+        # 1. Halt check
+        if self.halted:
+            return {"approved": False, "reason": f"Trading halted: {self.halt_reason}"}
+        
+        # 2. Position concentration
+        new_position_value = order_value
+        total_equity = self.current_equity
+        position_pct = new_position_value / max(total_equity, 1)
+        if position_pct > self.limits.max_position_pct:
+            max_value = total_equity * self.limits.max_position_pct
+            checks.append({
+                "passed": False,
+                "check": "position_concentration",
+                "message": f"Position {position_pct:.1%} > {self.limits.max_position_pct:.1%} limit",
+                "max_value": max_value,
+            })
+        else:
+            checks.append({"passed": True, "check": "position_concentration"})
+        
+        # 3. Daily loss limit
+        daily_loss_limit = self.initial_capital * self.limits.max_daily_loss_pct
+        if self.daily_pnl < -daily_loss_limit:
+            checks.append({
+                "passed": False,
+                "check": "daily_loss",
+                "message": f"Daily loss {self.daily_pnl:.2f} exceeds limit {-daily_loss_limit:.2f}",
+            })
+        else:
+            checks.append({"passed": True, "check": "daily_loss"})
+        
+        # 4. Weekly loss limit
+        weekly_loss_limit = self.initial_capital * self.limits.max_weekly_loss_pct
+        if self.weekly_pnl < -weekly_loss_limit:
+            checks.append({
+                "passed": False,
+                "check": "weekly_loss",
+                "message": f"Weekly loss {self.weekly_pnl:.2f} exceeds limit {-weekly_loss_limit:.2f}",
+            })
+        else:
+            checks.append({"passed": True, "check": "weekly_loss"})
+        
+        # 5. Drawdown limit
+        drawdown = (self.peak_equity - self.current_equity) / max(self.peak_equity, 1)
+        if drawdown > self.limits.max_drawdown_pct:
+            checks.append({
+                "passed": False,
+                "check": "max_drawdown",
+                "message": f"Drawdown {drawdown:.1%} exceeds {self.limits.max_drawdown_pct:.1%} limit",
+            })
+            self.halted = True
+            self.halt_reason = f"Max drawdown breached ({drawdown:.1%})"
+        else:
+            checks.append({"passed": True, "check": "max_drawdown"})
+        
+        # 6. Total exposure
+        total_exposure = current_holdings_value + order_value
+        exposure_pct = total_exposure / max(self.current_equity, 1)
+        if exposure_pct > self.limits.max_total_exposure_pct:
+            checks.append({
+                "passed": False,
+                "check": "total_exposure",
+                "message": f"Total exposure {exposure_pct:.1%} > {self.limits.max_total_exposure_pct:.1%}",
+            })
+        else:
+            checks.append({"passed": True, "check": "total_exposure"})
+        
+        all_passed = all(c["passed"] for c in checks)
+        
+        return {
+            "approved": all_passed,
+            "checks": checks,
+            "drawdown_pct": drawdown,
+            "daily_pnl": self.daily_pnl,
+            "weekly_pnl": self.weekly_pnl,
+        }
+    
+    def update_equity(self, new_equity: float):
+        """Update equity and track P&L."""
+        self.current_equity = new_equity
+        self.peak_equity = max(self.peak_equity, new_equity)
+    
+    def update_daily_pnl(self, pnl: float):
+        """Add to daily P&L tracker."""
+        self.daily_pnl += pnl
+    
+    def reset_daily(self):
+        """Reset daily P&L (call at start of each trading day)."""
+        self.daily_pnl = 0.0
+    
+    def reset_weekly(self):
+        """Reset weekly P&L (call at start of each week)."""
+        self.weekly_pnl = 0.0
+        self.daily_pnl = 0.0
+    
+    def resume_trading(self):
+        """Manually resume trading after halt."""
+        self.halted = False
+        self.halt_reason = ""
+        logger.info("Trading resumed manually")
+    
+    def kelly_sized_quantity(self, win_rate: float, avg_win: float,
+                            avg_loss: float, price: float, capital: float) -> int:
+        """Calculate position size using Kelly fraction (not full Kelly)."""
+        from src.risk import kelly_criterion
+        full_kelly = kelly_criterion(win_rate, avg_win, avg_loss)
+        fraction = min(full_kelly, self.limits.kelly_fraction)
+        
+        risk_amount = capital * fraction
+        shares = int(risk_amount / price) if price > 0 else 0
+        max_affordable = int(capital * self.limits.max_position_pct / price) if price > 0 else 0
+        
+        return min(shares, max_affordable)
+    
+    def get_status(self) -> dict:
+        """Get current risk status."""
+        drawdown = (self.peak_equity - self.current_equity) / max(self.peak_equity, 1)
+        return {
+            "halted": self.halted,
+            "halt_reason": self.halt_reason,
+            "current_equity": self.current_equity,
+            "peak_equity": self.peak_equity,
+            "drawdown_pct": drawdown,
+            "daily_pnl": self.daily_pnl,
+            "weekly_pnl": self.weekly_pnl,
+            "daily_loss_remaining": self.initial_capital * self.limits.max_daily_loss_pct + self.daily_pnl,
+            "weekly_loss_remaining": self.initial_capital * self.limits.max_weekly_loss_pct + self.weekly_pnl,
+        }
+```
+
+**Tests:** `tests/test_risk_controls.py`
+- `test_order_within_limits` — order approved
+- `test_order_exceeds_position_limit` — rejected
+- `test_order_exceeds_daily_loss` — rejected
+- `test_order_exceeds_weekly_loss` — rejected
+- `test_drawdown_halts_trading` — halted on breach
+- `test_resume_trading` — manually resume
+- `test_total_exposure_check` — rejects overexposure
+- `test_kelly_sized_quantity` — returns reasonable size
+- `test_kelly_respects_position_limit` — capped at max position
+- `test_get_status` — returns all fields
+- `test_halt_blocks_all_orders` — no orders when halted
+- `test_daily_reset` — P&L resets
+
+---
+
+### Task 3: Paper Trading Mode
+**Impact:** Critical — validates signals without real money
+**Effort:** 4-5 hours
+**Files:** New `src/paper_trader.py`, update `app.py`
+
+**Why:** Paper trading is the single most important step before real money. It runs the same code path as live trading but with simulated fills.
+
+**Implementation:**
+
+```python
+# src/paper_trader.py
+
+import json
+import logging
+import os
+from datetime import datetime
+from dataclasses import dataclass, field
+
+import pandas as pd
+
+from src.engine import ExecutionEngine, Order, OrderSide, OrderType, Bar
+from src.risk_controls import RiskController, RiskLimits
+
+logger = logging.getLogger(__name__)
+
+PAPER_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "data", "paper_trading"
+)
+
+
+@dataclass
+class PaperTrade:
+    """A single paper trade record."""
+    order_id: str
+    ticker: str
+    side: str
+    order_type: str
+    quantity: int
+    signal_price: float
+    fill_price: float
+    fill_cost: float
+    signal_date: str
+    fill_date: str
+    slippage: float
+    costs: dict = field(default_factory=dict)
+
+
+class PaperTrader:
+    """
+    Paper trading engine.
+    
+    Runs daily:
+    1. Fetch latest data
+    2. Generate signals from trained models
+    3. Run risk checks
+    4. Submit orders to execution engine
+    5. Record fills
+    6. Track P&L
+    """
+    
+    def __init__(self, initial_capital: float = 100000,
+                 limits: RiskLimits = None):
+        self.engine = ExecutionEngine()
+        self.risk = RiskController(limits, initial_capital)
+        self.initial_capital = initial_capital
+        self.portfolio = {}  # ticker -> (quantity, avg_price)
+        self.cash = initial_capital
+        self.trades: list[PaperTrade] = []
+        self.equity_curve: list[dict] = []
+        os.makedirs(PAPER_DIR, exist_ok=True)
+    
+    def run_day(self, ticker: str, bar: Bar, signal: dict,
+                current_prices: dict = None) -> dict:
+        """
+        Process one trading day.
+        
+        Args:
+            ticker: Stock ticker
+            bar: Today's OHLCV bar
+            signal: {"direction": 1/-1/0, "confidence": float}
+            current_prices: Current prices for all holdings
+        
+        Returns:
+            Dict with actions taken
+        """
+        actions = {"orders_submitted": 0, "orders_filled": 0, "orders_rejected": 0}
+        
+        # Update equity
+        if current_prices:
+            self._update_equity(current_prices)
+        
+        # Check risk status
+        risk_status = self.risk.get_status()
+        if risk_status["halted"]:
+            logger.warning(f"Trading halted: {risk_status['halt_reason']}")
+            actions["halted"] = True
+            return actions
+        
+        # Check existing position
+        held_qty, avg_price = self.portfolio.get(ticker, (0, 0))
+        direction = signal.get("direction", 0)
+        confidence = signal.get("confidence", 0)
+        
+        # Generate order based on signal
+        order = None
+        
+        if direction == 1 and held_qty == 0:
+            # BUY signal, no position
+            order_value = self.cash * min(confidence, self.risk.limits.max_position_pct)
+            quantity = int(order_value / bar.close) if bar.close > 0 else 0
+            
+            if quantity > 0:
+                risk_check = self.risk.check_order(
+                    bar.close * quantity,
+                    sum(q * p for q, p in self.portfolio.values()),
+                    ticker, self.portfolio, current_prices or {}
+                )
+                
+                if risk_check["approved"]:
+                    order = Order(
+                        order_id="", ticker=ticker, side=OrderSide.BUY,
+                        order_type=OrderType.MARKET, quantity=quantity,
+                    )
+                else:
+                    actions["orders_rejected"] += 1
+                    actions["rejection_reason"] = risk_check.get("checks", [{}])[0].get("message", "")
+        
+        elif direction == -1 and held_qty > 0:
+            # SELL signal, have position
+            order = Order(
+                order_id="", ticker=ticker, side=OrderSide.SELL,
+                order_type=OrderType.MARKET, quantity=held_qty,
+            )
+        
+        if order:
+            actions["orders_submitted"] += 1
+            self.engine.submit_order(order)
+            
+            # Process bar (will fill market orders at open)
+            filled = self.engine.on_bar(bar)
+            
+            for fill in filled:
+                actions["orders_filled"] += 1
+                self._process_fill(fill, bar.timestamp)
+        
+        # Record equity
+        total = self.cash + sum(q * p for q, p in self.portfolio.values())
+        self.equity_curve.append({
+            "date": bar.timestamp,
+            "equity": total,
+            "cash": self.cash,
+        })
+        
+        return actions
+    
+    def _process_fill(self, order: Order, timestamp: str):
+        """Process a filled order."""
+        ticker = order.ticker
+        
+        if order.side == OrderSide.BUY:
+            cost = order.fill_cost
+            self.cash -= cost
+            
+            if ticker in self.portfolio:
+                old_qty, old_price = self.portfolio[ticker]
+                new_qty = old_qty + order.filled_quantity
+                new_price = ((old_price * old_qty) +
+                            (order.filled_price * order.filled_quantity)) / new_qty
+                self.portfolio[ticker] = (new_qty, new_price)
+            else:
+                self.portfolio[ticker] = (order.filled_quantity, order.filled_price)
+            
+            self.risk.update_daily_pnl(0)  # No P&L on buy
+        
+        elif order.side == OrderSide.SELL:
+            proceeds = order.fill_cost  # Already includes costs
+            self.cash += proceeds
+            
+            if ticker in self.portfolio:
+                old_qty, old_price = self.portfolio[ticker]
+                pnl = (order.filled_price - old_price) * order.filled_quantity
+                self.risk.update_daily_pnl(pnl)
+                del self.portfolio[ticker]
+        
+        trade = PaperTrade(
+            order_id=order.order_id, ticker=ticker,
+            side=order.side.value, order_type=order.order_type.value,
+            quantity=order.filled_quantity,
+            signal_price=0, fill_price=order.filled_price,
+            fill_cost=order.fill_cost,
+            signal_date=timestamp, fill_date=timestamp,
+            slippage=abs(order.filled_price - 0),  # Would need signal price
+        )
+        self.trades.append(trade)
+    
+    def _update_equity(self, prices: dict):
+        """Update equity with current market prices."""
+        total = self.cash
+        for ticker, (qty, _) in self.portfolio.items():
+            if ticker in prices:
+                total += qty * prices[ticker]
+        self.risk.update_equity(total)
+    
+    def save_state(self):
+        """Save paper trading state to disk."""
+        state = {
+            "initial_capital": self.initial_capital,
+            "cash": self.cash,
+            "portfolio": self.portfolio,
+            "equity_curve": self.equity_curve[-30:],  # Last 30 days
+            "trades": len(self.trades),
+            "risk_status": self.risk.get_status(),
+            "last_updated": datetime.now().isoformat(),
+        }
+        path = os.path.join(PAPER_DIR, "paper_state.json")
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2, default=str)
+    
+    def load_state(self):
+        """Load paper trading state from disk."""
+        path = os.path.join(PAPER_DIR, "paper_state.json")
+        if not os.path.exists(path):
+            return False
+        
+        with open(path) as f:
+            state = json.load(f)
+        
+        self.cash = state.get("cash", self.initial_capital)
+        self.portfolio = {k: tuple(v) for k, v in state.get("portfolio", {}).items()}
+        self.equity_curve = state.get("equity_curve", [])
+        return True
+    
+    def get_performance(self) -> dict:
+        """Get paper trading performance summary."""
+        if len(self.equity_curve) < 2:
+            return {"error": "Insufficient data"}
+        
+        equity = pd.Series([e["equity"] for e in self.equity_curve])
+        returns = equity.pct_change().dropna()
+        
+        total_return = (equity.iloc[-1] / equity.iloc[0]) - 1
+        n_days = len(equity)
+        n_years = max(n_days / 252, 0.01)
+        ann_return = (1 + total_return) ** (1 / n_years) - 1
+        
+        from src.risk import calculate_sharpe, calculate_sortino, calculate_max_drawdown
+        
+        return {
+            "total_return": total_return,
+            "annualized_return": ann_return,
+            "sharpe_ratio": calculate_sharpe(returns.values) if len(returns) > 10 else 0,
+            "sortino_ratio": calculate_sortino(returns.values) if len(returns) > 10 else 0,
+            "max_drawdown": calculate_max_drawdown(equity.values),
+            "n_trades": len(self.trades),
+            "current_equity": equity.iloc[-1],
+            "cash": self.cash,
+            "holdings": dict(self.portfolio),
+            "n_days": n_days,
+        }
+```
+
+**Tests:** `tests/test_paper_trader.py`
+- `test_run_day_buy_signal` — submits buy order on signal
+- `test_run_day_sell_signal` — submits sell order on signal
+- `test_risk_rejects_overlimit` — risk controller rejects
+- `test_halt_stops_trading` — halted state blocks orders
+- `test_process_fill_updates_portfolio` — buy fills update holdings
+- `test_process_fill_updates_cash` — sell fills update cash
+- `test_save_load_state` — roundtrip to disk
+- `test_get_performance` — returns metrics
+- `test_equity_curve_recorded` — equity tracked daily
+
+---
+
+### Task 4: Execution Quality
+**Impact:** Medium — slippage and order type simulation
+**Effort:** 2-3 hours
+**Files:** Update `src/backtester.py`
+
+**Why:** The current backtester uses fixed 0.1% slippage. Real execution depends on volume, order size, and market conditions. Better simulation = more honest backtests.
+
+**What to add to backtester.py:**
+
+```python
+# Add to src/backtester.py
+
+class BacktestExecutionSimulator:
+    """
+    Realistic execution simulation for backtesting.
+    
+    Models:
+    - Volume-based slippage (thin books = more slippage)
+    - Market impact (large orders move price)
+    - Order type simulation (limit, market, stop)
+    - Fill probability (limit orders may not fill)
+    """
+    
+    def __init__(self, slippage_model="volume", impact_factor=0.1):
+        self.slippage_model = slippage_model
+        self.impact_factor = impact_factor
+    
+    def simulate_fill(self, order_side, price, volume, order_value=0):
+        """Simulate realistic fill with slippage and impact."""
+        if self.slippage_model == "volume":
+            from src.engine import VolumeSlippage
+            model = VolumeSlippage()
+            slippage = model.calculate(order_side, price, volume)
+        elif self.slippage_model == "adaptive":
+            from src.engine import AdaptiveSlippage
+            model = AdaptiveSlippage()
+            slippage = model.calculate(order_side, price, volume, order_value)
+        else:
+            from src.engine import FixedSlippage
+            model = FixedSlippage()
+            slippage = model.calculate(order_side, price, volume)
+        
+        if order_side == OrderSide.BUY:
+            return price + slippage
+        else:
+            return price - slippage
+    
+    def estimate_fill_probability(self, order_type, price, bar):
+        """Estimate probability that a limit order fills."""
+        if order_type == OrderType.MARKET:
+            return 1.0
+        elif order_type == OrderType.LIMIT:
+            # Probability depends on how far limit is from close
+            distance = abs(price - bar["close"]) / bar["close"]
+            if distance < 0.005:
+                return 0.9
+            elif distance < 0.01:
+                return 0.7
+            elif distance < 0.02:
+                return 0.4
+            return 0.1
+        return 0.5
+```
+
+Also update `run_walk_forward_backtest` to use the new slippage models instead of fixed `SLIPPAGE_RATE`.
+
+**Tests:** `tests/test_execution_quality.py`
+- `test_volume_slippage_increases_with_low_volume` — low volume = more slippage
+- `test_adaptive_slippage_increases_with_order_size` — large orders = more slippage
+- `test_fill_probability_market_always_fills` — market = 100%
+- `test_fill_probability_limit_near_fills` — near limit = high probability
+- `test_fill_probability_limit_far_low` — far limit = low probability
 
 ---
 
 ## Execution Order
 
 ```
-1. Task 1: Data Validation (4-5 hrs)     ← CRITICAL, foundation for everything
-2. Task 2: Multi-Source Fallback (3-4 hrs) ← depends on Task 1 validation
-3. Task 3: Feature Store (4-5 hrs)         ← independent, but benefits from Task 1
-4. Task 4: Retraining Pipeline (5-6 hrs)   ← depends on Tasks 1, 2, 3
-5. Task 5: Monitoring (4-5 hrs)            ← depends on Task 4 (needs baseline)
-6. Task 6: Model Registry (3-4 hrs)        ← depends on Task 4 (needs versioning)
+1. Task 1: Event-Driven Engine (5-6 hrs)     ← CRITICAL, foundation for Tasks 2-4
+2. Task 2: Risk Controls (3-4 hrs)            ← depends on Task 1 (uses Order/Bar)
+3. Task 3: Paper Trading (4-5 hrs)            ← depends on Tasks 1 + 2
+4. Task 4: Execution Quality (2-3 hrs)        ← depends on Task 1 (slippage models)
 ```
 
 **Parallelizable:**
-- Tasks 1, 2, 3 can be developed in parallel (different concerns)
-- Tasks 5, 6 can be developed in parallel (both depend on Task 4)
+- Task 4 can be developed in parallel with Task 2 (both depend on Task 1)
+- Task 3 requires both Tasks 1 and 2
 
-**Total estimated time:** 23-29 hours
+**Total estimated time:** 14-18 hours
 
 ---
 
 ## Exit Criteria Checklist
 
-After all 6 tasks:
+After all 4 tasks:
 
-- [ ] Data validation catches gaps, splits, stale data, price errors
-- [ ] Fallback data source works when primary fails
-- [ ] Feature store pins feature definitions to model versions
-- [ ] Retraining pipeline runs with validation gates (accuracy, Sharpe, drawdown)
-- [ ] Monitoring detects performance drift, feature drift, prediction drift
-- [ ] Model registry versions models with staging → production → archived lifecycle
-- [ ] All 6 tasks have tests passing
-- [ ] `run_pipeline.py` works as CLI entry point
-- [ ] Monitoring dashboard shows alerts in the UI (optional: add to a new tab)
+- [ ] Event-driven engine processes orders bar-by-bar
+- [ ] Same code path for backtest and paper trading
+- [ ] Paper trading mode records trades, tracks P&L, enforces risk limits
+- [ ] Risk controls reject orders exceeding position/daily/weekly/drawdown limits
+- [ ] Kelly-capped position sizing (quarter-Kelly, not full)
+- [ ] Volume-based and adaptive slippage models
+- [ ] Fill probability modeling for limit orders
+- [ ] State persistence (save/load paper trading state)
+- [ ] All 4 tasks have tests passing
+- [ ] `run_pipeline.py` can trigger paper trading after training
 
 ---
 
@@ -1289,30 +916,22 @@ After all 6 tasks:
 
 | File | Purpose |
 |------|---------|
-| `src/data_validation.py` | Gap detection, corporate action detection, price sanity, stale data |
-| `src/data_sources.py` | Multi-source with fallback (yfinance + NSE archive) |
-| `src/feature_store.py` | Feature versioning, hash computation, compatibility check |
-| `src/pipeline.py` | 6-stage retraining pipeline with validation gates |
-| `src/monitoring.py` | Drift detection (performance, features, predictions, freshness) |
-| `src/model_registry.py` | Version registry with staging/production/archived lifecycle |
-| `run_pipeline.py` | CLI entry point for automated retraining |
-| `tests/test_data_validation.py` | 9 tests for data validation |
-| `tests/test_data_sources.py` | 5 tests for multi-source fallback |
-| `tests/test_feature_store.py` | 7 tests for feature versioning |
-| `tests/test_pipeline.py` | 10 tests for retraining pipeline |
-| `tests/test_monitoring.py` | 11 tests for drift detection |
-| `tests/test_model_registry.py` | 9 tests for model registry |
+| `src/engine.py` | Event-driven execution engine, Order/Bar classes, slippage models, fill models |
+| `src/risk_controls.py` | Pre-trade risk checks, position/daily/weekly/drawdown limits, Kelly sizing |
+| `src/paper_trader.py` | Paper trading mode, portfolio tracking, state persistence |
+| `tests/test_engine.py` | 12 tests for execution engine |
+| `tests/test_risk_controls.py` | 12 tests for risk controls |
+| `tests/test_paper_trader.py` | 9 tests for paper trading |
+| `tests/test_execution_quality.py` | 5 tests for slippage/fill models |
 
 ## Files to Modify
 
 | File | Change |
 |------|--------|
-| `src/data_fetcher.py` | Integrate `validate_data()` after fetch, add fallback source |
-| `src/features.py` | Return `feature_hash` alongside DataFrame |
-| `src/model.py` | Save feature_hash with model, verify compatibility on load |
-| `src/trainer.py` | Return metrics dict for pipeline integration |
-| `app.py` | Add "Pipeline" and "Monitoring" tabs (optional) |
-| `requirements.txt` | Add `scipy>=1.11` (already present) |
+| `src/backtester.py` | Add `BacktestExecutionSimulator`, replace fixed slippage with volume/adaptive models |
+| `app.py` | Add "Paper Trading" tab (16th tab) |
+| `requirements.txt` | No changes needed |
+| `run_pipeline.py` | Add `--paper` flag to run paper trading after training |
 
 ---
 
@@ -1322,9 +941,9 @@ After all 6 tasks:
 - **User's project:** `C:\Users\uttam\development\stomar`
 - **Run tests:** `$env:PYTHONPATH = "C:\Users\uttam\development\stomar"; python -m pytest tests/ -v`
 - **Run linter:** `C:\Users\uttam\venv\Scripts\ruff.exe check src/ tests/ --select F401,E,F,W --ignore E501,F841`
-- **Current test count:** 221 tests passing
-- **Existing modules:** `data_fetcher.py`, `features.py`, `model.py`, `trainer.py`, `logging_config.py`
-- **Pipeline will be triggered by:** `python run_pipeline.py` or cron schedule
-- **User constraint:** Everything must be free (no Kite Connect at ₹500/month)
-- **Data strategy:** yfinance primary + NSE archive fallback (both free)
-- **Key insight:** This stage is about INFRASTRUCTURE, not signal improvement. The signal was proven noise in Stage 2.
+- **Current test count:** 335 tests passing
+- **Existing modules:** `risk.py` (Kelly, VaR, CVaR, sizing), `portfolio.py` (buy/sell with NSE costs), `backtester.py` (walk-forward, compute_metrics)
+- **User constraint:** Everything must be free, must work on Windows
+- **Key insight:** This stage is about EXECUTION — making sure signals are actually tradeable with proper risk management
+- **Paper trading must run for 3+ months before real money** (per IMPROVEMENTS.md)
+- **Event-driven parity:** Same code path for backtest → paper → live
