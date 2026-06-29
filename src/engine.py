@@ -14,6 +14,7 @@ Usage:
 """
 
 import logging
+import random
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
@@ -78,12 +79,13 @@ class ExecutionEngine:
     price data, fills orders based on order type and price action.
     """
 
-    def __init__(self, slippage_model=None):
+    def __init__(self, slippage_model=None, fill_probability: float = 1.0):
         self.pending_orders: list[Order] = []
         self.filled_orders: list[Order] = []
         self.rejected_orders: list[Order] = []
         self.order_counter = 0
         self.slippage_model = slippage_model or FixedSlippage(0.001)
+        self.fill_probability = fill_probability
 
     def submit_order(self, order: Order) -> Order:
         """Submit an order to the engine."""
@@ -108,6 +110,11 @@ class ExecutionEngine:
             fill_price = self._check_fill(order, bar)
 
             if fill_price is not None:
+                prob = self._estimate_fill_probability(order, bar)
+                if random.random() > prob:
+                    remaining.append(order)
+                    continue
+
                 slippage = self.slippage_model.calculate(
                     order.side, fill_price, bar.volume
                 )
@@ -160,6 +167,24 @@ class ExecutionEngine:
                 return bar.open
 
         return None
+
+    def _estimate_fill_probability(self, order: Order, bar: Bar) -> float:
+        """Estimate fill probability. Market=100%, limit depends on distance."""
+        if order.order_type == OrderType.MARKET:
+            return 1.0
+        if order.order_type in (OrderType.STOP_LOSS, OrderType.STOP_MARKET):
+            return 1.0
+
+        if order.order_type == OrderType.LIMIT and bar.close > 0:
+            distance = abs(order.price - bar.close) / bar.close
+            if distance < 0.005:
+                return 0.9
+            elif distance < 0.01:
+                return 0.7
+            elif distance < 0.02:
+                return 0.4
+            return 0.1
+        return self.fill_probability
 
     def cancel_all(self, ticker: str = None) -> list[Order]:
         """Cancel all pending orders."""
@@ -220,3 +245,46 @@ class AdaptiveSlippage:
         base = price * self.base_rate
         impact = (order_value / max(volume * price, 1)) * self.impact_factor * price
         return base + impact
+
+
+class BacktestExecutionSimulator:
+    """Realistic execution simulation for backtesting.
+
+    Models volume-based slippage, market impact, order type simulation,
+    and fill probability for limit orders.
+    """
+
+    def __init__(self, slippage_model="volume", impact_factor: float = 0.1):
+        self.slippage_model = slippage_model
+        self.impact_factor = impact_factor
+
+    def simulate_fill(self, side: OrderSide, price: float, volume: float,
+                      order_value: float = 0) -> float:
+        """Simulate realistic fill with slippage and impact."""
+        if self.slippage_model == "volume":
+            model = VolumeSlippage()
+        elif self.slippage_model == "adaptive":
+            model = AdaptiveSlippage(impact_factor=self.impact_factor)
+        else:
+            model = FixedSlippage()
+
+        slippage = model.calculate(side, price, volume)
+        return price + slippage if side == OrderSide.BUY else price - slippage
+
+    def estimate_fill_probability(self, order_type: OrderType, price: float,
+                                  bar_close: float) -> float:
+        """Estimate probability that a limit order fills."""
+        if order_type == OrderType.MARKET:
+            return 1.0
+        if order_type in (OrderType.STOP_LOSS, OrderType.STOP_MARKET):
+            return 1.0
+        if order_type == OrderType.LIMIT and bar_close > 0:
+            distance = abs(price - bar_close) / bar_close
+            if distance < 0.005:
+                return 0.9
+            elif distance < 0.01:
+                return 0.7
+            elif distance < 0.02:
+                return 0.4
+            return 0.1
+        return 0.5

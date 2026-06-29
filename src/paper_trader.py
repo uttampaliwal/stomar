@@ -262,6 +262,50 @@ class PaperTrader:
             json.dump(data, f, indent=2, default=str)
         logger.info("Session exported to %s", path)
 
+    def save_state(self, path: str = "paper_state.json"):
+        """Save paper trading state to disk for persistence across restarts."""
+        state = {
+            "initial_capital": self.initial_capital,
+            "cash": self.cash,
+            "cumulative_pnl": self.cumulative_pnl,
+            "positions": {
+                t: {"quantity": p.quantity, "avg_cost": p.avg_cost,
+                    "current_price": p.current_price}
+                for t, p in self.positions.items()
+            },
+            "closed_positions": self.closed_positions,
+            "trade_log": self.get_trade_log(),
+            "risk_daily_pnl": self.risk_controller.daily_pnl,
+            "risk_weekly_pnl": self.risk_controller.weekly_pnl,
+            "risk_peak_equity": self.risk_controller.peak_equity,
+        }
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2, default=str)
+        logger.info("State saved to %s", path)
+
+    def load_state(self, path: str = "paper_state.json") -> bool:
+        """Load paper trading state from disk. Returns True if loaded."""
+        import os
+        if not os.path.exists(path):
+            return False
+        with open(path) as f:
+            state = json.load(f)
+        self.cash = state.get("cash", self.initial_capital)
+        self.cumulative_pnl = state.get("cumulative_pnl", 0.0)
+        self.positions = {
+            t: Position(ticker=t, quantity=v["quantity"], avg_cost=v["avg_cost"],
+                        current_price=v["current_price"])
+            for t, v in state.get("positions", {}).items()
+        }
+        self.closed_positions = state.get("closed_positions", [])
+        self.risk_controller.daily_pnl = state.get("risk_daily_pnl", 0.0)
+        self.risk_controller.weekly_pnl = state.get("risk_weekly_pnl", 0.0)
+        self.risk_controller.peak_equity = state.get(
+            "risk_peak_equity", self.initial_capital)
+        self.risk_controller.current_equity = self.get_equity()
+        logger.info("State loaded from %s", path)
+        return True
+
     def _estimate_price(self, ticker: str, side: OrderSide) -> float:
         """Estimate price for risk check if not yet available."""
         if ticker in self.positions:

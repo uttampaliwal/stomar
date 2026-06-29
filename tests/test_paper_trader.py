@@ -144,3 +144,33 @@ class TestReset:
         assert len(t.positions) == 0
         assert len(t.trade_log) == 0
         assert t.get_equity() == 100_000
+
+
+# ── Save/Load State ──
+
+class TestStatePersistence:
+    def test_save_state(self, tmp_path):
+        t = _trader()
+        t.place_order("TEST.NS", OrderSide.BUY, OrderType.MARKET, 10)
+        t.on_bar("TEST.NS", o=1000, h=1010, low=990, c=1005)
+        path = tmp_path / "state.json"
+        t.save_state(str(path))
+        assert path.exists()
+
+    def test_load_state(self, tmp_path):
+        t = _trader()
+        t.place_order("TEST.NS", OrderSide.BUY, OrderType.MARKET, 10)
+        t.on_bar("TEST.NS", o=1000, h=1010, low=990, c=1005)
+        path = tmp_path / "state.json"
+        t.save_state(str(path))
+
+        t2 = _trader()
+        loaded = t2.load_state(str(path))
+        assert loaded is True
+        assert t2.cash == t.cash
+        assert "TEST.NS" in t2.positions
+
+    def test_load_nonexistent_returns_false(self, tmp_path):
+        t = _trader()
+        result = t.load_state(str(tmp_path / "nope.json"))
+        assert result is False

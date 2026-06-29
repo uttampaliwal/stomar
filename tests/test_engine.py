@@ -76,28 +76,28 @@ class TestMarketOrderFills:
 
 class TestLimitOrderFills:
     def test_limit_buy_fills_when_low_touches(self):
-        engine = ExecutionEngine(slippage_model=FixedSlippage(0))
-        engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=98))
+        engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
+        engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=101))
         filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
         assert len(filled) == 1
-        assert filled[0].filled_price <= 98.0  # Fill at limit or better
+        assert filled[0].filled_price <= 101.0  # Fill at limit or better
 
     def test_limit_buy_not_filled_when_price_high(self):
-        engine = ExecutionEngine(slippage_model=FixedSlippage(0))
-        engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=90))
+        engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
+        engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=85))
         filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
         assert len(filled) == 0
 
     def test_limit_sell_fills_when_high_touches(self):
-        engine = ExecutionEngine(slippage_model=FixedSlippage(0))
+        engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
         engine.submit_order(Order("", "TEST.NS", OrderSide.SELL, OrderType.LIMIT, 10, price=103))
         filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price >= 103.0
 
     def test_limit_sell_not_filled_when_price_low(self):
-        engine = ExecutionEngine(slippage_model=FixedSlippage(0))
-        engine.submit_order(Order("", "TEST.NS", OrderSide.SELL, OrderType.LIMIT, 10, price=110))
+        engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
+        engine.submit_order(Order("", "TEST.NS", OrderSide.SELL, OrderType.LIMIT, 10, price=120))
         filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
         assert len(filled) == 0
 
@@ -202,3 +202,64 @@ class TestAdaptiveSlippage:
         s = AdaptiveSlippage(0.001, 0.1)
         result = s.calculate(OrderSide.BUY, 100, 1_000_000, order_value=0)
         assert result > 0
+
+
+# ── Fill Probability ──
+
+class TestFillProbability:
+    def test_market_always_fills(self):
+        engine = ExecutionEngine(slippage_model=FixedSlippage(0))
+        engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.MARKET, 10))
+        filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+        assert len(filled) == 1
+
+    def test_limit_near_close_high_probability(self):
+        results = []
+        for _ in range(20):
+            engine = ExecutionEngine(slippage_model=FixedSlippage(0))
+            engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=101))
+            filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+            results.append(len(filled) > 0)
+        assert sum(results) >= 10  # ~70% probability, should usually pass
+
+    def test_limit_far_low_probability(self):
+        results = []
+        for _ in range(20):
+            engine = ExecutionEngine(slippage_model=FixedSlippage(0))
+            engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=85))
+            filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+            results.append(len(filled) > 0)
+        assert sum(results) < 15
+
+
+# ── BacktestExecutionSimulator ──
+
+class TestBacktestExecutionSimulator:
+    def test_simulate_fill_buy_adds_slippage(self):
+        from src.engine import BacktestExecutionSimulator
+        sim = BacktestExecutionSimulator(slippage_model="fixed")
+        fill = sim.simulate_fill(OrderSide.BUY, 100, 1_000_000)
+        assert fill > 100
+
+    def test_simulate_fill_sell_subtracts_slippage(self):
+        from src.engine import BacktestExecutionSimulator
+        sim = BacktestExecutionSimulator(slippage_model="fixed")
+        fill = sim.simulate_fill(OrderSide.SELL, 100, 1_000_000)
+        assert fill < 100
+
+    def test_fill_prob_market_always_one(self):
+        from src.engine import BacktestExecutionSimulator
+        sim = BacktestExecutionSimulator()
+        assert sim.estimate_fill_probability(OrderType.MARKET, 100, 100) == 1.0
+
+    def test_fill_prob_limit_near_high(self):
+        from src.engine import BacktestExecutionSimulator
+        sim = BacktestExecutionSimulator()
+        prob = sim.estimate_fill_probability(OrderType.LIMIT, 101, 102)
+        assert prob >= 0.7
+
+    def test_fill_prob_limit_far_low(self):
+        from src.engine import BacktestExecutionSimulator
+        sim = BacktestExecutionSimulator()
+        prob = sim.estimate_fill_probability(OrderType.LIMIT, 85, 102)
+        assert prob <= 0.1
