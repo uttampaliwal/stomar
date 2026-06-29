@@ -1999,7 +1999,15 @@ def tab_ledger():
     # --- Meta-Controller Weights ---
     st.subheader("Meta-Controller Signal Weights")
     from src.meta_controller import MetaController
+    import pickle as _pickle
+    import warnings as _warnings
     mc = MetaController()
+    _model_path = os.path.join(os.path.dirname(__file__), "meta_controller.pkl")
+    if os.path.exists(_model_path):
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("ignore")
+            with open(_model_path, "rb") as _f:
+                mc = _pickle.load(_f)
     weights = mc.get_weights()
     if weights:
         w_df = pd.DataFrame([
