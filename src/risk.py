@@ -24,8 +24,8 @@ def fixed_fraction_sizing(capital: float, risk_per_trade: float, entry_price: fl
 def volatility_position_size(capital: float, target_risk: float, atr: float, price: float) -> int:
     if atr <= 0 or price <= 0:
         return 0
-    dollar_vol = atr * price
-    shares = int((capital * target_risk) / dollar_vol)
+    vol_pct = atr / price
+    shares = int((capital * target_risk) / (atr))
     max_affordable = int(capital * 0.95 / price)
     return min(shares, max_affordable)
 

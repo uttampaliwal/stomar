@@ -328,8 +328,6 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
                     logger.info("ensemble_test ticker=%s accuracy=%.4f correct=%d/%d", ticker, ensemble_acc, correct, len(final_dir))
     else:
         logger.info("skipping_dl ticker=%s reason=insufficient_data rows=%d", ticker, len(df_feat))
-        scaler.fit(lstm_data)
-        scaled = scaler.transform(lstm_data)
         split = 0
 
     if lstm_model is not None:

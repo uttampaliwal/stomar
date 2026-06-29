@@ -224,19 +224,27 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
         elif regime is not None:
             weights = get_regime_weights(regime)
         else:
-            n_models = 5
-            w = 1.0 / n_models
-            weights = {"lstm": w, "gru": w, "transformer": w, "xgb": w, "lgb": w}
+            weights = {"lstm": 0.2, "gru": 0.2, "transformer": 0.2, "xgb": 0.2, "lgb": 0.2}
 
-        # Use continuous probabilities for all models
-        ensemble_prob = (
-            prob_lstm * weights.get("lstm", 0.2) +
-            prob_gru * weights.get("gru", 0.2) +
-            prob_tf * weights.get("transformer", 0.2) +
-            xgb_prob[1] * weights.get("xgb", 0.2) +
-            lgb_prob[1] * weights.get("lgb", 0.2)
-        )
-        weights_used = weights
+        # Build available model probabilities and renormalize weights
+        model_probs = [
+            ("lstm", prob_lstm),
+            ("gru", prob_gru),
+            ("transformer", prob_tf),
+            ("xgb", xgb_prob[1]),
+        ]
+        if lgb_model is not None:
+            model_probs.append(("lgb", lgb_prob[1]))
+
+        total_w = sum(weights.get(name, 0.2) for name, _ in model_probs)
+        if total_w > 0:
+            ensemble_prob = sum(
+                prob * weights.get(name, 0.2) / total_w
+                for name, prob in model_probs
+            )
+        else:
+            ensemble_prob = 0.5
+        weights_used = {name: weights.get(name, 0.2) / total_w for name, _ in model_probs} if total_w > 0 else weights
 
     ensemble_dir = 1 if ensemble_prob > 0.5 else 0
     confidence = abs(ensemble_prob - 0.5) * 2 * 100

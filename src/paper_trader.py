@@ -210,12 +210,14 @@ class PaperTrader:
                 total_cost = pos.avg_cost * old_qty + order.filled_price * order.filled_quantity
                 pos.quantity -= order.filled_quantity
                 pos.avg_cost = total_cost / abs(pos.quantity)
-                self.cash += order.fill_cost
+                net_proceeds = order.filled_price * order.filled_quantity - (order.fill_cost - order.filled_price * order.filled_quantity)
+                self.cash += net_proceeds
             elif ticker in self.positions and self.positions[ticker].quantity > 0:
                 # Closing/reducing long position
                 pos = self.positions[ticker]
                 realized = (order.filled_price - pos.avg_cost) * min(order.filled_quantity, pos.quantity)
-                self.cash += order.fill_cost
+                net_proceeds = order.filled_price * order.filled_quantity - (order.fill_cost - order.filled_price * order.filled_quantity)
+                self.cash += net_proceeds
                 self.closed_positions.append({
                     "ticker": ticker,
                     "avg_cost": pos.avg_cost,
@@ -241,7 +243,8 @@ class PaperTrader:
                     avg_cost=order.filled_price,
                     current_price=order.filled_price,
                 )
-                self.cash += order.fill_cost
+                net_proceeds = order.filled_price * order.filled_quantity - (order.fill_cost - order.filled_price * order.filled_quantity)
+                self.cash += net_proceeds
 
     def update_prices(self, prices: dict[str, float]):
         """Update current prices for all positions."""

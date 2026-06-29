@@ -268,14 +268,14 @@ _POSITIVE_WORDS = {
     "surge", "rally", "gain", "profit", "bull", "rise", "jump", "high",
     "record", "growth", "strong", "upgrade", "outperform", "buy", "boost",
     "dividend", "expansion", "recovery", "optimism", "beat", "exceed",
-    "ebitda", "capex", "downstream", "revenue", "margin", "upside",
-    "breakout", "momentum", "accumulate", "accumulate", "inflow",
+    "ebitda", "revenue", "margin", "upside",
+    "breakout", "momentum", "accumulate", "inflow",
 }
 _NEGATIVE_WORDS = {
     "crash", "loss", "bear", "fall", "drop", "decline", "plunge", "low",
     "weak", "downgrade", "underperform", "sell", "fear", "risk", "debt",
     "recession", "slowdown", "warning", "miss", "lawsuit", "fraud",
-    "downstream", "capex", "impairment", "restructure", "outflow",
+    "impairment", "restructure", "outflow",
 }
 
 

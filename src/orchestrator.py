@@ -315,6 +315,13 @@ class DailyOrchestrator:
 
     def _make_decision(self, signals: dict) -> dict:
         """Pass signals to meta-controller for a decision."""
+        if not signals:
+            return {
+                "action": "HOLD",
+                "position_size": 0.0,
+                "confidence": 0.0,
+                "reasoning": "No signals collected",
+            }
         if self.meta_controller is not None:
             return self.meta_controller.decide(signals)
         return self._default_decision(signals)

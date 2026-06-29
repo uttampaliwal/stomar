@@ -148,11 +148,11 @@ def compute_momentum_score(close_series, windows=None):
         else:
             scores[f"mom_{w}d"] = 0.0
 
-    # Combined momentum: weighted average
+    # Combined momentum: weighted average, normalized to 0-100 scale
     weights = {5: 0.1, 20: 0.2, 60: 0.3, 120: 0.4}
     combined = sum(scores.get(f"mom_{w}d", 0) * wt
                    for w, wt in weights.items() if f"mom_{w}d" in scores)
-    scores["momentum_combined"] = float(combined)
+    scores["momentum_combined"] = float(max(0, min(100, (combined + 0.5) * 100)))
 
     return scores
 
