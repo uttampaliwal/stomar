@@ -1918,9 +1918,104 @@ def tab_mf_tracker():
             st.rerun()
 
 
+def tab_ledger():
+    """Ledger tab — decision history, signal accuracy, P&L from persistent log."""
+    st.header("📒 Trading Ledger")
+    st.caption("Historical decisions, signal accuracy, and P&L from the autonomous daily loop")
+
+    from src.ledger import Ledger
+
+    db_path = "stomar.db"
+    if not os.path.exists(db_path):
+        st.info("No ledger found. Run `python run_daily.py` to start logging decisions.")
+        return
+
+    ledger = Ledger(db_path)
+
+    # --- Portfolio Summary ---
+    st.subheader("Portfolio Overview")
+    snapshots = ledger.get_snapshots()
+    if snapshots:
+        latest = snapshots[0]
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Value", f"₹{latest['total_value']:,.0f}")
+        col2.metric("Cash", f"₹{latest['cash']:,.0f}")
+        invested = latest['total_value'] - latest['cash']
+        col3.metric("Invested", f"₹{invested:,.0f}")
+    else:
+        st.info("No portfolio snapshots yet.")
+
+    # --- Performance ---
+    st.subheader("Decision Performance")
+    perf = ledger.get_performance()
+    if perf["total_decisions"] > 0:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Decisions", perf["total_decisions"])
+        c2.metric("Resolved", perf["resolved"] or 0)
+        c3.metric("Correct", perf["correct_predictions"] or 0)
+        accuracy = perf["accuracy"]
+        c4.metric("Accuracy", f"{accuracy:.1%}" if accuracy is not None else "N/A")
+    else:
+        st.info("No decisions logged yet. Run `python run_daily.py` to start.")
+
+    # --- Signal Accuracy ---
+    st.subheader("Signal Module Accuracy")
+    accuracy = ledger.get_signal_accuracy()
+    if accuracy:
+        acc_df = pd.DataFrame([
+            {"Module": name, "Accuracy": f"{acc:.1%}" if acc is not None else "N/A"}
+            for name, acc in sorted(accuracy.items(), key=lambda x: x[1] or 0, reverse=True)
+        ])
+        st.dataframe(acc_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No resolved predictions yet to compute accuracy.")
+
+    # --- Recent Decisions ---
+    st.subheader("Recent Decisions")
+    decisions = ledger.get_decisions()
+    if decisions:
+        dec_df = pd.DataFrame([
+            {
+                "Date": d["date"],
+                "Ticker": d["ticker"],
+                "Action": d["action"],
+                "Confidence": f"{d['confidence']:.2f}" if d["confidence"] else "N/A",
+                "Actual": f"{d['actual_return']:.2%}" if d["actual_return"] is not None else "Pending",
+                "Correct": "✅" if d["correct"] == 1 else ("❌" if d["correct"] == 0 else "—"),
+            }
+            for d in decisions[:50]
+        ])
+        st.dataframe(dec_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No decisions in ledger yet.")
+
+    # --- P&L Curve ---
+    daily_pnl = ledger.get_daily_pnl()
+    if len(daily_pnl) > 1:
+        st.subheader("Portfolio Value Over Time")
+        pnl_df = pd.DataFrame(daily_pnl)
+        st.line_chart(pnl_df.set_index("date")["total_value"])
+
+    # --- Meta-Controller Weights ---
+    st.subheader("Meta-Controller Signal Weights")
+    from src.meta_controller import MetaController
+    mc = MetaController()
+    weights = mc.get_weights()
+    if weights:
+        w_df = pd.DataFrame([
+            {"Signal": name, "Weight": f"{w:+.4f}"}
+            for name, w in weights.items()
+        ])
+        st.dataframe(w_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("Meta-controller not yet trained. Run `python run_daily.py --train-meta` to train.")
+
+    ledger.close()
+
+
 def main():
     # (header is now rendered inside tab_predictions)
-    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime", "📡 Monitoring", "🔄 Pipeline", "📝 Paper Trading", "🏦 MF Tracker"])
+    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime", "📡 Monitoring", "🔄 Pipeline", "📝 Paper Trading", "🏦 MF Tracker", "📒 Ledger"])
     with tabs[0]: tab_predictions()
     with tabs[1]: tab_portfolio()
     with tabs[2]: tab_backtest()
@@ -1938,6 +2033,7 @@ def main():
     with tabs[14]: tab_pipeline()
     with tabs[15]: tab_paper_trading()
     with tabs[16]: tab_mf_tracker()
+    with tabs[17]: tab_ledger()
     st.markdown("""
     <div style="text-align:center;padding:2rem 0 1rem;margin-top:2rem;border-top:1px solid var(--border-primary);">
         <div style="font-size:0.7rem;color:var(--text-muted);letter-spacing:0.05em;">

@@ -1,10 +1,11 @@
-"""Windows Task Scheduler helper for nightly pipeline runs.
+"""Windows Task Scheduler helper for the daily signal loop.
 
 Usage:
-    python schedule_pipeline.py                # Install scheduled task (runs daily at 6 PM)
+    python schedule_pipeline.py                # Install (daily at 4 PM IST)
     python schedule_pipeline.py --remove       # Remove scheduled task
-    python schedule_pipeline.py --run-now      # Run pipeline immediately
+    python schedule_pipeline.py --run-now      # Run daily loop immediately
     python schedule_pipeline.py --status       # Check task status
+    python schedule_pipeline.py --time 16:00   # Custom run time
 
 Requires: Windows Task Scheduler (schtasks.exe, pre-installed on Windows)
 """
@@ -14,10 +15,10 @@ import subprocess
 import sys
 from datetime import datetime
 
-TASK_NAME = "StoMar_Retraining_Pipeline"
+TASK_NAME = "StoMar_Daily_Signal"
 PYTHON_PATH = os.path.join(os.path.dirname(sys.executable), "python.exe")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PIPELINE_SCRIPT = os.path.join(SCRIPT_DIR, "run_pipeline.py")
+DAILY_SCRIPT = os.path.join(SCRIPT_DIR, "run_daily.py")
 LOG_DIR = os.path.join(SCRIPT_DIR, "data", "pipeline_logs")
 
 
@@ -25,15 +26,15 @@ def ensure_log_dir():
     os.makedirs(LOG_DIR, exist_ok=True)
 
 
-def install_task(run_time: str = "18:00"):
+def install_task(run_time: str = "16:00"):
     """Install a daily scheduled task via schtasks."""
     ensure_log_dir()
-    log_file = os.path.join(LOG_DIR, f"pipeline_{datetime.now().strftime('%Y%m%d')}.log")
+    log_file = os.path.join(LOG_DIR, f"daily_{datetime.now().strftime('%Y%m%d')}.log")
 
     cmd = [
         "schtasks", "/create",
         "/tn", TASK_NAME,
-        "/tr", f'"{PYTHON_PATH}" "{PIPELINE_SCRIPT}" >> "{log_file}" 2>&1',
+        "/tr", f'"{PYTHON_PATH}" "{DAILY_SCRIPT}" >> "{log_file}" 2>&1',
         "/sc", "daily",
         "/st", run_time,
         "/f",
@@ -45,7 +46,7 @@ def install_task(run_time: str = "18:00"):
         print(f"  Schedule: Daily at {run_time}")
         print(f"  Log: {log_file}")
         print(f"  Python: {PYTHON_PATH}")
-        print(f"  Script: {PIPELINE_SCRIPT}")
+        print(f"  Script: {DAILY_SCRIPT}")
     else:
         print(f"Failed to install task: {result.stderr}")
     return result.returncode
@@ -63,15 +64,11 @@ def remove_task():
 
 
 def run_now():
-    """Run the pipeline immediately."""
-    ensure_log_dir()
-    log_file = os.path.join(LOG_DIR, f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
-
-    print(f"Running pipeline now...")
-    print(f"Log: {log_file}")
+    """Run the daily loop immediately."""
+    print(f"Running daily signal loop now...")
 
     result = subprocess.run(
-        [PYTHON_PATH, PIPELINE_SCRIPT],
+        [PYTHON_PATH, DAILY_SCRIPT],
         capture_output=False,
         cwd=SCRIPT_DIR,
     )
@@ -102,7 +99,7 @@ def main():
     elif "--status" in args:
         return check_status()
     else:
-        run_time = "18:00"
+        run_time = "16:00"
         for i, arg in enumerate(args):
             if arg == "--time" and i + 1 < len(args):
                 run_time = args[i + 1]
