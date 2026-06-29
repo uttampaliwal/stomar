@@ -28,7 +28,10 @@ def fetch_stock_data(
             now = pd.Timestamp.now(tz=last_date.tz)
         else:
             now = pd.Timestamp.now()
-        if last_date >= now.normalize() - pd.Timedelta(days=2):
+        # Refresh if data is stale (>2 days old) OR too short (< expected rows for period)
+        expected_min_rows = {"1y": 200, "2y": 400, "3y": 600, "5y": 1000}
+        min_rows = expected_min_rows.get(period, 200)
+        if last_date >= now.normalize() - pd.Timedelta(days=2) and len(df) >= min_rows:
             return df
 
     stock = yf.Ticker(ticker)

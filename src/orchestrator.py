@@ -101,32 +101,18 @@ class DailyOrchestrator:
         close = df["close"]
         returns = close.pct_change().dropna()
 
-        # 2. Ensemble prediction
-        signals.update(self._run_ensemble(ticker, df))
-
-        # 3. Sentiment
+        # 2. Collect auxiliary signals FIRST (needed as ensemble features)
         signals.update(self._run_sentiment(ticker))
-
-        # 4. FII/DII flow
         signals.update(self._run_flow())
-
-        # 5. Options PCR
         signals.update(self._run_pcr())
-
-        # 6. Multi-timeframe
         signals.update(self._run_mtf(ticker, df))
-
-        # 7. Regime detection
         signals.update(self._run_regime(close, df))
-
-        # 8. Risk metrics
         signals.update(self._run_risk(returns))
-
-        # 9. Volatility forecast
         signals.update(self._run_volatility(returns))
-
-        # 10. Fundamental score
         signals.update(self._run_fundamentals(ticker))
+
+        # 3. Ensemble prediction (uses auxiliary signals as features)
+        signals.update(self._run_ensemble(ticker, df, signals))
 
         return signals
 
@@ -139,28 +125,52 @@ class DailyOrchestrator:
             logger.warning(f"Data fetch failed for {ticker}: {e}")
             return None
 
-    def _run_ensemble(self, ticker: str, df: pd.DataFrame) -> dict:
+    def _run_ensemble(self, ticker: str, df: pd.DataFrame, signals: dict = None) -> dict:
         """Run ensemble prediction."""
         try:
             from src.features import add_technical_indicators
             from src.model import load_models, models_exist
-            from src.trainer import FEATURE_COLS
             from src.ensemble import predict_ensemble
 
             if not models_exist(ticker):
                 return {}
 
-            models = load_models(ticker)
+            tup = load_models(ticker)
+            models = {
+                "lstm": tup[0], "gru": tup[1], "transformer": tup[2],
+                "xgb": tup[3], "scaler": tup[4], "features": tup[5], "lgb": tup[6],
+            }
             df_feat = add_technical_indicators(df)
-            df_feat = df_feat.dropna(subset=FEATURE_COLS + ["target"])
+
+            # Inject real-time signal values as features for the model
+            signal_map = {
+                "sentiment_score": "sentiment_score",
+                "fii_net": "fii_net",
+                "dii_net": "dii_net",
+                "pcr": "pcr",
+                "mtf_signal": "mtf_signal",
+            }
+            for feat_name, sig_name in signal_map.items():
+                if feat_name in models["features"] and feat_name not in df_feat.columns:
+                    val = (signals or {}).get(sig_name, 0) or 0
+                    df_feat[feat_name] = val
+
+            # Fill any remaining missing model features with 0
+            for col in models["features"]:
+                if col not in df_feat.columns:
+                    df_feat[col] = 0
+
+            # Only dropna on columns that exist in the data
+            existing_feats = [c for c in models["features"] if c in df_feat.columns]
+            df_feat = df_feat.dropna(subset=[c for c in existing_feats if c in df_feat.columns] + ["target"])
 
             if len(df_feat) < 2:
                 return {}
 
-            last_row = df_feat.iloc[[-1]][FEATURE_COLS]
             prob, direction, confidence = predict_ensemble(
                 models["lstm"], models["gru"], models["transformer"],
-                models["xgb"], models["scaler"], FEATURE_COLS, df_feat
+                models["xgb"], models["scaler"], models["features"], df_feat,
+                lgb_model=models["lgb"],
             )
             return {
                 "ensemble_direction": direction,

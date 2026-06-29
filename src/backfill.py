@@ -208,7 +208,14 @@ class HistoricalBackfill:
 
             feature_cols = models["features"]
             df_feat = add_technical_indicators(df_slice)
-            df_feat = df_feat.dropna(subset=feature_cols)
+
+            # Fill missing model features with 0 (signal features not available in historical OHLCV)
+            for col in feature_cols:
+                if col not in df_feat.columns:
+                    df_feat[col] = 0
+
+            existing_feats = [c for c in feature_cols if c in df_feat.columns]
+            df_feat = df_feat.dropna(subset=existing_feats)
 
             if len(df_feat) < 2:
                 return {}
