@@ -1,0 +1,11 @@
+{
+  "initial_capital": 200000.0,
+  "cash": 200000.0,
+  "cumulative_pnl": 0.0,
+  "positions": {},
+  "closed_positions": [],
+  "trade_log": [],
+  "risk_daily_pnl": 0.0,
+  "risk_weekly_pnl": 0.0,
+  "risk_peak_equity": 200000.0
+}
