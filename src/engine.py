@@ -169,7 +169,7 @@ class ExecutionEngine:
         return None
 
     def _estimate_fill_probability(self, order: Order, bar: Bar) -> float:
-        """Estimate fill probability. Market=100%, limit depends on distance."""
+        """Estimate fill probability. Market/Stop=100%, limit depends on distance."""
         if order.order_type == OrderType.MARKET:
             return 1.0
         if order.order_type in (OrderType.STOP_LOSS, OrderType.STOP_MARKET):
@@ -178,12 +178,15 @@ class ExecutionEngine:
         if order.order_type == OrderType.LIMIT and bar.close > 0:
             distance = abs(order.price - bar.close) / bar.close
             if distance < 0.005:
-                return 0.9
+                prob = 0.9
             elif distance < 0.01:
-                return 0.7
+                prob = 0.7
             elif distance < 0.02:
-                return 0.4
-            return 0.1
+                prob = 0.4
+            else:
+                prob = 0.1
+            return min(prob, self.fill_probability)
+
         return self.fill_probability
 
     def cancel_all(self, ticker: str = None) -> list[Order]:

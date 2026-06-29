@@ -80,7 +80,7 @@ class TestLimitOrderFills:
         engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=101))
         filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
         assert len(filled) == 1
-        assert filled[0].filled_price <= 101.0  # Fill at limit or better
+        assert filled[0].filled_price <= 101.0
 
     def test_limit_buy_not_filled_when_price_high(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)

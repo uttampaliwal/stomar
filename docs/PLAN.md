@@ -1,914 +1,385 @@
-# Stage 4 — Execution & Risk: Execution Plan
+# Stage 5 — Open Platform: Execution Plan
 
-## Status: Stage 3 Complete (Data validation, feature store, pipeline, monitoring, registry — 335 tests)
+## Status: Stage 4 Complete (Event-driven engine, paper trading, risk controls, execution quality — 424 tests)
 
-Stage 4 answers the question: **Can we execute with proper risk controls and validate signals in paper trading before risking real money?**
+Stage 5 answers the question: **Can we make the ensemble smarter, cover the full NSE universe, integrate mutual funds, and prepare for open-source release?**
 
-This stage builds the execution layer — event-driven order management, paper trading, risk limits, and realistic execution simulation. The goal is to run in paper mode for 3+ months before considering real capital.
+This stage upgrades the modeling (learned ensemble weights, regime routing), expands coverage (all 20 stocks), adds MF tracking, improves sentiment, and prepares the project for others to use.
 
 ---
 
-## Stage 4 Exit Criteria (from IMPROVEMENTS.md)
+## Stage 5 Exit Criteria (from IMPROVEMENTS.md)
 
 | # | Criterion | Status | Priority |
 |---|-----------|--------|----------|
-| 1 | Event-driven engine with backtest-live parity | ✅ DONE | CRITICAL |
-| 2 | Paper trading mode running for 3+ months | ✅ DONE (code ready, starts clock) | CRITICAL |
-| 3 | Risk controls (position limits, loss limits, Kelly caps) | ✅ DONE | HIGH |
-| 4 | Realistic execution simulation (slippage, impact, fill probability) | ✅ DONE | HIGH |
+| 1 | Stacked meta-learner (learned ensemble weights) | ❌ NOT DONE | CRITICAL |
+| 2 | Regime-conditional routing (different weights per regime) | ❌ NOT DONE | HIGH |
+| 3 | Volatility forecasting or ranking prototype built | ⚠️ Partial (vol exists, ranking lacks fundamentals) | MEDIUM |
+| 4 | MF NAV integration + XIRR computation | ⚠️ Partial (XIRR exists, NAV history doesn't) | HIGH |
+| 5 | Sentiment upgraded with FinGPT or multi-source NLP | ❌ NOT DONE | MEDIUM |
+| 6 | All 20 stocks trained | ❌ NOT DONE (3/20) | MEDIUM |
+| 7 | Open-source license + contribution guidelines | ❌ NOT DONE | LOW |
 
 ---
 
-## Pre-Stage 4: Current State Assessment
+## Pre-Stage 5: Current State Assessment
 
 | Component | Current State | What Needs to Change |
 |-----------|--------------|---------------------|
-| Backtester | Batch-oriented walk-forward | Event-driven with same code path for backtest and live |
-| Portfolio | `Portfolio` class with NSE costs, buy/sell/trades | Add order queue, fill simulation, paper mode |
-| Risk | Kelly, VaR, CVaR, position sizing functions | Enforce limits at order time, not after |
-| Slippage | Fixed 0.1% `SLIPPAGE_RATE` | Volume-based, order-type-aware slippage |
-| Order types | Market orders only | Limit, stop-loss, stop-market |
-| Paper trading | None | Live data + simulated execution |
+| Ensemble | Equal-weighted 5-model (20% each) | Learned meta-learner (LogisticRegression on model outputs) |
+| Regime routing | Rule-based detection, separate strategy | Route through ensemble — different model weights per regime |
+| Sentiment | FinBERT on Google News headlines, 30-min cache | Multi-source (news + social + transcripts), FinGPT option |
+| Holdings/MF | Zerodha CSV import, category allocation | Full MF tracker: NAV history, factor exposures, AMFI data |
+| Ranking | Technical factors only (momentum/vol/volume/technical) | Add fundamental factors (P/E, P/B, ROE, dividend yield) |
+| Universe | 3 of 20 stocks trained | All 20 stocks, batch training |
+| Volatility | 5 estimators + mean-reversion forecast | Already solid — enhance with GARCH if time permits |
+| Licensing | None | MIT license + CONTRIBUTING.md |
 
 ---
 
 ## Design Decisions
 
-### Why lightweight event engine (not NautilusTrader/LEAN)?
+### Why LogisticRegression for meta-learner (not neural net)?
 
-The IMPROVEMENTS.md suggests wrapping NautilusTrader or LEAN. After assessment:
+| Factor | LogisticRegression | Neural Meta-Learner |
+|--------|-------------------|---------------------|
+| Interpretability | Coefficients show model contribution | Black box |
+| Overfitting risk | Low (linear model) | High (small dataset: ~250 trading days) |
+| Training speed | Instant | Minutes |
+| Maintenance | Simple | Requires GPU, tuning |
+| Performance | Competitive for 5 inputs | Marginal improvement not worth complexity |
 
-| Factor | NautilusTrader/LEAN | Custom Lightweight |
-|--------|--------------------|--------------------|
-| Installation | Complex (Rust/C++ deps, Docker) | Pure Python, `pip install` |
-| Learning curve | Weeks | Hours |
-| Customization | Hard (large codebase) | Full control |
-| Our needs | Overkill (single asset, EOD) | Perfect fit |
-| User constraint | Must be free, must work on Windows | Meets constraint |
+**Decision:** Use LogisticRegression with L2 regularization. The meta-learner has only 5 inputs (one per base model) and ~250 training samples per walk-forward window. A linear model is the right complexity level.
 
-**Decision:** Build a lightweight event engine (~300 lines) that gives backtest-live parity for our use case (daily signals, single-asset or small portfolio, NSE delivery trades). If we later need microsecond latency or multi-asset futures, we can migrate to NautilusTrader.
+### Why not build FinGPT from scratch?
 
-### Event-driven parity principle
+FinGPT is a 7B parameter model. Fine-tuning requires:
+- GPU with 16GB+ VRAM (user has RTX 3050 6GB — insufficient)
+- Training data (financial conversations, Indian market context)
+- inference pipeline
 
-```
-Same code path for backtest and live:
+**Decision:** Keep FinBERT as the primary model. Add multi-source headlines (MoneyControl, Economic Times) as a future enhancement. Note FinGPT as a documentation upgrade path.
 
-  Signal → Risk Check → Order → Fill Simulation → Portfolio Update
-    │                                                    │
-    └──── Backtest: uses historical data ─────────────────┘
-    └──── Paper:    uses live data + simulated fills ─────┘
-    └──── Live:     uses live data + real broker API ─────┘ (Stage 5)
-```
+### MF data source: yfinance vs AMFI
 
----
+| Source | Cost | Reliability | Coverage |
+|--------|------|-------------|----------|
+| yfinance (current) | Free | Delayed, gaps | Has NAV for most Indian MFs |
+| AMFI API | Free | Official, reliable | Requires API key registration |
+| MFUtility | Free | Official | Complex SOAP API |
 
-## Execution Plan: 4 Tasks
-
-### Task 1: Event-Driven Order Engine
-**Impact:** Critical — foundation for backtest-live parity
-**Effort:** 5-6 hours
-**Files:** New `src/engine.py`
-
-**Why:** The current backtester is batch-oriented — it processes all signals at once. An event engine processes one bar at a time, just like live trading. This means the same code runs in backtest and live modes.
-
-**Implementation:**
-
-```python
-# src/engine.py
-
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional
-import logging
-
-logger = logging.getLogger(__name__)
-
-
-class OrderSide(Enum):
-    BUY = "BUY"
-    SELL = "SELL"
-
-
-class OrderType(Enum):
-    MARKET = "MARKET"
-    LIMIT = "LIMIT"
-    STOP_LOSS = "STOP_LOSS"
-    STOP_MARKET = "STOP_MARKET"
-
-
-class OrderStatus(Enum):
-    PENDING = "PENDING"
-    FILLED = "FILLED"
-    PARTIALLY_FILLED = "PARTIALLY_FILLED"
-    CANCELLED = "CANCELLED"
-    REJECTED = "REJECTED"
-
-
-@dataclass
-class Order:
-    order_id: str
-    ticker: str
-    side: OrderSide
-    order_type: OrderType
-    quantity: int
-    price: float = 0.0           # Limit price (for LIMIT orders)
-    stop_price: float = 0.0      # Trigger price (for STOP orders)
-    status: OrderStatus = OrderStatus.PENDING
-    filled_price: float = 0.0
-    filled_quantity: int = 0
-    fill_cost: float = 0.0
-    timestamp: str = ""
-    notes: str = ""
-
-
-@dataclass
-class Bar:
-    """Single OHLCV bar."""
-    ticker: str
-    timestamp: str
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
-
-
-class ExecutionEngine:
-    """
-    Event-driven execution engine.
-    
-    Processes one bar at a time, checks pending orders against new
-    price data, fills orders based on order type and price action.
-    
-    Same code path for backtest and paper trading.
-    """
-    
-    def __init__(self, slippage_model=None, fill_model=None):
-        self.pending_orders: list[Order] = []
-        self.filled_orders: list[Order] = []
-        self.rejected_orders: list[Order] = []
-        self.order_counter = 0
-        self.slippage_model = slippage_model or FixedSlippage(0.001)
-        self.fill_model = fill_model or MarketFillModel()
-    
-    def submit_order(self, order: Order) -> Order:
-        """Submit an order to the engine."""
-        self.order_counter += 1
-        order.order_id = f"ORD-{self.order_counter:06d}"
-        order.status = OrderStatus.PENDING
-        self.pending_orders.append(order)
-        logger.info(f"Order submitted: {order.order_id} {order.side.value} "
-                    f"{order.quantity} {order.ticker} @ {order.order_type.value}")
-        return order
-    
-    def on_bar(self, bar: Bar) -> list[Order]:
-        """
-        Process a new bar. Check all pending orders for fills.
-        Returns list of filled orders.
-        """
-        filled = []
-        remaining = []
-        
-        for order in self.pending_orders:
-            if order.ticker != bar.ticker:
-                remaining.append(order)
-                continue
-            
-            fill_price = self._check_fill(order, bar)
-            
-            if fill_price is not None:
-                # Apply slippage
-                slippage = self.slippage_model.calculate(
-                    order.side, fill_price, bar.volume
-                )
-                actual_fill = fill_price + slippage if order.side == OrderSide.BUY \
-                    else fill_price - slippage
-                
-                # Calculate costs
-                from src.constants import calculate_nse_costs
-                costs = calculate_nse_costs(actual_fill, order.quantity,
-                                           "buy" if order.side == OrderSide.BUY else "sell")
-                
-                order.filled_price = actual_fill
-                order.filled_quantity = order.quantity
-                order.fill_cost = actual_fill * order.quantity + costs["total"]
-                order.status = OrderStatus.FILLED
-                order.notes = f"Fill: {actual_fill:.2f}, costs: {costs['total']:.2f}"
-                
-                self.filled_orders.append(order)
-                filled.append(order)
-                logger.info(f"Order filled: {order.order_id} @ {actual_fill:.2f}")
-            else:
-                remaining.append(order)
-        
-        self.pending_orders = remaining
-        return filled
-    
-    def _check_fill(self, order: Order, bar: Bar) -> Optional[float]:
-        """Check if an order would fill on this bar."""
-        if order.order_type == OrderType.MARKET:
-            return bar.open  # Market orders fill at open
-        
-        elif order.order_type == OrderType.LIMIT:
-            if order.side == OrderSide.BUY and bar.low <= order.price:
-                return min(order.price, bar.open)  # Fill at limit or better
-            elif order.side == OrderSide.SELL and bar.high >= order.price:
-                return max(order.price, bar.open)
-        
-        elif order.order_type == OrderType.STOP_LOSS:
-            if order.side == OrderSide.SELL and bar.low <= order.stop_price:
-                return order.stop_price  # Stop triggered, sell at stop
-            elif order.side == OrderSide.BUY and bar.high >= order.stop_price:
-                return order.stop_price
-        
-        elif order.order_type == OrderType.STOP_MARKET:
-            if order.side == OrderSide.SELL and bar.low <= order.stop_price:
-                return bar.open  # Stop triggered, sell at market
-            elif order.side == OrderSide.BUY and bar.high >= order.stop_price:
-                return bar.open
-        
-        return None
-    
-    def cancel_all(self, ticker: str = None):
-        """Cancel all pending orders, optionally for a specific ticker."""
-        cancelled = []
-        remaining = []
-        for order in self.pending_orders:
-            if ticker and order.ticker != ticker:
-                remaining.append(order)
-                continue
-            order.status = OrderStatus.CANCELLED
-            cancelled.append(order)
-        self.pending_orders = remaining
-        self.rejected_orders.extend(cancelled)
-        return cancelled
-    
-    def get_pending(self, ticker: str = None) -> list:
-        if ticker:
-            return [o for o in self.pending_orders if o.ticker == ticker]
-        return self.pending_orders
-    
-    def get_filled(self, ticker: str = None) -> list:
-        if ticker:
-            return [o for o in self.filled_orders if o.ticker == ticker]
-        return self.filled_orders
-
-
-# ─── Slippage Models ───
-
-class FixedSlippage:
-    """Fixed percentage slippage."""
-    def __init__(self, rate: float = 0.001):
-        self.rate = rate
-    
-    def calculate(self, side: OrderSide, price: float, volume: float) -> float:
-        return price * self.rate
-
-
-class VolumeSlippage:
-    """Volume-based slippage: higher volume = lower slippage."""
-    def __init__(self, base_rate: float = 0.002, avg_volume: float = 1_000_000):
-        self.base_rate = base_rate
-        self.avg_volume = avg_volume
-    
-    def calculate(self, side: OrderSide, price: float, volume: float) -> float:
-        vol_ratio = self.avg_volume / max(volume, 1)
-        rate = self.base_rate * min(vol_ratio, 3.0)  # Cap at 3x base
-        return price * rate
-
-
-class AdaptiveSlippage:
-    """Slippage that increases with order size relative to volume."""
-    def __init__(self, base_rate: float = 0.001, impact_factor: float = 0.1):
-        self.base_rate = base_rate
-        self.impact_factor = impact_factor
-    
-    def calculate(self, side: OrderSide, price: float, volume: float,
-                  order_value: float = 0) -> float:
-        base = price * self.base_rate
-        impact = (order_value / max(volume * price, 1)) * self.impact_factor * price
-        return base + impact
-
-
-# ─── Fill Models ───
-
-class MarketFillModel:
-    """Market orders fill at next bar's open."""
-    pass
-
-
-class TWAPFillModel:
-    """Time-Weighted Average Price fill simulation."""
-    def __init__(self, slices: int = 3):
-        self.slices = slices
-```
-
-**Tests:** `tests/test_engine.py`
-- `test_submit_order` — order gets ID and PENDING status
-- `test_market_order_fills_at_open` — market order fills at bar open
-- `test_limit_buy_fills_when_price_touches` — limit buy fills on low touch
-- `test_limit_sell_fills_when_price_touches` — limit sell fills on high touch
-- `test_stop_loss_triggers` — stop loss triggers when price hits stop
-- `test_stop_market_triggers_at_market` — stop market fills at open after trigger
-- `test_order_not_filled_if_price_misses` — pending order stays pending
-- `test_cancel_all` — cancels all pending orders
-- `test_slippage_applied` — slippage increases fill price for buys
-- `test_fill_cost_includes_nse_costs` — fill cost includes brokerage/STT
-- `test_partial_fill_not_happens_on_market` — market orders fill full quantity
-- `test_on_bar_returns_filled_list` — on_bar returns only filled orders
+**Decision:** Use yfinance for NAV history (already works). Document AMFI as a production upgrade path. Keep it simple.
 
 ---
 
-### Task 2: Risk Controls
-**Impact:** High — protects capital from catastrophic loss
-**Effort:** 3-4 hours
-**Files:** New `src/risk_controls.py`, update `src/engine.py`
+## Execution Plan: 5 Tasks
 
-**Why:** The existing `risk.py` has sizing functions but nothing ENFORCES limits at order time. Risk controls must reject orders that violate limits before they reach the engine.
-
-**Implementation:**
-
-```python
-# src/risk_controls.py
-
-import logging
-from dataclasses import dataclass, field
-
-logger = logging.getLogger(__name__)
-
-
-@dataclass
-class RiskLimits:
-    """Configurable risk limits."""
-    max_position_pct: float = 0.25       # Max 25% in single stock
-    max_daily_loss_pct: float = 0.02     # Max 2% daily loss
-    max_weekly_loss_pct: float = 0.05    # Max 5% weekly loss
-    max_drawdown_pct: float = 0.15       # Max 15% drawdown triggers halt
-    max_open_orders: int = 10            # Max pending orders
-    kelly_fraction: float = 0.25         # Use quarter-Kelly (not full)
-    max_total_exposure_pct: float = 0.95 # Max 95% of capital deployed
-    halt_on_breach: bool = True          # Stop trading if limit breached
-
-
-class RiskController:
-    """
-    Pre-trade risk checks. Validates orders before submission.
-    
-    Checks:
-    1. Position size vs max single-stock limit
-    2. Daily P&L vs loss limit
-    3. Weekly P&L vs loss limit
-    4. Current drawdown vs max drawdown
-    5. Total exposure vs max exposure
-    6. Open order count vs limit
-    7. Kelly-capped position sizing
-    """
-    
-    def __init__(self, limits: RiskLimits = None, initial_capital: float = 100000):
-        self.limits = limits or RiskLimits()
-        self.initial_capital = initial_capital
-        self.daily_pnl = 0.0
-        self.weekly_pnl = 0.0
-        self.peak_equity = initial_capital
-        self.current_equity = initial_capital
-        self.halted = False
-        self.halt_reason = ""
-    
-    def check_order(self, order_value: float, current_holdings_value: float,
-                    ticker: str, holdings: dict, prices: dict) -> dict:
-        """
-        Check if an order passes all risk controls.
-        
-        Returns:
-            Dict with approved (bool), reason (str), adjusted_quantity (int or None)
-        """
-        checks = []
-        
-        # 1. Halt check
-        if self.halted:
-            return {"approved": False, "reason": f"Trading halted: {self.halt_reason}"}
-        
-        # 2. Position concentration
-        new_position_value = order_value
-        total_equity = self.current_equity
-        position_pct = new_position_value / max(total_equity, 1)
-        if position_pct > self.limits.max_position_pct:
-            max_value = total_equity * self.limits.max_position_pct
-            checks.append({
-                "passed": False,
-                "check": "position_concentration",
-                "message": f"Position {position_pct:.1%} > {self.limits.max_position_pct:.1%} limit",
-                "max_value": max_value,
-            })
-        else:
-            checks.append({"passed": True, "check": "position_concentration"})
-        
-        # 3. Daily loss limit
-        daily_loss_limit = self.initial_capital * self.limits.max_daily_loss_pct
-        if self.daily_pnl < -daily_loss_limit:
-            checks.append({
-                "passed": False,
-                "check": "daily_loss",
-                "message": f"Daily loss {self.daily_pnl:.2f} exceeds limit {-daily_loss_limit:.2f}",
-            })
-        else:
-            checks.append({"passed": True, "check": "daily_loss"})
-        
-        # 4. Weekly loss limit
-        weekly_loss_limit = self.initial_capital * self.limits.max_weekly_loss_pct
-        if self.weekly_pnl < -weekly_loss_limit:
-            checks.append({
-                "passed": False,
-                "check": "weekly_loss",
-                "message": f"Weekly loss {self.weekly_pnl:.2f} exceeds limit {-weekly_loss_limit:.2f}",
-            })
-        else:
-            checks.append({"passed": True, "check": "weekly_loss"})
-        
-        # 5. Drawdown limit
-        drawdown = (self.peak_equity - self.current_equity) / max(self.peak_equity, 1)
-        if drawdown > self.limits.max_drawdown_pct:
-            checks.append({
-                "passed": False,
-                "check": "max_drawdown",
-                "message": f"Drawdown {drawdown:.1%} exceeds {self.limits.max_drawdown_pct:.1%} limit",
-            })
-            self.halted = True
-            self.halt_reason = f"Max drawdown breached ({drawdown:.1%})"
-        else:
-            checks.append({"passed": True, "check": "max_drawdown"})
-        
-        # 6. Total exposure
-        total_exposure = current_holdings_value + order_value
-        exposure_pct = total_exposure / max(self.current_equity, 1)
-        if exposure_pct > self.limits.max_total_exposure_pct:
-            checks.append({
-                "passed": False,
-                "check": "total_exposure",
-                "message": f"Total exposure {exposure_pct:.1%} > {self.limits.max_total_exposure_pct:.1%}",
-            })
-        else:
-            checks.append({"passed": True, "check": "total_exposure"})
-        
-        all_passed = all(c["passed"] for c in checks)
-        
-        return {
-            "approved": all_passed,
-            "checks": checks,
-            "drawdown_pct": drawdown,
-            "daily_pnl": self.daily_pnl,
-            "weekly_pnl": self.weekly_pnl,
-        }
-    
-    def update_equity(self, new_equity: float):
-        """Update equity and track P&L."""
-        self.current_equity = new_equity
-        self.peak_equity = max(self.peak_equity, new_equity)
-    
-    def update_daily_pnl(self, pnl: float):
-        """Add to daily P&L tracker."""
-        self.daily_pnl += pnl
-    
-    def reset_daily(self):
-        """Reset daily P&L (call at start of each trading day)."""
-        self.daily_pnl = 0.0
-    
-    def reset_weekly(self):
-        """Reset weekly P&L (call at start of each week)."""
-        self.weekly_pnl = 0.0
-        self.daily_pnl = 0.0
-    
-    def resume_trading(self):
-        """Manually resume trading after halt."""
-        self.halted = False
-        self.halt_reason = ""
-        logger.info("Trading resumed manually")
-    
-    def kelly_sized_quantity(self, win_rate: float, avg_win: float,
-                            avg_loss: float, price: float, capital: float) -> int:
-        """Calculate position size using Kelly fraction (not full Kelly)."""
-        from src.risk import kelly_criterion
-        full_kelly = kelly_criterion(win_rate, avg_win, avg_loss)
-        fraction = min(full_kelly, self.limits.kelly_fraction)
-        
-        risk_amount = capital * fraction
-        shares = int(risk_amount / price) if price > 0 else 0
-        max_affordable = int(capital * self.limits.max_position_pct / price) if price > 0 else 0
-        
-        return min(shares, max_affordable)
-    
-    def get_status(self) -> dict:
-        """Get current risk status."""
-        drawdown = (self.peak_equity - self.current_equity) / max(self.peak_equity, 1)
-        return {
-            "halted": self.halted,
-            "halt_reason": self.halt_reason,
-            "current_equity": self.current_equity,
-            "peak_equity": self.peak_equity,
-            "drawdown_pct": drawdown,
-            "daily_pnl": self.daily_pnl,
-            "weekly_pnl": self.weekly_pnl,
-            "daily_loss_remaining": self.initial_capital * self.limits.max_daily_loss_pct + self.daily_pnl,
-            "weekly_loss_remaining": self.initial_capital * self.limits.max_weekly_loss_pct + self.weekly_pnl,
-        }
-```
-
-**Tests:** `tests/test_risk_controls.py`
-- `test_order_within_limits` — order approved
-- `test_order_exceeds_position_limit` — rejected
-- `test_order_exceeds_daily_loss` — rejected
-- `test_order_exceeds_weekly_loss` — rejected
-- `test_drawdown_halts_trading` — halted on breach
-- `test_resume_trading` — manually resume
-- `test_total_exposure_check` — rejects overexposure
-- `test_kelly_sized_quantity` — returns reasonable size
-- `test_kelly_respects_position_limit` — capped at max position
-- `test_get_status` — returns all fields
-- `test_halt_blocks_all_orders` — no orders when halted
-- `test_daily_reset` — P&L resets
-
----
-
-### Task 3: Paper Trading Mode
-**Impact:** Critical — validates signals without real money
+### Task 1: Stacked Meta-Learner
+**Impact:** Critical — replaces naive equal-weight ensemble with learned weights
 **Effort:** 4-5 hours
-**Files:** New `src/paper_trader.py`, update `app.py`
+**Files:** `src/ensemble.py`, `tests/test_ensemble.py`
 
-**Why:** Paper trading is the single most important step before real money. It runs the same code path as live trading but with simulated fills.
+**Why:** The current ensemble uses equal weights (20% each). A meta-learner learns the optimal combination from out-of-sample data. This is the single highest-impact modeling improvement.
+
+**Current state:**
+```python
+# src/ensemble.py — predict_ensemble()
+dl_votes = d_l + d_g + d_t
+dl_dir = 1 if dl_votes >= 2 else 0
+ensemble_prob = dl_dir * 0.4 + xgb_p * 0.6  # HARDCODED
+```
+
+**Target:**
+```python
+# Train a LogisticRegression on model outputs
+from sklearn.linear_model import LogisticRegression
+
+meta_X = np.column_stack([lstm_probs, gru_probs, transformer_probs, xgb_probs, lgb_probs])
+meta_model = LogisticRegression(C=1.0, max_iter=1000)
+meta_model.fit(meta_X_train, y_train)
+final_prob = meta_model.predict_proba(meta_X_test)[:, 1]
+```
+
+**Implementation steps:**
+
+1. Add `train_meta_learner(meta_X, y)` function to `ensemble.py`
+   - Input: (N, 5) array of base model probabilities
+   - Output: fitted LogisticRegression
+   - Use `Pipeline` with `StandardScaler` + `LogisticRegression`
+
+2. Add `predict_with_metalearner(models, meta_model, data)` function
+   - Runs each base model → collects probabilities → passes to meta-learner
+   - Falls back to equal-weight if meta_model is None
+
+3. Add `evaluate_metalearner(meta_X_test, y_test, meta_model, equal_weight_preds)`
+   - Compare meta-learner accuracy vs equal-weight baseline
+   - Return improvement percentage
+
+4. Update `backtest_ensemble()` to optionally use meta-learner
+   - Add `meta_model=None` parameter
+   - When provided, use learned weights instead of hardcoded
+
+5. Add persistence: `save_meta_model()` / `load_meta_model()`
+   - Save as `models/{ticker}/meta_model.pkl`
+
+**Tests:** `tests/test_ensemble.py`
+- `test_meta_learner_trains_successfully` — fits on (100, 5) input
+- `test_meta_learner_returns_probabilities` — output in [0, 1]
+- `test_meta_learner_beats_equal_weight` — on synthetic data with known signal
+- `test_meta_learner_fallback` — when meta_model=None, uses equal weight
+- `test_meta_learner_save_load` — roundtrip to disk
+- `test_meta_learner_handles_nan` — gracefully handles missing model outputs
+- `test_meta_learner_coefficients_sum_to_one` — weights are interpretable
+
+---
+
+### Task 2: Regime-Conditional Routing
+**Impact:** High — adapts ensemble to market conditions
+**Effort:** 3-4 hours
+**Files:** `src/ensemble.py`, `src/regime.py`, `tests/test_ensemble.py`
+
+**Why:** Different models perform differently in different regimes. LSTM might be better in trending markets, XGBoost in mean-reverting. Routing gives each model its best environment.
+
+**Current state:**
+```python
+# regime.py detects regime
+# ensemble.py uses fixed weights regardless of regime
+```
+
+**Target:**
+```python
+REGIME_WEIGHTS = {
+    "Bull":     {"lstm": 0.15, "gru": 0.15, "transformer": 0.2, "xgb": 0.25, "lgb": 0.25},
+    "Bear":     {"lstm": 0.25, "gru": 0.25, "transformer": 0.15, "xgb": 0.15, "lgb": 0.2},
+    "Sideways": {"lstm": 0.2, "gru": 0.2, "transformer": 0.2, "xgb": 0.2, "lgb": 0.2},
+}
+```
+
+**Implementation steps:**
+
+1. Add `REGIME_WEIGHTS` dict to `ensemble.py`
+   - Bull: favor tree models (XGB/LGB capture momentum)
+   - Bear: favor DL models (LSTM/GRU capture trend reversals)
+   - Sideways: equal weight (no clear advantage)
+
+2. Add `get_regime_weights(regime: str) -> dict` function
+   - Returns weights for given regime
+   - Falls back to equal weight for unknown regime
+
+3. Modify `predict_ensemble()` to accept `regime` parameter
+   - When regime is provided, use regime-specific weights
+   - When regime is None, use default equal weights
+
+4. Update `backtest_ensemble()` to pass regime through
+   - Detect regime at each bar → route to appropriate weights
+
+5. Add `evaluate_regime_routing()` to compare:
+   - Equal-weight vs fixed-weight vs regime-routed performance
+
+**Tests:** `tests/test_ensemble.py`
+- `test_regime_weights_valid` — all regimes have 5 weights summing to 1.0
+- `test_get_regime_weights_bull` — returns bull-specific weights
+- `test_get_regime_weights_unknown_fallback` — falls back to equal weight
+- `test_predict_with_regime` — uses regime-specific weights
+- `test_regime_routing_improves_sharpe` — on synthetic data with regime shifts
+
+---
+
+### Task 3: Mutual Fund Tracker
+**Impact:** High — integrates MF portfolio with stock signals
+**Effort:** 5-6 hours
+**Files:** New `src/mf_tracker.py`, `tests/test_mf_tracker.py`
+
+**Why:** Many Indian investors hold both stocks and MFs. A unified view is essential. Current `holdings.py` only parses Zerodha CSVs — no live NAV tracking, no factor analysis.
+
+**Current state:**
+```python
+# holdings.py: parse_holdings_csv(), compute_portfolio_stats()
+# INDIAN_MF_MAP: 21 funds mapped to yfinance tickers
+# No mf_tracker.py exists
+```
 
 **Implementation:**
 
 ```python
-# src/paper_trader.py
+# src/mf_tracker.py
 
-import json
-import logging
-import os
-from datetime import datetime
-from dataclasses import dataclass, field
+class MFTracker:
+    """Mutual fund portfolio tracker with NAV history and factor analysis."""
 
-import pandas as pd
+    def __init__(self):
+        self.holdings = {}  # ticker -> {"units": float, "avg_nav": float, "fund_name": str}
+        self.nav_cache = {}  # ticker -> pd.Series of NAV history
 
-from src.engine import ExecutionEngine, Order, OrderSide, OrderType, Bar
-from src.risk_controls import RiskController, RiskLimits
+    def add_holding(self, ticker: str, units: float, avg_nav: float, fund_name: str = ""):
+        """Add or update a MF holding."""
 
-logger = logging.getLogger(__name__)
+    def fetch_nav_history(self, ticker: str, period: str = "2y") -> pd.Series:
+        """Fetch NAV history from yfinance. Caches in memory."""
 
-PAPER_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "data", "paper_trading"
-)
+    def get_current_value(self, ticker: str) -> float:
+        """Latest NAV × units."""
 
+    def get_portfolio_value(self) -> float:
+        """Total value across all holdings."""
 
-@dataclass
-class PaperTrade:
-    """A single paper trade record."""
-    order_id: str
-    ticker: str
-    side: str
-    order_type: str
-    quantity: int
-    signal_price: float
-    fill_price: float
-    fill_cost: float
-    signal_date: str
-    fill_date: str
-    slippage: float
-    costs: dict = field(default_factory=dict)
+    def compute_xirr(self, ticker: str = None) -> float:
+        """XIRR for a specific fund or entire portfolio."""
 
+    def compute_factor_exposures(self, ticker: str) -> dict:
+        """Estimate value/momentum/quality factor loadings from NAV returns."""
 
-class PaperTrader:
-    """
-    Paper trading engine.
-    
-    Runs daily:
-    1. Fetch latest data
-    2. Generate signals from trained models
-    3. Run risk checks
-    4. Submit orders to execution engine
-    5. Record fills
-    6. Track P&L
-    """
-    
-    def __init__(self, initial_capital: float = 100000,
-                 limits: RiskLimits = None):
-        self.engine = ExecutionEngine()
-        self.risk = RiskController(limits, initial_capital)
-        self.initial_capital = initial_capital
-        self.portfolio = {}  # ticker -> (quantity, avg_price)
-        self.cash = initial_capital
-        self.trades: list[PaperTrade] = []
-        self.equity_curve: list[dict] = []
-        os.makedirs(PAPER_DIR, exist_ok=True)
-    
-    def run_day(self, ticker: str, bar: Bar, signal: dict,
-                current_prices: dict = None) -> dict:
-        """
-        Process one trading day.
-        
-        Args:
-            ticker: Stock ticker
-            bar: Today's OHLCV bar
-            signal: {"direction": 1/-1/0, "confidence": float}
-            current_prices: Current prices for all holdings
-        
-        Returns:
-            Dict with actions taken
-        """
-        actions = {"orders_submitted": 0, "orders_filled": 0, "orders_rejected": 0}
-        
-        # Update equity
-        if current_prices:
-            self._update_equity(current_prices)
-        
-        # Check risk status
-        risk_status = self.risk.get_status()
-        if risk_status["halted"]:
-            logger.warning(f"Trading halted: {risk_status['halt_reason']}")
-            actions["halted"] = True
-            return actions
-        
-        # Check existing position
-        held_qty, avg_price = self.portfolio.get(ticker, (0, 0))
-        direction = signal.get("direction", 0)
-        confidence = signal.get("confidence", 0)
-        
-        # Generate order based on signal
-        order = None
-        
-        if direction == 1 and held_qty == 0:
-            # BUY signal, no position
-            order_value = self.cash * min(confidence, self.risk.limits.max_position_pct)
-            quantity = int(order_value / bar.close) if bar.close > 0 else 0
-            
-            if quantity > 0:
-                risk_check = self.risk.check_order(
-                    bar.close * quantity,
-                    sum(q * p for q, p in self.portfolio.values()),
-                    ticker, self.portfolio, current_prices or {}
-                )
-                
-                if risk_check["approved"]:
-                    order = Order(
-                        order_id="", ticker=ticker, side=OrderSide.BUY,
-                        order_type=OrderType.MARKET, quantity=quantity,
-                    )
-                else:
-                    actions["orders_rejected"] += 1
-                    actions["rejection_reason"] = risk_check.get("checks", [{}])[0].get("message", "")
-        
-        elif direction == -1 and held_qty > 0:
-            # SELL signal, have position
-            order = Order(
-                order_id="", ticker=ticker, side=OrderSide.SELL,
-                order_type=OrderType.MARKET, quantity=held_qty,
-            )
-        
-        if order:
-            actions["orders_submitted"] += 1
-            self.engine.submit_order(order)
-            
-            # Process bar (will fill market orders at open)
-            filled = self.engine.on_bar(bar)
-            
-            for fill in filled:
-                actions["orders_filled"] += 1
-                self._process_fill(fill, bar.timestamp)
-        
-        # Record equity
-        total = self.cash + sum(q * p for q, p in self.portfolio.values())
-        self.equity_curve.append({
-            "date": bar.timestamp,
-            "equity": total,
-            "cash": self.cash,
-        })
-        
-        return actions
-    
-    def _process_fill(self, order: Order, timestamp: str):
-        """Process a filled order."""
-        ticker = order.ticker
-        
-        if order.side == OrderSide.BUY:
-            cost = order.fill_cost
-            self.cash -= cost
-            
-            if ticker in self.portfolio:
-                old_qty, old_price = self.portfolio[ticker]
-                new_qty = old_qty + order.filled_quantity
-                new_price = ((old_price * old_qty) +
-                            (order.filled_price * order.filled_quantity)) / new_qty
-                self.portfolio[ticker] = (new_qty, new_price)
-            else:
-                self.portfolio[ticker] = (order.filled_quantity, order.filled_price)
-            
-            self.risk.update_daily_pnl(0)  # No P&L on buy
-        
-        elif order.side == OrderSide.SELL:
-            proceeds = order.fill_cost  # Already includes costs
-            self.cash += proceeds
-            
-            if ticker in self.portfolio:
-                old_qty, old_price = self.portfolio[ticker]
-                pnl = (order.filled_price - old_price) * order.filled_quantity
-                self.risk.update_daily_pnl(pnl)
-                del self.portfolio[ticker]
-        
-        trade = PaperTrade(
-            order_id=order.order_id, ticker=ticker,
-            side=order.side.value, order_type=order.order_type.value,
-            quantity=order.filled_quantity,
-            signal_price=0, fill_price=order.filled_price,
-            fill_cost=order.fill_cost,
-            signal_date=timestamp, fill_date=timestamp,
-            slippage=abs(order.filled_price - 0),  # Would need signal price
-        )
-        self.trades.append(trade)
-    
-    def _update_equity(self, prices: dict):
-        """Update equity with current market prices."""
-        total = self.cash
-        for ticker, (qty, _) in self.portfolio.items():
-            if ticker in prices:
-                total += qty * prices[ticker]
-        self.risk.update_equity(total)
-    
-    def save_state(self):
-        """Save paper trading state to disk."""
-        state = {
-            "initial_capital": self.initial_capital,
-            "cash": self.cash,
-            "portfolio": self.portfolio,
-            "equity_curve": self.equity_curve[-30:],  # Last 30 days
-            "trades": len(self.trades),
-            "risk_status": self.risk.get_status(),
-            "last_updated": datetime.now().isoformat(),
-        }
-        path = os.path.join(PAPER_DIR, "paper_state.json")
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2, default=str)
-    
-    def load_state(self):
-        """Load paper trading state from disk."""
-        path = os.path.join(PAPER_DIR, "paper_state.json")
-        if not os.path.exists(path):
-            return False
-        
-        with open(path) as f:
-            state = json.load(f)
-        
-        self.cash = state.get("cash", self.initial_capital)
-        self.portfolio = {k: tuple(v) for k, v in state.get("portfolio", {}).items()}
-        self.equity_curve = state.get("equity_curve", [])
-        return True
-    
-    def get_performance(self) -> dict:
-        """Get paper trading performance summary."""
-        if len(self.equity_curve) < 2:
-            return {"error": "Insufficient data"}
-        
-        equity = pd.Series([e["equity"] for e in self.equity_curve])
-        returns = equity.pct_change().dropna()
-        
-        total_return = (equity.iloc[-1] / equity.iloc[0]) - 1
-        n_days = len(equity)
-        n_years = max(n_days / 252, 0.01)
-        ann_return = (1 + total_return) ** (1 / n_years) - 1
-        
-        from src.risk import calculate_sharpe, calculate_sortino, calculate_max_drawdown
-        
-        return {
-            "total_return": total_return,
-            "annualized_return": ann_return,
-            "sharpe_ratio": calculate_sharpe(returns.values) if len(returns) > 10 else 0,
-            "sortino_ratio": calculate_sortino(returns.values) if len(returns) > 10 else 0,
-            "max_drawdown": calculate_max_drawdown(equity.values),
-            "n_trades": len(self.trades),
-            "current_equity": equity.iloc[-1],
-            "cash": self.cash,
-            "holdings": dict(self.portfolio),
-            "n_days": n_days,
-        }
+    def get_top_holdings(self, n: int = 5) -> list:
+        """Top N holdings by value."""
+
+    def get_allocation_breakdown(self) -> dict:
+        """Category-level allocation (Index, Debt, ELSS, etc.)."""
+
+    def detect_concentration_risk(self, threshold: float = 0.3) -> list:
+        """Flag holdings exceeding threshold."""
+
+    def compare_to_benchmark(self, ticker: str, benchmark: str = "^NSEI") -> dict:
+        """Compare fund returns vs Nifty 50."""
+
+    def save_state(self, path: str = "mf_state.json"):
+        """Persist holdings + cached NAVs."""
+
+    def load_state(self, path: str = "mf_state.json") -> bool:
+        """Load from disk."""
 ```
 
-**Tests:** `tests/test_paper_trader.py`
-- `test_run_day_buy_signal` — submits buy order on signal
-- `test_run_day_sell_signal` — submits sell order on signal
-- `test_risk_rejects_overlimit` — risk controller rejects
-- `test_halt_stops_trading` — halted state blocks orders
-- `test_process_fill_updates_portfolio` — buy fills update holdings
-- `test_process_fill_updates_cash` — sell fills update cash
+**Integration with existing code:**
+- Import `INDIAN_MF_MAP` from `holdings.py` for fund→ticker mapping
+- Use `compute_xirr()` from `holdings.py` (already exists)
+- Add `tab_mf_tracker()` to app.py (17th tab)
+
+**Tests:** `tests/test_mf_tracker.py`
+- `test_add_holding` — stores correctly
+- `test_get_portfolio_value` — sums all holdings
+- `test_compute_xirr_positive` — positive return → positive XIRR
+- `test_compute_xirr_negative` — negative return → negative XIRR
+- `test_allocation_breakdown` — sums to 100%
+- `test_concentration_risk_detects` — flags >30% weight
 - `test_save_load_state` — roundtrip to disk
-- `test_get_performance` — returns metrics
-- `test_equity_curve_recorded` — equity tracked daily
+- `test_fetch_nav_returns_series` — yfinance returns pd.Series
+- `test_compare_to_benchmark` — returns dict with all keys
 
 ---
 
-### Task 4: Execution Quality
-**Impact:** Medium — slippage and order type simulation
+### Task 4: Expand Universe + Batch Training
+**Impact:** Medium — more stocks = more opportunities
 **Effort:** 2-3 hours
-**Files:** Update `src/backtester.py`
+**Files:** `src/trainer.py`, `run_pipeline.py`, `tests/test_trainer.py`
 
-**Why:** The current backtester uses fixed 0.1% slippage. Real execution depends on volume, order size, and market conditions. Better simulation = more honest backtests.
+**Why:** Only 3 of 20 stocks are trained. Batch training covers the full universe.
 
-**What to add to backtester.py:**
-
+**Current state:**
 ```python
-# Add to src/backtester.py
-
-class BacktestExecutionSimulator:
-    """
-    Realistic execution simulation for backtesting.
-    
-    Models:
-    - Volume-based slippage (thin books = more slippage)
-    - Market impact (large orders move price)
-    - Order type simulation (limit, market, stop)
-    - Fill probability (limit orders may not fill)
-    """
-    
-    def __init__(self, slippage_model="volume", impact_factor=0.1):
-        self.slippage_model = slippage_model
-        self.impact_factor = impact_factor
-    
-    def simulate_fill(self, order_side, price, volume, order_value=0):
-        """Simulate realistic fill with slippage and impact."""
-        if self.slippage_model == "volume":
-            from src.engine import VolumeSlippage
-            model = VolumeSlippage()
-            slippage = model.calculate(order_side, price, volume)
-        elif self.slippage_model == "adaptive":
-            from src.engine import AdaptiveSlippage
-            model = AdaptiveSlippage()
-            slippage = model.calculate(order_side, price, volume, order_value)
-        else:
-            from src.engine import FixedSlippage
-            model = FixedSlippage()
-            slippage = model.calculate(order_side, price, volume)
-        
-        if order_side == OrderSide.BUY:
-            return price + slippage
-        else:
-            return price - slippage
-    
-    def estimate_fill_probability(self, order_type, price, bar):
-        """Estimate probability that a limit order fills."""
-        if order_type == OrderType.MARKET:
-            return 1.0
-        elif order_type == OrderType.LIMIT:
-            # Probability depends on how far limit is from close
-            distance = abs(price - bar["close"]) / bar["close"]
-            if distance < 0.005:
-                return 0.9
-            elif distance < 0.01:
-                return 0.7
-            elif distance < 0.02:
-                return 0.4
-            return 0.1
-        return 0.5
+# NSE_STOCKS = 20 stocks (in data_fetcher.py)
+# Training: manual "Train" click per stock in UI
+# No batch training command
 ```
 
-Also update `run_walk_forward_backtest` to use the new slippage models instead of fixed `SLIPPAGE_RATE`.
+**Implementation:**
 
-**Tests:** `tests/test_execution_quality.py`
-- `test_volume_slippage_increases_with_low_volume` — low volume = more slippage
-- `test_adaptive_slippage_increases_with_order_size` — large orders = more slippage
-- `test_fill_probability_market_always_fills` — market = 100%
-- `test_fill_probability_limit_near_fills` — near limit = high probability
-- `test_fill_probability_limit_far_low` — far limit = low probability
+1. Add `batch_train(tickers: list, config: TrainConfig = None)` to `trainer.py`
+   - Iterates through tickers, trains each, logs results
+   - Skips already-trained tickers (unless force=True)
+   - Returns summary: {success: [], failed: [], skipped: []}
+
+2. Add `--train-all` flag to `run_pipeline.py`
+   - Trains all 20 stocks in NSE_STOCKS
+   - Reports per-stock status
+
+3. Add `--train` flag with specific tickers
+   - `python run_pipeline.py --train RELIANCE.NS TCS.NS`
+
+4. Update pipeline to support batch training stage
+   - PipelineConfig gets `train_tickers` list
+   - Pipeline stage: "train" runs batch_train
+
+**Tests:** `tests/test_trainer.py`
+- `test_batch_train_skips_existing` — doesn't retrain trained stocks
+- `test_batch_train_force` — retrains when force=True
+- `test_batch_train_returns_summary` — has success/failed/skipped keys
+- `test_batch_train_handles_failure` — continues on individual failure
+
+---
+
+### Task 5: Fundamental Ranking Factors
+**Impact:** Medium — better stock selection with fundamentals
+**Effort:** 3-4 hours
+**Files:** `src/ranking.py`, `tests/test_ranking.py`
+
+**Why:** Current ranking uses only technical factors. Fundamental factors (P/E, P/B, ROE) improve long-term stock selection.
+
+**Current state:**
+```python
+# ranking.py: momentum, volatility, volume, technical scores
+# No fundamental data (P/E, P/B, ROE, dividend yield)
+```
+
+**Implementation:**
+
+1. Add `fetch_fundamentals(ticker: str) -> dict` to ranking.py
+   - Uses yfinance `.info` to get: trailingPE, priceToBook, returnOnEquity, dividendYield, marketCap, debtToEquity
+   - Caches results (fundamentals change slowly)
+
+2. Add `fundamental_score(fundamentals: dict) -> float`
+   - P/E: lower is better (0-30 range normalized to 0-100)
+   - P/B: lower is better
+   - ROE: higher is better
+   - Dividend yield: higher is better
+   - Combined: weighted average
+
+3. Update `rank_stocks()` to include `fundamental_weight` parameter
+   - Default 0 (backward compatible)
+   - When >0, adds fundamental score to composite
+
+4. Update `tab_ranking()` in app.py
+   - Add "Include Fundamentals" checkbox
+   - When enabled, fetches fundamentals for displayed stocks
+
+**Tests:** `tests/test_ranking.py`
+- `test_fetch_fundamentals_returns_dict` — has expected keys
+- `test_fundamental_score_in_range` — between 0 and 100
+- `test_fundamental_score_high_roe` — high ROE → high score
+- `test_rank_stocks_with_fundamentals` — incorporates fundamental factor
+- `test_rank_stocks_backward_compatible` — default weight=0 unchanged
 
 ---
 
 ## Execution Order
 
 ```
-1. Task 1: Event-Driven Engine (5-6 hrs)     ← CRITICAL, foundation for Tasks 2-4
-2. Task 2: Risk Controls (3-4 hrs)            ← depends on Task 1 (uses Order/Bar)
-3. Task 3: Paper Trading (4-5 hrs)            ← depends on Tasks 1 + 2
-4. Task 4: Execution Quality (2-3 hrs)        ← depends on Task 1 (slippage models)
+1. Task 1: Stacked Meta-Learner (4-5 hrs)    ← CRITICAL, foundation for Task 2
+2. Task 2: Regime-Conditional Routing (3-4 hrs) ← depends on Task 1 (meta-learner)
+3. Task 3: MF Tracker (5-6 hrs)               ← independent, can parallel with 1-2
+4. Task 4: Expand Universe (2-3 hrs)           ← independent, can parallel with 1-3
+5. Task 5: Fundamental Ranking (3-4 hrs)       ← independent, can parallel with 1-4
 ```
 
 **Parallelizable:**
-- Task 4 can be developed in parallel with Task 2 (both depend on Task 1)
-- Task 3 requires both Tasks 1 and 2
+- Tasks 3, 4, 5 are independent of each other and of Tasks 1-2
+- Task 2 requires Task 1 (meta-learner must exist before routing)
 
-**Total estimated time:** 14-18 hours
+**Total estimated time:** 17-22 hours
 
 ---
 
 ## Exit Criteria Checklist
 
-After all 4 tasks:
+After all 5 tasks:
 
-- [x] Event-driven engine processes orders bar-by-bar
-- [x] Same code path for backtest and paper trading
-- [x] Paper trading mode records trades, tracks P&L, enforces risk limits
-- [x] Risk controls reject orders exceeding position/daily/weekly/drawdown limits
-- [x] Kelly-capped position sizing (quarter-Kelly, not full)
-- [x] Volume-based and adaptive slippage models
-- [x] Fill probability modeling for limit orders
-- [x] State persistence (save/load paper trading state)
-- [x] All 4 tasks have tests passing
-- [x] `run_pipeline.py --paper` flag to run paper trading after training
+- [ ] Stacked meta-learner trained and evaluated on all 3 trained stocks
+- [ ] Meta-learner shows measurable improvement over equal-weight baseline
+- [ ] Regime-conditional routing implemented and tested
+- [ ] MF tracker with NAV history, XIRR, factor exposures
+- [ ] All 20 stocks batch-trainable
+- [ ] Fundamental factors in ranking (P/E, P/B, ROE, dividend yield)
+- [ ] All new modules have tests passing
+- [ ] Lint clean on all new/modified files
+- [ ] Open-source license (MIT) and CONTRIBUTING.md added
 
 ---
 
@@ -916,22 +387,23 @@ After all 4 tasks:
 
 | File | Purpose |
 |------|---------|
-| `src/engine.py` | Event-driven execution engine, Order/Bar classes, slippage models, fill models |
-| `src/risk_controls.py` | Pre-trade risk checks, position/daily/weekly/drawdown limits, Kelly sizing |
-| `src/paper_trader.py` | Paper trading mode, portfolio tracking, state persistence |
-| `tests/test_engine.py` | 12 tests for execution engine |
-| `tests/test_risk_controls.py` | 12 tests for risk controls |
-| `tests/test_paper_trader.py` | 9 tests for paper trading |
-| `tests/test_execution_quality.py` | 5 tests for slippage/fill models |
+| `src/mf_tracker.py` | MF portfolio tracker: NAV history, XIRR, factor exposures, allocation |
+| `tests/test_mf_tracker.py` | 9 tests for MF tracker |
+| `LICENSE` | MIT license |
+| `CONTRIBUTING.md` | Contribution guidelines |
 
 ## Files to Modify
 
 | File | Change |
 |------|--------|
-| `src/backtester.py` | Add `BacktestExecutionSimulator`, replace fixed slippage with volume/adaptive models |
-| `app.py` | Add "Paper Trading" tab (16th tab) |
-| `requirements.txt` | No changes needed |
-| `run_pipeline.py` | Add `--paper` flag to run paper trading after training |
+| `src/ensemble.py` | Add `train_meta_learner()`, `REGIME_WEIGHTS`, regime-aware `predict_ensemble()` |
+| `src/ranking.py` | Add `fetch_fundamentals()`, `fundamental_score()`, update `rank_stocks()` |
+| `src/trainer.py` | Add `batch_train()` for multi-ticker training |
+| `run_pipeline.py` | Add `--train-all` and `--train` flags |
+| `app.py` | Add "MF Tracker" tab (17th tab), update ranking tab for fundamentals |
+| `tests/test_ensemble.py` | 7 new tests for meta-learner + regime routing |
+| `tests/test_ranking.py` | 5 new tests for fundamental factors |
+| `tests/test_trainer.py` | 4 new tests for batch training |
 
 ---
 
@@ -940,10 +412,28 @@ After all 4 tasks:
 - **User's venv:** `C:\Users\uttam\venv` (Python 3.14, torch 2.10+cu130, scipy installed)
 - **User's project:** `C:\Users\uttam\development\stomar`
 - **Run tests:** `$env:PYTHONPATH = "C:\Users\uttam\development\stomar"; python -m pytest tests/ -v`
-- **Run linter:** `C:\Users\uttam\venv\Scripts\ruff.exe check src/ tests/ --select F401,E,F,W --ignore E501,F841`
-- **Current test count:** 335 tests passing
-- **Existing modules:** `risk.py` (Kelly, VaR, CVaR, sizing), `portfolio.py` (buy/sell with NSE costs), `backtester.py` (walk-forward, compute_metrics)
+- **Run linter:** `python -m ruff check src/ tests/ --output-format=concise`
+- **Current test count:** 424 tests passing
+- **Trained stocks:** 3 of 20 (RELIANCE, TCS, INFY likely)
 - **User constraint:** Everything must be free, must work on Windows
-- **Key insight:** This stage is about EXECUTION — making sure signals are actually tradeable with proper risk management
-- **Paper trading must run for 3+ months before real money** (per IMPROVEMENTS.md)
-- **Event-driven parity:** Same code path for backtest → paper → live
+- **Key insight:** This stage is about INTELLIGENCE — making the ensemble smarter and coverage broader
+- **Meta-learner data:** ~250 trading days per walk-forward window — use simple model (LogisticRegression), not neural net
+- **FinGPT note:** Documented as upgrade path but not feasible on user's hardware (6GB VRAM)
+- **Paper trading clock:** Started in Stage 4 — continue running for 3+ months before real capital
+
+---
+
+## Appendix: Stage 4 (Completed)
+
+Stage 4 built the execution layer. 89 new tests added, 424 total.
+
+| Component | File | Status |
+|-----------|------|--------|
+| Event-driven engine | `src/engine.py` | ✅ |
+| Risk controls | `src/risk_controls.py` | ✅ |
+| Paper trader | `src/paper_trader.py` | ✅ |
+| Execution quality | `src/execution_quality.py` | ✅ |
+| Fill probability | `src/engine.py` | ✅ |
+| State persistence | `src/paper_trader.py` | ✅ |
+| Paper trading tab | `app.py` | ✅ |
+| Pipeline --paper flag | `run_pipeline.py` | ✅ |
