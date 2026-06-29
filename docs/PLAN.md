@@ -1,385 +1,660 @@
-# Stage 5 — Open Platform: Execution Plan
+# Stage 6 — Autonomous Loop: Execution Plan
 
-## Status: Stage 4 Complete (Event-driven engine, paper trading, risk controls, execution quality — 424 tests)
+## Status: Stage 5 Complete (Meta-learner, MF tracker, multi-source sentiment, 528 tests)
 
-Stage 5 answers the question: **Can we make the ensemble smarter, cover the full NSE universe, integrate mutual funds, and prepare for open-source release?**
+Stage 6 answers the question: **Can the system run itself — pulling data, making decisions, logging outcomes — without a human clicking buttons in Streamlit?**
 
-This stage upgrades the modeling (learned ensemble weights, regime routing), expands coverage (all 20 stocks), adds MF tracking, improves sentiment, and prepares the project for others to use.
+This stage builds the orchestrator, persistent ledger, and meta-controller that turn 14 independent signal modules into one autonomous daily loop.
 
 ---
 
-## Stage 5 Exit Criteria (from IMPROVEMENTS.md)
+## Stage 6 Exit Criteria (from IMPROVEMENTS.md)
 
 | # | Criterion | Status | Priority |
 |---|-----------|--------|----------|
-| 1 | Stacked meta-learner (learned ensemble weights) | ✅ DONE | CRITICAL |
-| 2 | Regime-conditional routing (different weights per regime) | ✅ DONE | HIGH |
-| 3 | Volatility forecasting or ranking prototype built | ✅ DONE (fundamental ranking + volatility module) | MEDIUM |
-| 4 | MF NAV integration + XIRR computation | ✅ DONE (mf_tracker.py with NAV, XIRR, factors) | HIGH |
-| 5 | Sentiment upgraded with multi-source NLP | ✅ DONE (5 sources: Yahoo, Google, MoneyControl, ET, Screener) | MEDIUM |
-| 6 | All 20 stocks trained (batch_train) | ✅ DONE (batch_train + --train-all flag) | MEDIUM |
-| 7 | Open-source license + contribution guidelines | ✅ DONE (Apache 2.0 + CONTRIBUTING.md) | LOW |
+| 1 | `run_daily.py` runs independently of Streamlit (scheduled) | ⬜ TODO | CRITICAL |
+| 2 | SQLite ledger with decisions, trades, and portfolio snapshots | ⬜ TODO | CRITICAL |
+| 3 | Meta-controller v1 (bandit/stacking) combining all 14 signal modules | ⬜ TODO | HIGH |
+| 4 | 2-3+ months of logged paper trading episodes | ⬜ TODO | HIGH |
+| 5 | Streamlit dashboard reads from ledger (not session state) | ⬜ TODO | MEDIUM |
+| 6 | (Optional) RL upgrade with differential Sharpe reward | ⬜ TODO | LOW |
 
 ---
 
-## Pre-Stage 5: Current State Assessment
+## Pre-Stage 6: Current State Assessment
 
 | Component | Current State | What Needs to Change |
 |-----------|--------------|---------------------|
-| Ensemble | Equal-weighted 5-model (20% each) | Learned meta-learner (LogisticRegression on model outputs) |
-| Regime routing | Rule-based detection, separate strategy | Route through ensemble — different model weights per regime |
-| Sentiment | FinBERT on Google News headlines, 30-min cache | Multi-source (news + social + transcripts), FinGPT option |
-| Holdings/MF | Zerodha CSV import, category allocation | Full MF tracker: NAV history, factor exposures, AMFI data |
-| Ranking | Technical factors only (momentum/vol/volume/technical) | Add fundamental factors (P/E, P/B, ROE, dividend yield) |
-| Universe | 3 of 20 stocks trained | All 20 stocks, batch training |
-| Volatility | 5 estimators + mean-reversion forecast | Already solid — enhance with GARCH if time permits |
-| Licensing | None | MIT license + CONTRIBUTING.md |
+| Signal modules | 14 independent modules (ensemble, sentiment, flow, risk, regime, volatility, ranking, etc.) | No change — they stay as leaf nodes |
+| Decision making | Manual: user clicks tabs, interprets signals themselves | Meta-controller: 14 outputs → 1 decision |
+| Scheduling | Manual: `run_pipeline.py` requires human trigger | Orchestrator: scheduled daily process |
+| Portfolio state | `st.session_state.portfolio` — ephemeral, dies with browser tab | SQLite ledger — persistent, queryable |
+| Dashboard | Reads from session state and live yfinance calls | Reads from ledger (historical decisions + outcomes) |
+| Learning feedback | None — no record of what worked | Ledger logs outcomes → meta-controller retrains on history |
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              Signal layer (existing — NO CHANGES)        │
+│  ensemble, sentiment, flow, risk, regime, volatility,   │
+│  ranking, mf_tracker, multitimeframe, backtester...     │
+└─────────────────────┬───────────────────────────────────┘
+                      │ 14 module outputs as state vector
+┌─────────────────────▼───────────────────────────────────┐
+│              Meta-controller (NEW — Task 3)              │
+│  Contextual bandit / stacked logistic regression         │
+│  14 opinions → 1 auditable decision (BUY/SELL/HOLD)     │
+└─────────────────────┬───────────────────────────────────┘
+                      │ decision + confidence + reasoning
+┌─────────────────────▼───────────────────────────────────┐
+│              Orchestrator (NEW — Task 1)                 │
+│  run_daily.py — scheduled, runs after market close       │
+│  pull data → run signals → meta-controller → log trade   │
+└─────────────────────┬───────────────────────────────────┘
+                      │ writes to
+┌─────────────────────▼───────────────────────────────────┐
+│              Ledger (NEW — Task 2)                       │
+│  SQLite database — decisions, trades, portfolio snapshots│
+│  Persistent, queryable, the dataset for future learning  │
+└─────────────────────┬───────────────────────────────────┘
+                      │ reads from
+┌─────────────────────▼───────────────────────────────────┐
+│              Dashboard (MODIFIED — Task 4)               │
+│  Streamlit reads from ledger, not session state          │
+│  Shows: historical decisions, P&L, signal accuracy       │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Design Decisions
 
-### Why LogisticRegression for meta-learner (not neural net)?
+### Why SQLite (not Postgres)?
 
-| Factor | LogisticRegression | Neural Meta-Learner |
+| Factor | SQLite | Postgres |
+|--------|--------|----------|
+| Setup | Zero config, file-based | Requires server install |
+| Dependencies | Built into Python | Needs psycopg2 + running server |
+| Portability | Single `.db` file, easy to backup | Requires migration tools |
+| Scale | 100K+ rows per year — plenty for daily trading | Overkill for personal project |
+| Windows | Works out of the box | Requires WSL or Docker |
+
+**Decision:** SQLite. One file, no server, works on Windows. If the project ever grows to multi-user or high-frequency, migrate to Postgres.
+
+### Why Contextual Bandit (not full RL)?
+
+| Factor | Contextual Bandit | Full RL (PPO/DQN) |
 |--------|-------------------|---------------------|
-| Interpretability | Coefficients show model contribution | Black box |
-| Overfitting risk | Low (linear model) | High (small dataset: ~250 trading days) |
-| Training speed | Instant | Minutes |
-| Maintenance | Simple | Requires GPU, tuning |
-| Performance | Competitive for 5 inputs | Marginal improvement not worth complexity |
+| Data needed | 100+ episodes | 10,000+ episodes |
+| Interpretability | Learned weights = which signals matter | Black box |
+| Overfitting risk | Low (linear model) | High (deep network on small data) |
+| Training speed | Seconds | Minutes to hours |
+| Audit trail | "Module X has weight 0.3 because..." | "Neural net decided..." |
 
-**Decision:** Use LogisticRegression with L2 regularization. The meta-learner has only 5 inputs (one per base model) and ~250 training samples per walk-forward window. A linear model is the right complexity level.
+**Decision:** Contextual bandit. With 10 stocks and daily bars, you have ~2,500 trading days of data. A bandit learns from this; a full RL agent memorizes it. The bandit's learned weights ARE the audit mechanism — they tell you which modules are currently predictive.
 
-### Why not build FinGPT from scratch?
+### Why not modify signal modules?
 
-FinGPT is a 7B parameter model. Fine-tuning requires:
-- GPU with 16GB+ VRAM (user has RTX 3050 6GB — insufficient)
-- Training data (financial conversations, Indian market context)
-- inference pipeline
-
-**Decision:** Keep FinBERT as the primary model. Add multi-source headlines (MoneyControl, Economic Times) as a future enhancement. Note FinGPT as a documentation upgrade path.
-
-### MF data source: yfinance vs AMFI
-
-| Source | Cost | Reliability | Coverage |
-|--------|------|-------------|----------|
-| yfinance (current) | Free | Delayed, gaps | Has NAV for most Indian MFs |
-| AMFI API | Free | Official, reliable | Requires API key registration |
-| MFUtility | Free | Official | Complex SOAP API |
-
-**Decision:** Use yfinance for NAV history (already works). Document AMFI as a production upgrade path. Keep it simple.
+The 14 signal modules are leaf nodes — they take data and return a result. They don't need to know about each other or about the meta-controller. This is deliberate:
+- Adding a new signal module doesn't require changing any existing code
+- Removing a signal module doesn't break anything
+- The meta-controller is the only thing that needs to know about all modules
 
 ---
 
 ## Execution Plan: 5 Tasks
 
-### Task 1: Stacked Meta-Learner
-**Impact:** Critical — replaces naive equal-weight ensemble with learned weights
+### Task 1: Orchestrator (run_daily.py)
+**Impact:** Critical — system must live outside Streamlit
+**Effort:** 3-4 hours
+**Files:** New `src/orchestrator.py`, New `run_daily.py`
+
+**Why:** Everything today runs inside `streamlit run app.py`. Close the tab, the system stops. The orchestrator gives the system a life outside the UI.
+
+**Current state:**
+```python
+# Everything requires manual trigger:
+# - Streamlit tab clicks
+# - python run_pipeline.py (manual)
+# - schedule_pipeline.py (exists but only runs pipeline, not full signal suite)
+```
+
+**Target:**
+```python
+# run_daily.py — standalone, scheduled
+# 1. Fetch latest data for all tickers
+# 2. Run all 14 signal modules
+# 3. Meta-controller: combine → decision
+# 4. Simulate paper trade
+# 5. Log to ledger
+```
+
+**Implementation steps:**
+
+1. Create `src/orchestrator.py` with class `DailyOrchestrator`:
+   ```python
+   class DailyOrchestrator:
+       """Runs the full signal pipeline once per day."""
+
+       def __init__(self, tickers: list[str], ledger: Ledger):
+           self.tickers = tickers
+           self.ledger = ledger
+
+       def run(self, date: str = None) -> dict:
+           """Execute one full daily cycle."""
+           # Returns summary of what happened
+   ```
+
+2. Implement `run()` method — the daily flow:
+   ```
+   For each ticker:
+     a. Fetch latest OHLCV data (yfinance, period="5d")
+     b. Validate data (no gaps, not stale)
+     c. Compute features (41 technical + alt-data)
+     d. Run all signal modules:
+        - ensemble.predict_ensemble() → direction, confidence
+        - sentiment.get_stock_sentiment() → score
+        - flow.get_flow_sentiment() → fii_net, dii_net
+        - flow.fetch_options_pcr() → pcr, max_pain
+        - multitimeframe.get_combined_signal() → mtf_signal
+        - regime.detect_regime() → regime, confidence
+        - risk.generate_risk_report() → var_95, cvar_95, sharpe
+        - volatility.forecast_volatility() → vol_forecast
+        - ranking.fundamental_score() → fundamental_score (cached)
+     e. Collect all signals into a state vector
+     f. Pass to meta-controller → action, position_size, reasoning
+     g. Log decision to ledger
+   ```
+
+3. Create `run_daily.py` — thin wrapper:
+   ```python
+   """Daily autonomous loop. Run via scheduler or manually."""
+   from src.orchestrator import DailyOrchestrator
+   from src.ledger import Ledger
+
+   def main():
+       ledger = Ledger("stomar.db")
+       orchestrator = DailyOrchestrator(tickers=NSE_STOCKS, ledger=ledger)
+       summary = orchestrator.run()
+       print(f"Decisions: {summary['decisions']}")
+       print(f"Trades: {summary['trades']}")
+
+   if __name__ == "__main__":
+       main()
+   ```
+
+4. Update `schedule_pipeline.py` to call `run_daily.py` instead of `run_pipeline.py`
+
+5. Add error handling:
+   - If yfinance fails → skip that ticker, log warning, continue
+   - If a signal module fails → use default (neutral signal), log warning
+   - If meta-controller fails → default to HOLD, log error
+   - Always log what happened, even on partial failure
+
+**Tests:** `tests/test_orchestrator.py`
+- `test_orchestrator_creates_instance` — initializes with tickers and ledger
+- `test_orchestrator_runs_one_cycle` — mock signals, verify it completes
+- `test_orchestrator_logs_to_ledger` — decisions appear in ledger
+- `test_orchestrator_handles_signal_failure` — continues when one module fails
+- `test_orchestrator_handles_yfinance_failure` — skips ticker, logs warning
+- `test_orchestrator_returns_summary` — has decisions, trades, errors keys
+
+---
+
+### Task 2: Persistent Ledger (SQLite)
+**Impact:** Critical — ephemeral state = no learning possible
+**Effort:** 3-4 hours
+**Files:** New `src/ledger.py`, New `tests/test_ledger.py`
+
+**Why:** `st.session_state.portfolio` is ephemeral. Every paper trade, every module signal, and every outcome is lost when the browser closes. No historical record exists for analysis or learning.
+
+**Current state:**
+```python
+# src/paper_trader.py — saves to JSON, but:
+# - Only stores portfolio state (holdings, cash)
+# - Doesn't log individual signal outputs
+# - Doesn't log what each module said at decision time
+# - No outcome tracking (what actually happened the next day)
+```
+
+**Target:**
+```python
+# src/ledger.py — SQLite database
+# Tables: decisions, paper_trades, portfolio_snapshots, signal_snapshots
+# Every daily cycle writes a complete record
+```
+
+**Implementation steps:**
+
+1. Create `src/ledger.py` with class `Ledger`:
+   ```python
+   import sqlite3
+   from datetime import datetime
+
+   class Ledger:
+       """Persistent trading journal in SQLite."""
+
+       def __init__(self, db_path: str = "stomar.db"):
+           self.conn = sqlite3.connect(db_path)
+           self._create_tables()
+
+       def log_decision(self, date: str, ticker: str, signals: dict, action: str,
+                        position_size: float, confidence: float, reasoning: str) -> int:
+           """Log a meta-controller decision. Returns decision ID."""
+
+       def log_trade(self, decision_id: int, ticker: str, side: str,
+                     quantity: int, price: float, slippage: float, costs: float) -> None:
+           """Log a paper trade execution."""
+
+       def log_outcome(self, decision_id: int, actual_return: float, actual_direction: int) -> None:
+           """Log what actually happened (filled next day)."""
+
+       def log_snapshot(self, date: str, total_value: float, cash: float, holdings: dict) -> None:
+           """Log portfolio snapshot."""
+
+       def get_decisions(self, ticker: str = None, start_date: str = None, end_date: str = None) -> list[dict]:
+           """Query historical decisions."""
+
+       def get_trades(self, ticker: str = None) -> list[dict]:
+           """Query historical trades."""
+
+       def get_performance(self, start_date: str = None, end_date: str = None) -> dict:
+           """Aggregate performance metrics from logged decisions."""
+
+       def get_signal_accuracy(self) -> dict:
+           """Per-module accuracy: how often did each signal predict correctly?"""
+
+       def close(self):
+           self.conn.close()
+   ```
+
+2. Create database schema:
+   ```sql
+   CREATE TABLE decisions (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       date TEXT NOT NULL,
+       ticker TEXT NOT NULL,
+       -- Signal outputs (what each module said)
+       ensemble_direction INTEGER,
+       ensemble_confidence REAL,
+       sentiment_score REAL,
+       fii_net REAL,
+       dii_net REAL,
+       pcr REAL,
+       max_pain REAL,
+       mtf_signal REAL,
+       regime TEXT,
+       regime_confidence REAL,
+       var_95 REAL,
+       cvar_95 REAL,
+       sharpe REAL,
+       volatility_forecast REAL,
+       fundamental_score REAL,
+       -- Meta-controller decision
+       action TEXT NOT NULL,          -- BUY / SELL / HOLD
+       position_size REAL,
+       confidence REAL,
+       reasoning TEXT,
+       -- Actual outcome (filled next day)
+       actual_return REAL,
+       actual_direction INTEGER,
+       correct INTEGER,               -- 1 if prediction matched outcome
+       -- Metadata
+       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+   );
+
+   CREATE TABLE paper_trades (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       decision_id INTEGER REFERENCES decisions(id),
+       ticker TEXT NOT NULL,
+       side TEXT NOT NULL,             -- BUY / SELL
+       quantity INTEGER,
+       price REAL,
+       slippage REAL,
+       costs REAL,
+       total_cost REAL,
+       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+   );
+
+   CREATE TABLE portfolio_snapshots (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       date TEXT NOT NULL UNIQUE,
+       total_value REAL,
+       cash REAL,
+       holdings_json TEXT,             -- JSON blob of all positions
+       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+   );
+
+   CREATE INDEX idx_decisions_date ON decisions(date);
+   CREATE INDEX idx_decisions_ticker ON decisions(ticker);
+   CREATE INDEX idx_trades_ticker ON paper_trades(ticker);
+   ```
+
+3. Implement `get_signal_accuracy()` — the audit mechanism:
+   ```python
+   def get_signal_accuracy(self) -> dict:
+       """For each signal module, compute how often it predicted correctly."""
+       # ensemble: direction == actual_direction?
+       # sentiment: score > 0 and actual_direction == 1?
+       # fii_net: net > 0 and actual_direction == 1?
+       # etc.
+       # Returns: {"ensemble": 0.52, "sentiment": 0.48, "fii": 0.55, ...}
+   ```
+
+4. Add outcome tracking — after each decision, check next day's return:
+   ```python
+   def update_outcomes(self, fetch_fn):
+       """For decisions without outcomes, fetch next-day return and fill in."""
+       # This runs daily before new decisions
+   ```
+
+**Tests:** `tests/test_ledger.py`
+- `test_ledger_creates_db` — file exists after init
+- `test_log_decision_returns_id` — auto-incrementing ID
+- `test_log_trade_links_to_decision` — foreign key works
+- `test_get_decisions_filters_by_ticker` — query works
+- `test_get_decisions_filters_by_date` — date range works
+- `test_log_outcome_updates_decision` — actual_return filled in
+- `test_get_signal_accuracy` — returns per-module accuracy
+- `test_get_performance` — returns total return, win rate
+- `test_portfolio_snapshot_roundtrip` — save and load
+- `test_ledger_handles_corrupt_db` — graceful error
+
+---
+
+### Task 3: Meta-Controller v1 (Contextual Bandit)
+**Impact:** High — turns 14 opinions into one auditable decision
 **Effort:** 4-5 hours
-**Files:** `src/ensemble.py`, `tests/test_ensemble.py`
+**Files:** New `src/meta_controller.py`, New `tests/test_meta_controller.py`
 
-**Why:** The current ensemble uses equal weights (20% each). A meta-learner learns the optimal combination from out-of-sample data. This is the single highest-impact modeling improvement.
+**Why:** The 14 signal modules exist independently. The ensemble has a meta-learner, but the other modules (sentiment, flow, risk, regime, etc.) are not combined into a single decision. There's no layer that asks "given all signals, what should we actually do?"
 
 **Current state:**
 ```python
-# src/ensemble.py — predict_ensemble()
-dl_votes = d_l + d_g + d_t
-dl_dir = 1 if dl_votes >= 2 else 0
-ensemble_prob = dl_dir * 0.4 + xgb_p * 0.6  # HARDCODED
+# Each module produces an output, but:
+# - No layer combines them into one decision
+# - User manually interprets signals in Streamlit
+# - No learning from historical signal → outcome pairs
 ```
 
 **Target:**
 ```python
-# Train a LogisticRegression on model outputs
-from sklearn.linear_model import LogisticRegression
-
-meta_X = np.column_stack([lstm_probs, gru_probs, transformer_probs, xgb_probs, lgb_probs])
-meta_model = LogisticRegression(C=1.0, max_iter=1000)
-meta_model.fit(meta_X_train, y_train)
-final_prob = meta_model.predict_proba(meta_X_test)[:, 1]
+# meta_controller.py
+# Input: state_vector = [ensemble_dir, ensemble_conf, sentiment, fii_net,
+#                         dii_net, pcr, mtf, regime, var, cvar, vol, fundamental, ...]
+# Output: action (BUY/SELL/HOLD), position_size, confidence, reasoning
+# Learning: retrains weekly on ledger history
 ```
 
 **Implementation steps:**
 
-1. Add `train_meta_learner(meta_X, y)` function to `ensemble.py`
-   - Input: (N, 5) array of base model probabilities
-   - Output: fitted LogisticRegression
-   - Use `Pipeline` with `StandardScaler` + `LogisticRegression`
+1. Create `src/meta_controller.py` with class `MetaController`:
+   ```python
+   class MetaController:
+       """Combines 14 signal modules into one decision.
 
-2. Add `predict_with_metalearner(models, meta_model, data)` function
-   - Runs each base model → collects probabilities → passes to meta-learner
-   - Falls back to equal-weight if meta_model is None
+       Uses stacked logistic regression (contextual bandit).
+       The learned weights ARE the audit mechanism:
+       high weight = module is currently predictive.
+       """
+       SIGNAL_NAMES = [
+           "ensemble_direction", "ensemble_confidence",
+           "sentiment_score", "fii_net", "dii_net",
+           "pcr", "mtf_signal", "regime_bull", "regime_bear",
+           "var_95", "cvar_95", "sharpe",
+           "volatility_forecast", "fundamental_score",
+       ]
 
-3. Add `evaluate_metalearner(meta_X_test, y_test, meta_model, equal_weight_preds)`
-   - Compare meta-learner accuracy vs equal-weight baseline
-   - Return improvement percentage
+       def __init__(self):
+           self.model = None  # LogisticRegression, trained on ledger
+           self.weights = None  # Latest learned weights
 
-4. Update `backtest_ensemble()` to optionally use meta-learner
-   - Add `meta_model=None` parameter
-   - When provided, use learned weights instead of hardcoded
+       def extract_state_vector(self, signals: dict) -> np.ndarray:
+           """Convert module outputs to fixed-size feature vector."""
 
-5. Add persistence: `save_meta_model()` / `load_meta_model()`
-   - Save as `models/{ticker}/meta_model.pkl`
+       def decide(self, signals: dict) -> dict:
+           """Take all signal outputs, return one decision."""
+           # Returns: {"action": "BUY/SELL/HOLD", "position_size": float,
+           #           "confidence": float, "reasoning": str}
 
-**Tests:** `tests/test_ensemble.py`
-- `test_meta_learner_trains_successfully` — fits on (100, 5) input
-- `test_meta_learner_returns_probabilities` — output in [0, 1]
-- `test_meta_learner_beats_equal_weight` — on synthetic data with known signal
-- `test_meta_learner_fallback` — when meta_model=None, uses equal weight
-- `test_meta_learner_save_load` — roundtrip to disk
-- `test_meta_learner_handles_nan` — gracefully handles missing model outputs
-- `test_meta_learner_coefficients_sum_to_one` — weights are interpretable
+       def train(self, ledger: Ledger) -> dict:
+           """Retrain on ledger history. Returns accuracy metrics."""
 
----
+       def get_weights(self) -> dict:
+           """Return current learned weights (the audit scorecard)."""
 
-### Task 2: Regime-Conditional Routing
-**Impact:** High — adapts ensemble to market conditions
-**Effort:** 3-4 hours
-**Files:** `src/ensemble.py`, `src/regime.py`, `tests/test_ensemble.py`
+       def explain(self, signals: dict) -> str:
+           """Human-readable explanation of why this decision was made."""
+   ```
 
-**Why:** Different models perform differently in different regimes. LSTM might be better in trending markets, XGBoost in mean-reverting. Routing gives each model its best environment.
+2. Implement `decide()` — the core decision logic:
+   ```python
+   def decide(self, signals: dict) -> dict:
+       vector = self.extract_state_vector(signals)
 
-**Current state:**
-```python
-# regime.py detects regime
-# ensemble.py uses fixed weights regardless of regime
-```
+       if self.model is None:
+           # Cold start: use rule-based decision
+           return self._rule_based_decide(signals)
 
-**Target:**
-```python
-REGIME_WEIGHTS = {
-    "Bull":     {"lstm": 0.15, "gru": 0.15, "transformer": 0.2, "xgb": 0.25, "lgb": 0.25},
-    "Bear":     {"lstm": 0.25, "gru": 0.25, "transformer": 0.15, "xgb": 0.15, "lgb": 0.2},
-    "Sideways": {"lstm": 0.2, "gru": 0.2, "transformer": 0.2, "xgb": 0.2, "lgb": 0.2},
-}
-```
+       prob = self.model.predict_proba(vector.reshape(1, -1))[0, 1]
 
-**Implementation steps:**
+       if prob > 0.6:
+           action = "BUY"
+           position_size = min(0.10, (prob - 0.5) * 0.5)  # Max 10% per position
+       elif prob < 0.4:
+           action = "SELL"
+           position_size = min(0.10, (0.5 - prob) * 0.5)
+       else:
+           action = "HOLD"
+           position_size = 0.0
 
-1. Add `REGIME_WEIGHTS` dict to `ensemble.py`
-   - Bull: favor tree models (XGB/LGB capture momentum)
-   - Bear: favor DL models (LSTM/GRU capture trend reversals)
-   - Sideways: equal weight (no clear advantage)
+       return {
+           "action": action,
+           "position_size": round(position_size, 4),
+           "confidence": round(abs(prob - 0.5) * 2, 4),  # 0-1 scale
+           "reasoning": self.explain(signals),
+       }
+   ```
 
-2. Add `get_regime_weights(regime: str) -> dict` function
-   - Returns weights for given regime
-   - Falls back to equal weight for unknown regime
+3. Implement `train()` — learn from ledger history:
+   ```python
+   def train(self, ledger: Ledger) -> dict:
+       decisions = ledger.get_decisions()
+       if len(decisions) < 100:
+           return {"status": "insufficient_data", "n_samples": len(decisions)}
 
-3. Modify `predict_ensemble()` to accept `regime` parameter
-   - When regime is provided, use regime-specific weights
-   - When regime is None, use default equal weights
+       X = np.array([self.extract_state_vector(d) for d in decisions])
+       y = np.array([d["actual_direction"] for d in decisions])
 
-4. Update `backtest_ensemble()` to pass regime through
-   - Detect regime at each bar → route to appropriate weights
+       # Split: 80% train, 20% test
+       split = int(len(X) * 0.8)
+       self.model = LogisticRegression(C=1.0, max_iter=1000)
+       self.model.fit(X[:split], y[:split])
 
-5. Add `evaluate_regime_routing()` to compare:
-   - Equal-weight vs fixed-weight vs regime-routed performance
+       accuracy = self.model.score(X[split:], y[split:])
+       self.weights = dict(zip(self.SIGNAL_NAMES, self.model.coef_[0]))
 
-**Tests:** `tests/test_ensemble.py`
-- `test_regime_weights_valid` — all regimes have 5 weights summing to 1.0
-- `test_get_regime_weights_bull` — returns bull-specific weights
-- `test_get_regime_weights_unknown_fallback` — falls back to equal weight
-- `test_predict_with_regime` — uses regime-specific weights
-- `test_regime_routing_improves_sharpe` — on synthetic data with regime shifts
+       return {"status": "trained", "accuracy": accuracy, "n_samples": len(X)}
+   ```
 
----
+4. Implement `explain()` — human-readable reasoning:
+   ```python
+   def explain(self, signals: dict) -> str:
+       if self.weights is None:
+           return "Rule-based (no training data yet)"
 
-### Task 3: Mutual Fund Tracker
-**Impact:** High — integrates MF portfolio with stock signals
-**Effort:** 5-6 hours
-**Files:** New `src/mf_tracker.py`, `tests/test_mf_tracker.py`
+       contributions = []
+       for name, weight in self.weights.items():
+           value = signals.get(name, 0)
+           contribution = weight * value
+           if abs(contribution) > 0.05:
+               direction = "supports BUY" if contribution > 0 else "supports SELL"
+               contributions.append(f"{name}: {direction} (weight={weight:.3f})")
 
-**Why:** Many Indian investors hold both stocks and MFs. A unified view is essential. Current `holdings.py` only parses Zerodha CSVs — no live NAV tracking, no factor analysis.
+       return "; ".join(contributions) if contributions else "No strong signals"
+   ```
 
-**Current state:**
-```python
-# holdings.py: parse_holdings_csv(), compute_portfolio_stats()
-# INDIAN_MF_MAP: 21 funds mapped to yfinance tickers
-# No mf_tracker.py exists
-```
+5. Implement `get_weights()` — the audit scorecard:
+   ```python
+   def get_weights(self) -> dict:
+       """Return learned weights sorted by absolute importance."""
+       if self.weights is None:
+           return {}
+       return dict(sorted(self.weights.items(), key=lambda x: abs(x[1]), reverse=True))
+   ```
 
-**Implementation:**
-
-```python
-# src/mf_tracker.py
-
-class MFTracker:
-    """Mutual fund portfolio tracker with NAV history and factor analysis."""
-
-    def __init__(self):
-        self.holdings = {}  # ticker -> {"units": float, "avg_nav": float, "fund_name": str}
-        self.nav_cache = {}  # ticker -> pd.Series of NAV history
-
-    def add_holding(self, ticker: str, units: float, avg_nav: float, fund_name: str = ""):
-        """Add or update a MF holding."""
-
-    def fetch_nav_history(self, ticker: str, period: str = "2y") -> pd.Series:
-        """Fetch NAV history from yfinance. Caches in memory."""
-
-    def get_current_value(self, ticker: str) -> float:
-        """Latest NAV × units."""
-
-    def get_portfolio_value(self) -> float:
-        """Total value across all holdings."""
-
-    def compute_xirr(self, ticker: str = None) -> float:
-        """XIRR for a specific fund or entire portfolio."""
-
-    def compute_factor_exposures(self, ticker: str) -> dict:
-        """Estimate value/momentum/quality factor loadings from NAV returns."""
-
-    def get_top_holdings(self, n: int = 5) -> list:
-        """Top N holdings by value."""
-
-    def get_allocation_breakdown(self) -> dict:
-        """Category-level allocation (Index, Debt, ELSS, etc.)."""
-
-    def detect_concentration_risk(self, threshold: float = 0.3) -> list:
-        """Flag holdings exceeding threshold."""
-
-    def compare_to_benchmark(self, ticker: str, benchmark: str = "^NSEI") -> dict:
-        """Compare fund returns vs Nifty 50."""
-
-    def save_state(self, path: str = "mf_state.json"):
-        """Persist holdings + cached NAVs."""
-
-    def load_state(self, path: str = "mf_state.json") -> bool:
-        """Load from disk."""
-```
-
-**Integration with existing code:**
-- Import `INDIAN_MF_MAP` from `holdings.py` for fund→ticker mapping
-- Use `compute_xirr()` from `holdings.py` (already exists)
-- Add `tab_mf_tracker()` to app.py (17th tab)
-
-**Tests:** `tests/test_mf_tracker.py`
-- `test_add_holding` — stores correctly
-- `test_get_portfolio_value` — sums all holdings
-- `test_compute_xirr_positive` — positive return → positive XIRR
-- `test_compute_xirr_negative` — negative return → negative XIRR
-- `test_allocation_breakdown` — sums to 100%
-- `test_concentration_risk_detects` — flags >30% weight
-- `test_save_load_state` — roundtrip to disk
-- `test_fetch_nav_returns_series` — yfinance returns pd.Series
-- `test_compare_to_benchmark` — returns dict with all keys
+**Tests:** `tests/test_meta_controller.py`
+- `test_meta_controller_creates_instance` — initializes
+- `test_extract_state_vector_shape` — returns (14,) array
+- `test_decide_without_model` — uses rule-based fallback
+- `test_decide_with_model` — returns BUY/SELL/HOLD
+- `test_decide_returns_reasoning` — has explanation string
+- `test_train_insufficient_data` — returns status message
+- `test_train_with_enough_data` — fits model, returns accuracy
+- `test_get_weights_returns_dict` — sorted by importance
+- `test_explain_returns_string` — human-readable
+- `test_position_size_capped` — never exceeds 10% per position
+- `test_confidence_in_range` — between 0 and 1
 
 ---
 
-### Task 4: Expand Universe + Batch Training
-**Impact:** Medium — more stocks = more opportunities
+### Task 4: Dashboard Reads from Ledger
+**Impact:** Medium — Streamlit shows historical decisions, not just live state
 **Effort:** 2-3 hours
-**Files:** `src/trainer.py`, `run_pipeline.py`, `tests/test_trainer.py`
+**Files:** `app.py` (update existing tabs), `src/ledger.py` (query helpers)
 
-**Why:** Only 3 of 20 stocks are trained. Batch training covers the full universe.
+**Why:** Currently, Streamlit reads from `st.session_state` and live yfinance calls. It shows only the current moment. The ledger has historical decisions and outcomes — the dashboard should visualize them.
 
 **Current state:**
 ```python
-# NSE_STOCKS = 20 stocks (in data_fetcher.py)
-# Training: manual "Train" click per stock in UI
-# No batch training command
+# app.py reads:
+# - st.session_state.portfolio (ephemeral)
+# - Live yfinance calls (slow, rate-limited)
+# - No historical decision visualization
 ```
 
-**Implementation:**
+**Target:**
+```python
+# app.py reads from ledger:
+# - Historical decisions table
+# - Per-module signal accuracy
+# - P&L over time
+# - Decision → outcome correlation
+```
 
-1. Add `batch_train(tickers: list, config: TrainConfig = None)` to `trainer.py`
-   - Iterates through tickers, trains each, logs results
-   - Skips already-trained tickers (unless force=True)
-   - Returns summary: {success: [], failed: [], skipped: []}
+**Implementation steps:**
 
-2. Add `--train-all` flag to `run_pipeline.py`
-   - Trains all 20 stocks in NSE_STOCKS
-   - Reports per-stock status
+1. Add new tab `tab_ledger()` to app.py (18th tab):
+   - **Decision History** — table of all logged decisions (date, ticker, action, confidence, outcome)
+   - **Signal Accuracy** — bar chart of per-module accuracy (which signals are predictive?)
+   - **P&L Curve** — equity curve from portfolio snapshots
+   - **Decision Breakdown** — pie chart of BUY/SELL/HOLD decisions
+   - **Module Audit** — table showing each module's weight and current accuracy
 
-3. Add `--train` flag with specific tickers
-   - `python run_pipeline.py --train RELIANCE.NS TCS.NS`
+2. Update existing tabs to read from ledger where appropriate:
+   - Paper Trading tab → show historical trades from ledger
+   - Monitoring tab → show signal accuracy from ledger
+   - Portfolio tab → show portfolio snapshots from ledger
 
-4. Update pipeline to support batch training stage
-   - PipelineConfig gets `train_tickers` list
-   - Pipeline stage: "train" runs batch_train
+3. Add query helpers to `src/ledger.py`:
+   ```python
+   def get_daily_pnl(self) -> pd.DataFrame:
+       """Daily P&L from portfolio snapshots."""
 
-**Tests:** `tests/test_trainer.py`
-- `test_batch_train_skips_existing` — doesn't retrain trained stocks
-- `test_batch_train_force` — retrains when force=True
-- `test_batch_train_returns_summary` — has success/failed/skipped keys
-- `test_batch_train_handles_failure` — continues on individual failure
+   def get_module_accuracy_history(self) -> pd.DataFrame:
+       """How each module's accuracy has changed over time."""
+
+   def get_regime_performance(self) -> dict:
+       """Performance broken down by regime."""
+   ```
+
+**Tests:** `tests/test_ledger.py` (extend existing)
+- `test_get_daily_pnl` — returns DataFrame with date, pnl columns
+- `test_get_module_accuracy_history` — returns per-module per-date accuracy
+- `test_get_regime_performance` — returns Bull/Bear/Sideways breakdown
 
 ---
 
-### Task 5: Fundamental Ranking Factors
-**Impact:** Medium — better stock selection with fundamentals
-**Effort:** 3-4 hours
-**Files:** `src/ranking.py`, `tests/test_ranking.py`
+### Task 5: Automated Daily Scheduler
+**Impact:** Medium — runs without human intervention
+**Effort:** 1-2 hours
+**Files:** Update `schedule_pipeline.py`, New `run_daily.py`
 
-**Why:** Current ranking uses only technical factors. Fundamental factors (P/E, P/B, ROE) improve long-term stock selection.
+**Why:** `schedule_pipeline.py` exists but only runs the retraining pipeline. It needs to run the full daily signal suite instead.
 
 **Current state:**
 ```python
-# ranking.py: momentum, volatility, volume, technical scores
-# No fundamental data (P/E, P/B, ROE, dividend yield)
+# schedule_pipeline.py:
+# - Installs Windows scheduled task
+# - Runs run_pipeline.py (retraining only)
+# - Does NOT run signal modules, meta-controller, or logging
 ```
 
-**Implementation:**
+**Target:**
+```python
+# schedule_pipeline.py:
+# - Runs run_daily.py (full daily cycle)
+# - Configurable time (default 4:00 PM IST, after market close)
+# - Logs to data/pipeline_logs/
+```
 
-1. Add `fetch_fundamentals(ticker: str) -> dict` to ranking.py
-   - Uses yfinance `.info` to get: trailingPE, priceToBook, returnOnEquity, dividendYield, marketCap, debtToEquity
-   - Caches results (fundamentals change slowly)
+**Implementation steps:**
 
-2. Add `fundamental_score(fundamentals: dict) -> float`
-   - P/E: lower is better (0-30 range normalized to 0-100)
-   - P/B: lower is better
-   - ROE: higher is better
-   - Dividend yield: higher is better
-   - Combined: weighted average
+1. Update `schedule_pipeline.py` to point to `run_daily.py`:
+   ```python
+   PIPELINE_SCRIPT = os.path.join(SCRIPT_DIR, "run_daily.py")
+   ```
 
-3. Update `rank_stocks()` to include `fundamental_weight` parameter
-   - Default 0 (backward compatible)
-   - When >0, adds fundamental score to composite
+2. Add Windows Task Scheduler configuration:
+   - Task name: `StoMar_Daily_Signal`
+   - Trigger: Daily at 4:00 PM IST (16:00)
+   - Action: `python run_daily.py`
+   - On failure: retry up to 3 times with 15-min intervals
 
-4. Update `tab_ranking()` in app.py
-   - Add "Include Fundamentals" checkbox
-   - When enabled, fetches fundamentals for displayed stocks
+3. Add `--run-now` flag to `run_daily.py` for manual testing:
+   ```bash
+   python run_daily.py              # Run once now
+   python run_daily.py --dry-run    # Run but don't log to ledger
+   python run_daily.py --ticker RELIANCE.NS  # Run for one ticker only
+   ```
 
-**Tests:** `tests/test_ranking.py`
-- `test_fetch_fundamentals_returns_dict` — has expected keys
-- `test_fundamental_score_in_range` — between 0 and 100
-- `test_fundamental_score_high_roe` — high ROE → high score
-- `test_rank_stocks_with_fundamentals` — incorporates fundamental factor
-- `test_rank_stocks_backward_compatible` — default weight=0 unchanged
+4. Add logging to `data/pipeline_logs/`:
+   - Daily log files: `pipeline_YYYY-MM-DD.log`
+   - Capture stdout + stderr
+   - Rotate logs (keep last 30 days)
+
+**Tests:** `tests/test_orchestrator.py` (extend existing)
+- `test_run_now_flag` — runs immediately
+- `test_dry_run_doesnt_write_ledger` — no entries in database
+- `test_ticker_flag` — processes only specified ticker
 
 ---
 
 ## Execution Order
 
 ```
-1. Task 1: Stacked Meta-Learner (4-5 hrs)    ← CRITICAL, foundation for Task 2
-2. Task 2: Regime-Conditional Routing (3-4 hrs) ← depends on Task 1 (meta-learner)
-3. Task 3: MF Tracker (5-6 hrs)               ← independent, can parallel with 1-2
-4. Task 4: Expand Universe (2-3 hrs)           ← independent, can parallel with 1-3
-5. Task 5: Fundamental Ranking (3-4 hrs)       ← independent, can parallel with 1-4
+1. Task 2: Persistent Ledger (3-4 hrs)       ← CRITICAL, everything depends on it
+2. Task 3: Meta-Controller v1 (4-5 hrs)      ← CRITICAL, needs ledger to train on
+3. Task 1: Orchestrator (3-4 hrs)            ← HIGH, ties everything together
+4. Task 5: Automated Scheduler (1-2 hrs)     ← MEDIUM, thin wrapper around orchestrator
+5. Task 4: Dashboard from Ledger (2-3 hrs)   ← MEDIUM, can parallel with 1-3
 ```
 
+**Why this order:**
+- **Ledger first** — without it, there's nothing to log decisions to, nothing for the meta-controller to train on
+- **Meta-controller second** — needs ledger history to train; orchestrator needs it to make decisions
+- **Orchestrator third** — ties ledger + meta-controller + signal modules together
+- **Scheduler fourth** — thin wrapper, runs orchestrator on schedule
+- **Dashboard last** — reads from ledger, shows results; can be done in parallel
+
 **Parallelizable:**
-- Tasks 3, 4, 5 are independent of each other and of Tasks 1-2
-- Task 2 requires Task 1 (meta-learner must exist before routing)
+- Task 4 (dashboard) is independent of Tasks 1-3 — can be done in parallel
+- Tasks 1, 2, 3 must be sequential (orchestrator → ledger → meta-controller dependency)
 
-**Total estimated time:** 17-22 hours
-
----
-
-## Exit Criteria Checklist
-
-After all 5 tasks:
-
-- [x] Stacked meta-learner trained and evaluated on all 3 trained stocks
-- [x] Meta-learner shows measurable improvement over equal-weight baseline
-- [x] Regime-conditional routing implemented and tested
-- [x] MF tracker with NAV history, XIRR, factor exposures
-- [x] All 20 stocks batch-trainable
-- [x] Fundamental factors in ranking (P/E, P/B, ROE, dividend yield)
-- [x] All new modules have tests passing
-- [x] Lint clean on all new/modified files
-- [x] Open-source license (Apache 2.0) and CONTRIBUTING.md added
+**Total estimated time:** 13-18 hours
 
 ---
 
@@ -387,45 +662,77 @@ After all 5 tasks:
 
 | File | Purpose |
 |------|---------|
-| `src/mf_tracker.py` | MF portfolio tracker: NAV history, XIRR, factor exposures, allocation |
-| `tests/test_mf_tracker.py` | 9 tests for MF tracker |
-| `LICENSE` | MIT license |
-| `CONTRIBUTING.md` | Contribution guidelines |
+| `src/orchestrator.py` | DailyOrchestrator class — runs full signal pipeline |
+| `src/ledger.py` | SQLite ledger — decisions, trades, portfolio snapshots |
+| `src/meta_controller.py` | Contextual bandit — 14 signals → 1 decision |
+| `run_daily.py` | CLI entry point for daily autonomous loop |
+| `tests/test_orchestrator.py` | 6 tests for orchestrator |
+| `tests/test_ledger.py` | 10 tests for ledger |
+| `tests/test_meta_controller.py` | 11 tests for meta-controller |
 
 ## Files to Modify
 
 | File | Change |
 |------|--------|
-| `src/ensemble.py` | Add `train_meta_learner()`, `REGIME_WEIGHTS`, regime-aware `predict_ensemble()` |
-| `src/ranking.py` | Add `fetch_fundamentals()`, `fundamental_score()`, update `rank_stocks()` |
-| `src/trainer.py` | Add `batch_train()` for multi-ticker training |
-| `run_pipeline.py` | Add `--train-all` and `--train` flags |
-| `app.py` | Add "MF Tracker" tab (17th tab), update ranking tab for fundamentals |
-| `tests/test_ensemble.py` | 7 new tests for meta-learner + regime routing |
-| `tests/test_ranking.py` | 5 new tests for fundamental factors |
-| `tests/test_trainer.py` | 4 new tests for batch training |
+| `app.py` | Add 18th tab (Ledger dashboard), update Paper Trading + Monitoring tabs |
+| `schedule_pipeline.py` | Point to `run_daily.py` instead of `run_pipeline.py` |
+
+---
+
+## Exit Criteria Checklist
+
+After all 5 tasks:
+
+- [ ] `run_daily.py` runs end-to-end without Streamlit
+- [ ] SQLite ledger has all 4 tables with correct schema
+- [ ] Ledger logs decisions, trades, outcomes, and portfolio snapshots
+- [ ] Meta-controller v1 trained on ledger history
+- [ ] Meta-controller returns BUY/SELL/HOLD with reasoning
+- [ ] Learned weights show which modules are currently predictive
+- [ ] Orchestrator handles partial failures gracefully
+- [ ] Scheduler installs and runs at 4:00 PM IST
+- [ ] Dashboard reads from ledger, not session state
+- [ ] All new modules have tests passing
+- [ ] Lint clean on all new/modified files
+- [ ] 2-3+ months of logged episodes (starts automatically once running)
 
 ---
 
 ## Critical Context
 
-- **User's venv:** `C:\Users\uttam\venv` (Python 3.14, torch 2.10+cu130, scipy installed)
+- **User's venv:** `C:\Users\uttam\venv` (Python 3.14, torch 2.10+cu130)
 - **User's project:** `C:\Users\uttam\development\stomar`
 - **Run tests:** `$env:PYTHONPATH = "C:\Users\uttam\development\stomar"; python -m pytest tests/ -v`
-- **Run linter:** `python -m ruff check src/ tests/ --output-format=concise`
-- **Current test count:** 424 tests passing
-- **Trained stocks:** 3 of 20 (RELIANCE, TCS, INFY likely)
+- **Run linter:** `ruff check src/ tests/ --output-format=concise`
+- **Current test count:** 528 tests passing
 - **User constraint:** Everything must be free, must work on Windows
-- **Key insight:** This stage is about INTELLIGENCE — making the ensemble smarter and coverage broader
-- **Meta-learner data:** ~250 trading days per walk-forward window — use simple model (LogisticRegression), not neural net
-- **FinGPT note:** Documented as upgrade path but not feasible on user's hardware (6GB VRAM)
-- **Paper trading clock:** Started in Stage 4 — continue running for 3+ months before real capital
+- **Key insight:** This stage is about AUTOMATION — the system runs itself, learns from its own history
+- **SQLite choice:** Zero config, file-based, works on Windows, scales to 100K+ daily entries
+- **Bandit choice:** Interpretable, learns from small data, weights = audit mechanism
+- **Feedback loop:** Ledger outcomes → meta-controller retrains → better decisions → more accurate signals
+- **Architecture diagram:** `docs/stomar_autonomous_loop_architecture.svg`
 
 ---
 
+## Appendix: Stage 5 (Completed)
+
+Stage 5 built the open platform. 104 new tests added, 528 total.
+
+| Component | File | Status |
+|-----------|------|--------|
+| Stacked meta-learner | `src/ensemble.py` | ✅ |
+| Regime-conditional routing | `src/ensemble.py` | ✅ |
+| MF tracker | `src/mf_tracker.py` | ✅ |
+| Multi-source sentiment | `src/sentiment.py` | ✅ |
+| Fundamental ranking | `src/ranking.py` | ✅ |
+| Volatility forecasting | `src/volatility.py` | ✅ |
+| Batch training | `src/trainer.py` | ✅ |
+| Apache 2.0 license | `LICENSE` | ✅ |
+| Contribution guidelines | `CONTRIBUTING.md` | ✅ |
+
 ## Appendix: Stage 4 (Completed)
 
-Stage 4 built the execution layer. 89 new tests added, 424 total.
+Stage 4 built the execution layer. 89 new tests added, 424 total (at the time).
 
 | Component | File | Status |
 |-----------|------|--------|
