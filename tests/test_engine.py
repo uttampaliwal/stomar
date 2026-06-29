@@ -1,6 +1,7 @@
 """Tests for src/engine.py."""
 
 import pytest
+from unittest.mock import patch
 
 from src.engine import (
     ExecutionEngine, Order, OrderSide, OrderType, OrderStatus, Bar,
@@ -78,7 +79,8 @@ class TestLimitOrderFills:
     def test_limit_buy_fills_when_low_touches(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
         engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=101))
-        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
+        with patch("src.engine.random.random", return_value=0.0):
+            filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price <= 101.0
 
@@ -91,7 +93,8 @@ class TestLimitOrderFills:
     def test_limit_sell_fills_when_high_touches(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
         engine.submit_order(Order("", "TEST.NS", OrderSide.SELL, OrderType.LIMIT, 10, price=103))
-        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
+        with patch("src.engine.random.random", return_value=0.0):
+            filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price >= 103.0
 

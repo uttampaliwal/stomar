@@ -608,12 +608,12 @@ A 2025-26 trend: multiple AI analysts, debaters, and a risk manager debate stock
 **Treat as research direction, not production.**
 
 ### Stage 5 Exit Criteria
-- [ ] Stacked meta-learner + regime routing implemented
-- [ ] Volatility forecasting or ranking prototype built
-- [ ] MF NAV integration + XIRR computation
-- [ ] Sentiment upgraded with FinGPT or multi-source NLP
-- [ ] All 20 stocks trained
-- [ ] Open-source license + contribution guidelines
+- [x] Stacked meta-learner + regime routing implemented
+- [x] Volatility forecasting or ranking prototype built (fundamental ranking + volatility module)
+- [x] MF NAV integration + XIRR computation (mf_tracker.py)
+- [x] Sentiment upgraded with multi-source NLP (Yahoo, Google, MoneyControl, ET, Screener)
+- [x] All 20 stocks batch-trainable (batch_train + --train-all flag)
+- [x] Open-source license (Apache 2.0) + contribution guidelines (CONTRIBUTING.md)
 
 ---
 

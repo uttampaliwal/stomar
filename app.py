@@ -1781,9 +1781,146 @@ def tab_paper_trading():
             st.rerun()
 
 
+def tab_mf_tracker():
+    """MF Tracker tab — mutual fund portfolio tracking."""
+    st.header("🏦 Mutual Fund Tracker")
+    st.caption("Track MF holdings, NAV history, XIRR, factor exposures, and concentration risk")
+
+    from src.mf_tracker import MFTracker
+    from src.holdings import INDIAN_MF_MAP
+
+    tracker = MFTracker()
+    tracker.load_state("mf_state.json")
+
+    # --- Add Holding ---
+    with st.expander("➕ Add / Update Holding", expanded=False):
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            fund_options = list(INDIAN_MF_MAP.keys())
+            selected_fund = st.selectbox("Fund", fund_options, key="mf_fund_select")
+        with c2:
+            units = st.number_input("Units", min_value=0.0, value=100.0, step=10.0, key="mf_units")
+        with c3:
+            avg_nav = st.number_input("Avg NAV (₹)", min_value=0.0, value=100.0, step=1.0, key="mf_nav")
+        with c4:
+            category = st.selectbox("Category", ["Equity", "Debt", "Hybrid", "Index", "ELSS", "Other"], key="mf_cat")
+        if st.button("Add Holding", key="mf_add"):
+            ticker = INDIAN_MF_MAP.get(selected_fund, selected_fund)
+            tracker.add_holding(ticker, units, avg_nav, fund_name=selected_fund, category=category)
+            tracker.save_state("mf_state.json")
+            st.success(f"Added {selected_fund} ({units} units @ ₹{avg_nav})")
+            st.rerun()
+
+    if not tracker.holdings:
+        st.info("No MF holdings yet. Add your first fund above.")
+        return
+
+    # --- Fetch NAVs ---
+    if st.button("🔄 Refresh NAV Data", key="mf_refresh"):
+        with st.spinner("Fetching NAV history..."):
+            for ticker in tracker.holdings:
+                tracker.fetch_nav_history(ticker, period="2y")
+        tracker.save_state("mf_state.json")
+        st.success("NAV data refreshed.")
+        st.rerun()
+
+    # --- Portfolio Summary ---
+    st.subheader("Portfolio Summary")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Invested", f"₹{tracker.get_invested_value():,.0f}")
+    c2.metric("Current Value", f"₹{tracker.get_portfolio_value():,.0f}")
+    pnl = tracker.get_total_pnl()
+    c3.metric("Total P&L", f"₹{pnl:,.0f}", f"{tracker.get_total_return_pct():.1%}")
+    xirr = tracker.compute_xirr()
+    c4.metric("Portfolio XIRR", f"{xirr:.1%}")
+
+    # --- Holdings Table ---
+    st.subheader("Holdings")
+    top = tracker.get_top_holdings(n=len(tracker.holdings))
+    if top:
+        df = pd.DataFrame(top)
+        display_cols = ["fund_name", "units", "avg_nav", "current_value", "pnl", "return_pct"]
+        existing = [c for c in display_cols if c in df.columns]
+        st.dataframe(
+            df[existing].style.format({
+                "avg_nav": "₹{:.2f}",
+                "current_value": "₹{:,.0f}",
+                "pnl": "₹{:,.0f}",
+                "return_pct": "{:.1%}",
+            }),
+            use_container_width=True, hide_index=True,
+        )
+
+    # --- Allocation Breakdown ---
+    alloc = tracker.get_allocation_breakdown()
+    if alloc:
+        st.subheader("Allocation by Category")
+        alloc_df = pd.DataFrame([
+            {"Category": k, "Weight": v} for k, v in alloc.items()
+        ])
+        fig = px.pie(alloc_df, values="Weight", names="Category", hole=0.4)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # --- Concentration Risk ---
+    flagged = tracker.detect_concentration_risk(threshold=0.3)
+    if flagged:
+        st.warning(f"⚠️ {len(flagged)} holding(s) exceed 30% concentration:")
+        for f in flagged:
+            st.write(f"- **{f['fund_name']}**: {f['weight']:.1%} of portfolio")
+
+    # --- Per-Fund Detail ---
+    st.subheader("Fund Details")
+    for ticker, holding in tracker.holdings.items():
+        with st.expander(f"{holding.fund_name or ticker}"):
+            col1, col2 = st.columns(2)
+            with col1:
+                xirr_fund = tracker.compute_xirr(ticker)
+                st.metric("Fund XIRR", f"{xirr_fund:.1%}")
+                factors = tracker.compute_factor_exposures(ticker)
+                st.write("**Factor Exposures:**")
+                for factor, val in factors.items():
+                    st.write(f"  - {factor}: {val:.3f}")
+            with col2:
+                nav = tracker.nav_cache.get(ticker)
+                if nav is not None and len(nav) > 0:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=nav.index, y=nav.values, mode="lines", name="NAV"))
+                    fig.update_layout(height=250, margin=dict(t=10, b=10))
+                    st.plotly_chart(fig, use_container_width=True)
+
+            if st.button("Remove", key=f"mf_remove_{ticker}"):
+                tracker.remove_holding(ticker)
+                tracker.save_state("mf_state.json")
+                st.rerun()
+
+    # --- Benchmark Comparison ---
+    st.subheader("Benchmark Comparison (vs Nifty 50)")
+    for ticker, holding in list(tracker.holdings.items())[:3]:
+        comp = tracker.compare_to_benchmark(ticker)
+        if "error" not in comp:
+            st.write(f"**{holding.fund_name}**: Excess {comp['excess_return']:.1%}, "
+                     f"Tracking Error {comp['tracking_error']:.1%}, "
+                     f"Correlation {comp['correlation']:.2f}")
+
+    # --- State Management ---
+    st.divider()
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        if st.button("Export State", key="mf_export"):
+            tracker.save_state("mf_state.json")
+            st.success("State saved to mf_state.json")
+    with sc2:
+        if st.button("Clear All Holdings", key="mf_clear"):
+            tracker.holdings.clear()
+            tracker.nav_cache.clear()
+            tracker.save_state("mf_state.json")
+            st.success("All holdings cleared.")
+            st.rerun()
+
+
 def main():
     # (header is now rendered inside tab_predictions)
-    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime", "📡 Monitoring", "🔄 Pipeline", "📝 Paper Trading"])
+    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime", "📡 Monitoring", "🔄 Pipeline", "📝 Paper Trading", "🏦 MF Tracker"])
     with tabs[0]: tab_predictions()
     with tabs[1]: tab_portfolio()
     with tabs[2]: tab_backtest()
@@ -1800,6 +1937,7 @@ def main():
     with tabs[13]: tab_monitoring()
     with tabs[14]: tab_pipeline()
     with tabs[15]: tab_paper_trading()
+    with tabs[16]: tab_mf_tracker()
     st.markdown("""
     <div style="text-align:center;padding:2rem 0 1rem;margin-top:2rem;border-top:1px solid var(--border-primary);">
         <div style="font-size:0.7rem;color:var(--text-muted);letter-spacing:0.05em;">

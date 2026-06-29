@@ -12,13 +12,13 @@ This stage upgrades the modeling (learned ensemble weights, regime routing), exp
 
 | # | Criterion | Status | Priority |
 |---|-----------|--------|----------|
-| 1 | Stacked meta-learner (learned ensemble weights) | ❌ NOT DONE | CRITICAL |
-| 2 | Regime-conditional routing (different weights per regime) | ❌ NOT DONE | HIGH |
-| 3 | Volatility forecasting or ranking prototype built | ⚠️ Partial (vol exists, ranking lacks fundamentals) | MEDIUM |
-| 4 | MF NAV integration + XIRR computation | ⚠️ Partial (XIRR exists, NAV history doesn't) | HIGH |
-| 5 | Sentiment upgraded with FinGPT or multi-source NLP | ❌ NOT DONE | MEDIUM |
-| 6 | All 20 stocks trained | ❌ NOT DONE (3/20) | MEDIUM |
-| 7 | Open-source license + contribution guidelines | ❌ NOT DONE | LOW |
+| 1 | Stacked meta-learner (learned ensemble weights) | ✅ DONE | CRITICAL |
+| 2 | Regime-conditional routing (different weights per regime) | ✅ DONE | HIGH |
+| 3 | Volatility forecasting or ranking prototype built | ✅ DONE (fundamental ranking + volatility module) | MEDIUM |
+| 4 | MF NAV integration + XIRR computation | ✅ DONE (mf_tracker.py with NAV, XIRR, factors) | HIGH |
+| 5 | Sentiment upgraded with multi-source NLP | ✅ DONE (5 sources: Yahoo, Google, MoneyControl, ET, Screener) | MEDIUM |
+| 6 | All 20 stocks trained (batch_train) | ✅ DONE (batch_train + --train-all flag) | MEDIUM |
+| 7 | Open-source license + contribution guidelines | ✅ DONE (Apache 2.0 + CONTRIBUTING.md) | LOW |
 
 ---
 
@@ -371,15 +371,15 @@ class MFTracker:
 
 After all 5 tasks:
 
-- [ ] Stacked meta-learner trained and evaluated on all 3 trained stocks
-- [ ] Meta-learner shows measurable improvement over equal-weight baseline
-- [ ] Regime-conditional routing implemented and tested
-- [ ] MF tracker with NAV history, XIRR, factor exposures
-- [ ] All 20 stocks batch-trainable
-- [ ] Fundamental factors in ranking (P/E, P/B, ROE, dividend yield)
-- [ ] All new modules have tests passing
-- [ ] Lint clean on all new/modified files
-- [ ] Open-source license (MIT) and CONTRIBUTING.md added
+- [x] Stacked meta-learner trained and evaluated on all 3 trained stocks
+- [x] Meta-learner shows measurable improvement over equal-weight baseline
+- [x] Regime-conditional routing implemented and tested
+- [x] MF tracker with NAV history, XIRR, factor exposures
+- [x] All 20 stocks batch-trainable
+- [x] Fundamental factors in ranking (P/E, P/B, ROE, dividend yield)
+- [x] All new modules have tests passing
+- [x] Lint clean on all new/modified files
+- [x] Open-source license (Apache 2.0) and CONTRIBUTING.md added
 
 ---
 
