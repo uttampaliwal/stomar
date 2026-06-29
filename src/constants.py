@@ -1,9 +1,10 @@
 """Shared constants across the StoMar project."""
 
 import os
+from pathlib import Path
 
 # ─── Paths ───
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
 LEDGER_DB = os.path.join(DATA_DIR, "stomar.db")
@@ -59,24 +60,26 @@ def calculate_nse_costs(price: float, quantity: int, side: str) -> dict:
     Args:
         price: Execution price per share
         quantity: Number of shares
-        side: "buy" or "sell"
+        side: "buy" or "sell" (case-insensitive)
 
     Returns:
         Dict with cost breakdown and total
     """
     trade_value = price * quantity
+    side = side.lower().strip()
 
     brokerage = trade_value * BROKERAGE_RATE
     exchange_charge = trade_value * EXCHANGE_CHARGE_RATE
     sebi_fees = trade_value * SEBI_FEES_RATE
     gst = (brokerage + exchange_charge) * GST_RATE
 
-    if side == "sell":
-        stt = trade_value * STT_SELL_RATE
-        stamp_duty = 0.0
-    else:
-        stt = 0.0
+    # STT is charged on both buy and sell sides for delivery at 0.1%
+    stt = trade_value * STT_SELL_RATE
+
+    if side == "buy":
         stamp_duty = trade_value * STAMP_DUTY_BUY_RATE
+    else:
+        stamp_duty = 0.0
 
     total = brokerage + stt + exchange_charge + sebi_fees + stamp_duty + gst
 

@@ -44,6 +44,10 @@ class DailyOrchestrator:
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")
 
+        if not self.tickers:
+            logger.warning("No tickers configured for daily run")
+            return {"date": date, "decisions": [], "trades": [], "errors": []}
+
         summary = {"date": date, "decisions": [], "trades": [], "errors": []}
         trade_count = 0
         total_exposure = 0.0

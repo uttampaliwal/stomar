@@ -167,7 +167,7 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
     feature_cols = [c for c in feature_cols if c in df_feat.columns]
     latest_data = df_feat[feature_cols].dropna()
     if len(latest_data) < 60:
-        return None, None, {}
+        return 0, 0.0, {"error": "insufficient_data"}
 
     latest_scaled = scaler.transform(latest_data.values[-60:])
     inp = torch.tensor(latest_scaled, dtype=torch.float32).unsqueeze(0).to(DEVICE)

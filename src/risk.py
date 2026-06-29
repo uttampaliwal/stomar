@@ -52,7 +52,7 @@ def calculate_sharpe(returns: np.ndarray, risk_free_rate: float = RISK_FREE_RATE
     if len(returns) < 10:
         return 0.0
     ann_return = returns.mean() * 252
-    ann_vol = returns.std() * np.sqrt(252)
+    ann_vol = returns.std(ddof=1) * np.sqrt(252)
     if ann_vol == 0:
         return 0.0
     return float((ann_return - risk_free_rate) / ann_vol)
@@ -63,7 +63,7 @@ def calculate_sortino(returns: np.ndarray, risk_free_rate: float = RISK_FREE_RAT
         return 0.0
     ann_return = returns.mean() * 252
     downside = returns[returns < 0]
-    downside_vol = downside.std() * np.sqrt(252) if len(downside) > 0 else 0.001
+    downside_vol = downside.std(ddof=1) * np.sqrt(252) if len(downside) > 1 else 0.001
     return float((ann_return - risk_free_rate) / downside_vol)
 
 
@@ -88,7 +88,9 @@ def calculate_calmar(returns: np.ndarray, equity_curve: np.ndarray) -> float:
 def portfolio_var(weights: np.ndarray, cov_matrix: np.ndarray, confidence: float = 0.95) -> float:
     port_return_var = weights @ cov_matrix @ weights
     port_std = np.sqrt(port_return_var)
-    z_score = 1.645
+    # Map confidence to z-score (95% -> 1.645, 99% -> 2.326)
+    from scipy import stats as sp_stats
+    z_score = float(sp_stats.norm.ppf(confidence))
     return float(z_score * port_std)
 
 

@@ -33,7 +33,7 @@ def detect_regime(prices: pd.Series, lookback: int = 200, ohlc: pd.DataFrame = N
     total_signals += 1
     if current > sma_200:
         bull_signals += 1
-        indicators["Price vs SMA200"] = f"{'Above' if current > sma_200 else 'Below'} (Bull)"
+        indicators["Price vs SMA200"] = "Above (Bull)"
     else:
         bear_signals += 1
         indicators["Price vs SMA200"] = "Below (Bear)"
@@ -72,6 +72,7 @@ def detect_regime(prices: pd.Series, lookback: int = 200, ohlc: pd.DataFrame = N
 
     total_signals += 1
     if 40 <= rsi <= 60:
+        # Neutral RSI - counts toward total but neither bull nor bear
         indicators["RSI"] = f"{rsi:.0f} (Neutral)"
     elif rsi > 60:
         bull_signals += 1

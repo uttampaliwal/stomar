@@ -88,7 +88,10 @@ class NSEArchiveSource(DataSource):
 
         try:
             z = zipfile.ZipFile(BytesIO(resp.content))
-            csv_name = z.namelist()[0]
+            namelist = z.namelist()
+            if not namelist:
+                raise ValueError(f"Empty zip archive for {symbol}")
+            csv_name = namelist[0]
             df = pd.read_csv(z.open(csv_name))
         except Exception as e:
             raise ValueError(f"Failed to parse NSE archive for {symbol}: {e}")

@@ -9,7 +9,7 @@ class TestNSECosts:
         from src.constants import calculate_nse_costs
         costs = calculate_nse_costs(1000.0, 10, "buy")
         assert costs["brokerage"] > 0
-        assert costs["stt"] == 0.0  # No STT on buy
+        assert costs["stt"] > 0  # STT on buy (delivery: both sides)
         assert costs["stamp_duty"] > 0  # Stamp duty on buy
         assert costs["gst"] > 0
         assert costs["total"] > 0
@@ -31,8 +31,8 @@ class TestNSECosts:
         total_round_trip = buy["total"] + sell["total"]
         trade_value = 1000.0 * 10
         rate = total_round_trip / trade_value
-        # Round-trip without slippage should be ~0.15-0.25%
-        assert 0.001 < rate < 0.003, f"Round-trip cost rate {rate:.4f} outside expected range"
+        # Round-trip without slippage should be ~0.3-0.5% (STT on both sides)
+        assert 0.002 < rate < 0.006, f"Round-trip cost rate {rate:.4f} outside expected range"
 
     def test_costs_scale_with_trade_value(self):
         from src.constants import calculate_nse_costs

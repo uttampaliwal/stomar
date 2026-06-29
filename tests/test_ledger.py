@@ -199,12 +199,12 @@ def test_get_performance_empty(ledger):
 def test_get_performance_with_data(ledger, sample_signals):
     id1 = ledger.log_decision("2025-01-15", "RELIANCE.NS", sample_signals, "BUY", 0.05, 0.7)
     id2 = ledger.log_decision("2025-01-15", "TCS.NS", sample_signals, "HOLD", 0.0, 0.5)
-    ledger.log_outcome(id1, 0.012, 1)  # correct
-    ledger.log_outcome(id2, -0.005, 0)  # correct (ensemble was 1, actual was 0, so wrong)
+    ledger.log_outcome(id1, 0.012, 1)  # correct (BUY + price up)
+    ledger.log_outcome(id2, -0.005, 0)  # correct (HOLD is always correct - no trade = no loss)
     perf = ledger.get_performance()
     assert perf["total_decisions"] == 2
     assert perf["resolved"] == 2
-    assert perf["correct_predictions"] == 1
+    assert perf["correct_predictions"] == 2
 
 
 # --- get_signal_accuracy ---

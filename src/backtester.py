@@ -315,7 +315,7 @@ def run_simple_backtest(df_feat, signals, initial_capital=100000, brokerage=BROK
     return stats, portfolio
 
 
-def generate_model_signals(ticker, df_feat, lstm, gru, transformer, xgb, scaler, feature_cols):
+def generate_model_signals(ticker, df_feat, lstm, gru, transformer, xgb, scaler, feature_cols, seq_length=60):
     import torch
     from src.model import DEVICE
 
@@ -324,9 +324,9 @@ def generate_model_signals(ticker, df_feat, lstm, gru, transformer, xgb, scaler,
     scaled = scaler.transform(data.values)
 
     signals = {}
-    for i in range(60, len(scaled)):
+    for i in range(seq_length, len(scaled)):
         date = str(data.index[i].date())
-        inp = torch.tensor(scaled[i-60:i], dtype=torch.float32).unsqueeze(0).to(DEVICE)
+        inp = torch.tensor(scaled[i-seq_length:i], dtype=torch.float32).unsqueeze(0).to(DEVICE)
 
         prev_close = scaled[i-1, 0]
 

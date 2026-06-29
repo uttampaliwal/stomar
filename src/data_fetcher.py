@@ -2,6 +2,9 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 NSE_STOCKS = [
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
@@ -11,6 +14,7 @@ NSE_STOCKS = [
 ]
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def fetch_stock_data(
@@ -51,6 +55,9 @@ def fetch_stock_data(
 def get_live_price(ticker: str) -> float:
     stock = yf.Ticker(ticker)
     data = stock.history(period="1d", interval="1m")
+    if data.empty or "Close" not in data.columns:
+        logger.warning("No live price data for %s", ticker)
+        return 0.0
     return float(data["Close"].iloc[-1])
 
 

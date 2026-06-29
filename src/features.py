@@ -3,6 +3,9 @@ import numpy as np
 import ta
 import os
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def add_sentiment_features(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
@@ -22,8 +25,8 @@ def add_sentiment_features(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
             with open(cache_file) as f:
                 data = json.load(f)
             score = data.get("score", 0.0)
-        except Exception:
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to read sentiment cache for %s: %s", ticker, e)
 
     # Point-in-time: only the most recent row gets the score.
     # Historical rows stay 0.0 because this sentiment was not available then.
@@ -77,8 +80,8 @@ def add_flow_features(df: pd.DataFrame) -> pd.DataFrame:
             else (-1.0 if r["fii_net"] < -500 else 0.0),
             axis=1,
         )
-    except Exception:
-        pass
+    except (OSError, ValueError, KeyError) as e:
+        logger.warning("Failed to load flow features: %s", e)
 
     return df
 
@@ -101,8 +104,8 @@ def add_pcr_features(df: pd.DataFrame) -> pd.DataFrame:
                 data = json.load(f)
             pcr = data.get("pcr_oi", 1.0)
             max_pain = data.get("max_pain", 0.0)
-        except Exception:
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to read PCR cache: %s", e)
 
     # Point-in-time: only the most recent row gets the PCR value.
     # Historical rows stay at defaults because PCR was not available then.
@@ -131,7 +134,8 @@ def add_multitimeframe_features(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
         else:
             mtf_dir = 0
             mtf_conf = 0
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to compute MTF features for %s: %s", ticker, e)
         mtf_dir = 0
         mtf_conf = 0
 

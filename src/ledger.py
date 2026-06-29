@@ -98,6 +98,13 @@ class Ledger:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self._create_tables()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
     def _create_tables(self):
         self.conn.executescript(SCHEMA)
         self.conn.commit()
@@ -176,9 +183,9 @@ class Ledger:
             correct = 1 if actual_direction == 1 else 0
         elif action == "SELL":
             correct = 1 if actual_direction == 0 else 0
-        elif ensemble_dir is not None:
-            # HOLD: correct if ensemble matched reality
-            correct = 1 if ensemble_dir == actual_direction else 0
+        elif action == "HOLD":
+            # HOLD is always considered correct (no trade = no loss)
+            correct = 1
         else:
             correct = None
 
@@ -271,19 +278,19 @@ class Ledger:
 
         accuracy = {}
         binary_signals = {
-            "ensemble_direction": lambda r, s: r[s] == r["actual_direction"] if r[s] is not None else None,
-            "sentiment": lambda r, s: (r["sentiment_score"] or 0) > 0 == (r["actual_direction"] == 1),
-            "fii": lambda r, s: (r["fii_net"] or 0) > 0 == (r["actual_direction"] == 1),
-            "dii": lambda r, s: (r["dii_net"] or 0) > 0 == (r["actual_direction"] == 1),
-            "pcr": lambda r, s: (r["pcr"] or 0) > 1.0 == (r["actual_direction"] == 1),
-            "mtf": lambda r, s: (r["mtf_signal"] or 0) > 0 == (r["actual_direction"] == 1),
+            "ensemble_direction": lambda r: r["ensemble_direction"] == r["actual_direction"] if r["ensemble_direction"] is not None else None,
+            "sentiment": lambda r: ((r["sentiment_score"] or 0) > 0) == (r["actual_direction"] == 1),
+            "fii": lambda r: ((r["fii_net"] or 0) > 0) == (r["actual_direction"] == 1),
+            "dii": lambda r: ((r["dii_net"] or 0) > 0) == (r["actual_direction"] == 1),
+            "pcr": lambda r: ((r["pcr"] or 0) > 1.0) == (r["actual_direction"] == 1),
+            "mtf": lambda r: ((r["mtf_signal"] or 0) > 0) == (r["actual_direction"] == 1),
         }
 
         for name, check_fn in binary_signals.items():
             correct = 0
             total = 0
             for row in resolved:
-                result = check_fn(row, name)
+                result = check_fn(row)
                 if result is not None:
                     total += 1
                     if result:

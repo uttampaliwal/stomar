@@ -215,23 +215,6 @@ def _walk_forward_dl(scaled, seq_length, n_splits=5):
         split = seq_length + 10
     return split, []
 
-    fold_accs = []
-    for fold in range(n_splits):
-        test_start = (fold + 1) * fold_size
-        test_end = min(test_start + fold_size, len(scaled))
-        if test_start >= len(scaled):
-            break
-
-        # We'll evaluate after training; just record the split points
-        fold_accs.append((test_start, test_end))
-
-    # Use last fold for final train/test
-    final_split = n_splits * fold_size
-    if final_split >= len(scaled):
-        final_split = int(len(scaled) * 0.8)
-
-    return final_split, fold_accs
-
 
 def train_for_ticker(ticker: str, force_retrain: bool = False):
     logger.info("training_start ticker=%s force_retrain=%s", ticker, force_retrain)
@@ -305,7 +288,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
             X_te_l = torch.tensor(X_lstm[split:]).to(DEVICE)
             y_te_l = torch.tensor(y_lstm[split:]).to(DEVICE)
 
-            loader = DataLoader(TensorDataset(X_tr_l, y_tr_l), batch_size=BATCH_SIZE, shuffle=True)
+            loader = DataLoader(TensorDataset(X_tr_l, y_tr_l), batch_size=BATCH_SIZE, shuffle=False)
             input_dim = X_lstm.shape[2]
 
             lstm_model = _train_one_model(build_lstm(input_dim), loader, X_te_l, y_te_l, "LSTM")
@@ -347,6 +330,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
         logger.info("skipping_dl ticker=%s reason=insufficient_data rows=%d", ticker, len(df_feat))
         scaler.fit(lstm_data)
         scaled = scaler.transform(lstm_data)
+        split = 0
 
     if lstm_model is not None:
         save_models(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, ticker, lgb_model=lgb_model)

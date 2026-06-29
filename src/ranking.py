@@ -128,16 +128,18 @@ def fundamental_score(fundamentals: dict) -> float:
     return sum(s * w for _, s, w in scores) / total_weight
 
 
-def compute_momentum_score(close_series, windows=[5, 20, 60, 120]):
+def compute_momentum_score(close_series, windows=None):
     """Compute momentum score at multiple windows.
 
     Args:
         close_series: Series of close prices indexed by date
-        windows: List of lookback windows
+        windows: List of lookback windows (default: [5, 20, 60, 120])
 
     Returns:
         Dict with momentum scores
     """
+    if windows is None:
+        windows = [5, 20, 60, 120]
     scores = {}
     for w in windows:
         if len(close_series) > w:
@@ -263,7 +265,8 @@ def compute_technical_score(df):
         std = close.rolling(20).std()
         upper = sma + 2 * std
         lower = sma - 2 * std
-        bb_pos = (close.iloc[-1] - lower.iloc[-1]) / (upper.iloc[-1] - lower.iloc[-1])
+        bb_range = upper.iloc[-1] - lower.iloc[-1]
+        bb_pos = (close.iloc[-1] - lower.iloc[-1]) / bb_range if bb_range > 0 else 0.5
         scores["bb_position"] = float(bb_pos) if not np.isnan(bb_pos) else 0.5
         # Score: middle is best (mean reversion)
         scores["bb_score"] = float(max(0, 100 - abs(bb_pos - 0.5) * 200))

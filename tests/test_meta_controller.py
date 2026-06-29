@@ -22,7 +22,7 @@ def ledger_with_data():
 
     np.random.seed(42)
     for i in range(150):
-        direction = np.random.choice([0, 1])
+        direction = int(i % 2)  # Alternate 0/1 to guarantee both classes
         signals = {
             "ensemble_direction": direction,
             "ensemble_confidence": np.random.uniform(0.4, 0.9),
@@ -36,7 +36,7 @@ def ledger_with_data():
             "cvar_95": -np.random.uniform(0.02, 0.06),
             "sharpe": np.random.uniform(-0.5, 2.0),
             "volatility_forecast": np.random.uniform(0.1, 0.3),
-            "fundamental_score": np.random.uniform(40, 80),
+            "fundamental_score": np.random.uniform(0.4, 0.8),
         }
         decision_id = lg.log_decision(
             date=f"2025-{(i // 28) + 1:02d}-{(i % 28) + 1:02d}",
@@ -46,7 +46,8 @@ def ledger_with_data():
             position_size=0.05,
             confidence=0.7,
         )
-        actual_dir = direction if np.random.random() > 0.4 else (1 - direction)
+        # Guarantee both classes in actual outcomes
+        actual_dir = int(i % 2)
         lg.log_outcome(decision_id, actual_return=np.random.randn() * 0.02, actual_direction=actual_dir)
 
     yield lg

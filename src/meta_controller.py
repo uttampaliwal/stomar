@@ -18,6 +18,9 @@ Usage:
 """
 
 import logging
+import pickle
+from pathlib import Path
+
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 
@@ -52,7 +55,14 @@ class MetaController:
         if val is None:
             return float(default)
         if isinstance(val, bytes):
-            val = int.from_bytes(val, byteorder="little")
+            try:
+                import struct
+                val = struct.unpack("<d", val)[0]
+            except (struct.error, ValueError):
+                try:
+                    val = float(int.from_bytes(val, byteorder="little"))
+                except (ValueError, OverflowError):
+                    return float(default)
         try:
             return float(val)
         except (TypeError, ValueError):
@@ -78,7 +88,7 @@ class MetaController:
             self._to_float(signals.get("cvar_95"), 0),
             self._to_float(signals.get("sharpe"), 0),
             self._to_float(signals.get("volatility_forecast"), 0),
-            self._to_float(signals.get("fundamental_score"), 50),
+            self._to_float(signals.get("fundamental_score"), 0.5),
         ], dtype=np.float64)
 
         return vector
@@ -173,8 +183,19 @@ class MetaController:
                 "required": MIN_SAMPLES_TO_TRAIN,
             }
 
+        # Reverse to chronological order (ledger returns DESC)
+        resolved = list(reversed(resolved))
+
         X = np.array([self.extract_state_vector(d) for d in resolved])
         y = np.array([int(self._to_float(d["actual_direction"], 0)) for d in resolved])
+
+        # Guard against single-class labels
+        if len(np.unique(y)) < 2:
+            return {
+                "status": "single_class",
+                "n_samples": len(resolved),
+                "message": "All resolved decisions have the same direction",
+            }
 
         split = int(len(X) * 0.8)
         X_train, X_test = X[:split], X[split:]
@@ -200,6 +221,35 @@ class MetaController:
         if self.weights is None:
             return {}
         return dict(sorted(self.weights.items(), key=lambda x: abs(x[1]), reverse=True))
+
+    def save(self, path: str = None):
+        """Save trained model to disk."""
+        if path is None:
+            from src.constants import META_CONTROLLER_PATH
+            path = META_CONTROLLER_PATH
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            pickle.dump({"model": self.model, "weights": self.weights}, f)
+        logger.info("Meta-controller saved to %s", path)
+
+    def load(self, path: str = None) -> bool:
+        """Load trained model from disk. Returns True if loaded."""
+        if path is None:
+            from src.constants import META_CONTROLLER_PATH
+            path = META_CONTROLLER_PATH
+        import os
+        if not os.path.exists(path):
+            return False
+        try:
+            with open(path, "rb") as f:
+                state = pickle.load(f)
+            self.model = state.get("model")
+            self.weights = state.get("weights")
+            logger.info("Meta-controller loaded from %s", path)
+            return True
+        except Exception as e:
+            logger.warning("Failed to load meta-controller: %s", e)
+            return False
 
     def explain(self, signals: dict) -> str:
         """Human-readable explanation of why this decision was made."""

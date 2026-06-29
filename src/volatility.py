@@ -105,12 +105,15 @@ def yang_zhang_volatility(open_, high, low, close, window=20, annualize=True):
         high: Series of high prices
         low: Series of low prices
         close: Series of close prices
-        window: Rolling window size
+        window: Rolling window (must be > 1)
         annualize: If True, multiply by sqrt(252)
 
     Returns:
         Series of volatility values
     """
+    if window <= 1:
+        window = 2
+
     log_co = np.log(close / open_)
     log_oc = np.log(open_ / close.shift(1))
     log_ho = np.log(high / open_)

@@ -339,9 +339,22 @@ class PaperTrader:
             "risk_weekly_pnl": self.risk_controller.weekly_pnl,
             "risk_peak_equity": self.risk_controller.peak_equity,
         }
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2, default=str)
-        logger.info("State saved to %s", path)
+        import tempfile
+        dir_name = os.path.dirname(path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(dir=dir_name or ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(state, f, indent=2, default=str)
+            os.replace(tmp_path, path)
+            logger.info("State saved to %s", path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def load_state(self, path: str = None) -> bool:
         """Load paper trading state from disk. Returns True if loaded."""
@@ -373,7 +386,8 @@ class PaperTrader:
         """Estimate price for risk check if not yet available."""
         if ticker in self.positions:
             return self.positions[ticker].current_price
-        return 100.0  # Default fallback
+        logger.warning("No price available for %s, using 0 for risk check", ticker)
+        return 0.0
 
     def reset(self):
         """Reset all state for a new session."""

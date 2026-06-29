@@ -8,6 +8,7 @@ import joblib
 import os
 
 MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
+os.makedirs(MODELS_DIR, exist_ok=True)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -57,7 +58,10 @@ class StockTransformer(nn.Module):
             d_model=d_model, nhead=nhead, dim_feedforward=256,
             dropout=0.2, batch_first=True, norm_first=True,
         )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers, enable_nested_tensor=False)
+        try:
+            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers, enable_nested_tensor=False)
+        except TypeError:
+            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.norm = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(0.2)
         self.fc1 = nn.Linear(d_model, 32)
