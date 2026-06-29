@@ -101,22 +101,26 @@ HF_HOME=/path/to/huggingface/cache   # Override HuggingFace model cache
 
 ```
 stomar/
-├── app.py
+├── app.py                     # Main Streamlit app (19 tabs)
+├── run_daily.py               # Autonomous daily loop
+├── run_pipeline.py            # Retraining pipeline
+├── schedule_pipeline.py       # Windows Task Scheduler
+├── verify_system.py           # System verification
+├── run.bat                    # Windows launcher
 ├── requirements.txt
-├── run.bat
-├── .env                    # Optional
-├── src/                    # Source code (14 modules)
-├── models/                 # Auto-created when you train
-│   ├── RELIANCE.NS_lstm.pt
-│   ├── RELIANCE.NS_gru.pt
-│   ├── ...
-├── data/                   # Auto-created for caching
-│   ├── *.parquet           # Stock data cache
-│   ├── sentiment_cache/    # Sentiment JSON cache
-│   ├── fii_dii/            # FII/DII data cache
-│   ├── options/            # Options chain cache
-│   └── mtf/                # Multi-timeframe cache
-└── docs/                   # This documentation
+├── pyproject.toml
+├── .env                       # Optional
+├── src/                       # Source code (40 modules)
+├── models/                    # Trained weights (gitignored)
+│   ├── *.pt, *.pkl            # Per-ticker models
+│   └── meta_controller.pkl    # Meta-controller
+├── data/                      # Runtime data (gitignored)
+│   ├── *.parquet              # OHLCV cache
+│   ├── *.json                 # Sentiment/MTF cache
+│   ├── stomar.db              # SQLite ledger
+│   ├── paper_state.json       # Paper trading state
+│   └── mf_state.json          # MF tracker state
+└── docs/                      # This documentation
 ```
 
 ---
@@ -147,16 +151,86 @@ python -m streamlit run app.py --server.headless true
 2. **Go to Predictions tab** — Select a stock (e.g., RELIANCE.NS)
 3. **Click "Train Model"** — Trains all 5 models (~30-90 seconds)
 4. **View prediction** — Ensemble signal appears with confidence
-5. **Try other tabs** — Backtest, Scanner, Sentiment, etc.
+5. **Try other tabs** — Backtest, Scanner, Sentiment, Consensus, etc.
 
 ### Training Times (approximate)
 | Stock | Time | Notes |
 |-------|------|-------|
-| RELIANCE.NS | ~45s | 2 years of daily data |
+| RELIANCE.NS | ~45s | 1 year of daily data |
 | TCS.NS | ~50s | Slightly more volatility |
 | HDFCBANK.NS | ~40s | Stable data |
 
 Walk-forward backtest takes ~2-5 minutes per stock (trains 4 NNs × multiple windows).
+
+---
+
+## CLI Commands
+
+### Daily Autonomous Loop
+```bash
+# Run all 20 NSE stocks
+python run_daily.py
+
+# Specific tickers
+python run_daily.py --ticker RELIANCE.NS TCS.NS
+
+# Backfill 1 year of history + train meta-controller
+python run_daily.py --backfill
+
+# Backfill 6 months
+python run_daily.py --backfill --days 126
+
+# Retrain meta-controller only
+python run_daily.py --train-meta
+
+# Auto-execute paper trades
+python run_daily.py --paper-trade
+
+# Paper trade with custom capital
+python run_daily.py --paper-trade --capital 500000
+
+# Dry run (signals only, no ledger writes)
+python run_daily.py --dry-run
+
+# Custom ledger path
+python run_daily.py --db custom.db
+```
+
+### Retraining Pipeline
+```bash
+# Train all 20 stocks
+python run_pipeline.py --train-all
+
+# Train specific tickers
+python run_pipeline.py --train RELIANCE.NS TCS.NS
+
+# Full pipeline with paper trading
+python run_pipeline.py --paper
+```
+
+### Windows Scheduler
+```bash
+# Install daily task (4 PM IST)
+python schedule_pipeline.py
+
+# Custom time
+python schedule_pipeline.py --time 16:00
+
+# Run now
+python schedule_pipeline.py --run-now
+
+# Remove task
+python schedule_pipeline.py --remove
+
+# Check status
+python schedule_pipeline.py --status
+```
+
+### System Verification
+```bash
+# Run end-to-end verification
+python verify_system.py
+```
 
 ---
 

@@ -642,3 +642,324 @@ Detects current market regime.
 - **Bull:** Price > SMA(200), RSI > 50, ADX > 20
 - **Bear:** Price < SMA(200), RSI < 50
 - **Sideways:** Neither Bull nor Bear conditions met
+
+---
+
+## src/constants.py
+
+### Path Constants
+```python
+PROJECT_ROOT: str        # Root directory of the project
+DATA_DIR: str            # data/ directory path
+MODELS_DIR: str          # models/ directory path
+LEDGER_DB: str           # data/stomar.db path
+META_CONTROLLER_PATH: str  # models/meta_controller.pkl path
+PAPER_STATE_PATH: str    # data/paper_state.json path
+MF_STATE_PATH: str       # data/mf_state.json path
+```
+
+### Trading Cost Constants
+```python
+BROKERAGE_RATE = 0.0003          # 0.03% per side (Zerodha delivery)
+SLIPPAGE_RATE = 0.001            # 0.1% slippage estimate
+STT_SELL_RATE = 0.001            # 0.1% STT (sell side)
+EXCHANGE_CHARGE_RATE = 0.0000345 # NSE exchange charges
+SEBI_FEES_RATE = 0.000001        # SEBI turnover fees
+STAMP_DUTY_BUY_RATE = 0.00015   # Stamp duty (buy side)
+GST_RATE = 0.18                  # 18% GST
+RISK_FREE_RATE = 0.065           # 6.5% Indian 10Y G-Sec
+TRADING_DAYS_PER_YEAR = 252
+```
+
+---
+
+## src/orchestrator.py
+
+### `DailyOrchestrator` Class
+
+#### `__init__(self, tickers=None, ledger=None, paper_trader=None)`
+```python
+# tickers: list[str] — NSE_STOCKS by default
+# ledger: Ledger — creates new if None
+# paper_trader: PaperTrader — creates new if None
+```
+
+#### `run(self, dry_run=False) -> dict`
+Runs the full daily signal pipeline for all tickers.
+
+**Returns:**
+```python
+{
+    "date": str,                    # "YYYY-MM-DD"
+    "n_tickers": int,
+    "n_decisions": int,
+    "buy_count": int,
+    "sell_count": int,
+    "hold_count": int,
+    "decisions": [
+        {
+            "ticker": str,
+            "action": str,          # "BUY", "SELL", "HOLD"
+            "confidence": float,    # 0-1
+            "position_size": float, # 0-1 (fraction of capital)
+            "current_price": float,
+            "signals": {
+                "ensemble_direction": int,
+                "ensemble_confidence": float,
+                "sentiment_score": float,
+                "fii_net": float,
+                "dii_net": float,
+                "pcr": float,
+                "mtf_signal": float,
+                "regime": str,
+                "var_95": float,
+                "cvar_95": float,
+                "sharpe": float,
+                "volatility_forecast": float,
+                "fundamental_score": float,
+            },
+        },
+        ...
+    ],
+}
+```
+
+---
+
+## src/meta_controller.py
+
+### `MetaController` Class
+
+#### `__init__(self)`
+Creates a new meta-controller with LogisticRegression.
+
+#### `decide(self, state: dict) -> dict`
+Combines 14 signal modules into one decision.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `state` | `dict` | 14 signal values (see below) |
+
+**State keys:**
+```python
+{
+    "ensemble_direction": float,    # 0 or 1
+    "ensemble_confidence": float,   # 0-1
+    "sentiment_score": float,       # -1 to +1
+    "fii_net": float,               # FII net flow
+    "dii_net": float,               # DII net flow
+    "pcr": float,                   # Put-Call Ratio
+    "mtf_signal": float,            # Multi-timeframe signal
+    "regime_bull": float,           # 1.0 if Bull, 0.0 otherwise
+    "regime_bear": float,           # 1.0 if Bear, 0.0 otherwise
+    "var_95": float,                # Value at Risk
+    "cvar_95": float,               # Conditional VaR
+    "sharpe": float,                # Sharpe ratio
+    "volatility_forecast": float,   # GARCH volatility
+    "fundamental_score": float,     # 0-100
+}
+```
+
+**Returns:**
+```python
+{
+    "action": str,          # "BUY", "SELL", "HOLD"
+    "confidence": float,    # 0-1
+    "position_size": float, # 0-1 (fraction of capital)
+    "reasoning": str,       # Human-readable explanation
+}
+```
+
+#### `train(self, ledger: Ledger) -> dict`
+Trains the meta-controller on historical ledger data.
+
+**Returns:**
+```python
+{
+    "status": str,          # "trained", "insufficient_data"
+    "accuracy": float,      # Training accuracy
+    "n_samples": int,
+    "weights": dict,        # Signal name → weight
+}
+```
+
+#### `get_weights(self) -> dict`
+Returns learned signal weights.
+
+---
+
+## src/ledger.py
+
+### `Ledger` Class
+
+#### `__init__(self, db_path=None)`
+```python
+# db_path: str — defaults to LEDGER_DB (data/stomar.db)
+```
+
+#### `log_decision(self, date, ticker, signals, action, size_pct, confidence, reasoning=None) -> int`
+Logs a trading decision. Returns decision ID.
+
+#### `log_trade(self, decision_id, ticker, side, price, quantity, cost) -> None`
+Logs a trade execution.
+
+#### `log_outcome(self, decision_id, actual_return, actual_direction) -> None`
+Logs the actual outcome of a decision.
+
+#### `log_snapshot(self, date, cash, equity, positions) -> None`
+Logs a portfolio snapshot.
+
+#### `get_decisions(self, limit=100) -> list[dict]`
+Returns recent decisions.
+
+#### `get_stats(self) -> dict`
+```python
+{
+    "total_decisions": int,
+    "resolved_decisions": int,
+    "correct_decisions": int,
+    "accuracy": float,
+    "buy_accuracy": float,
+    "sell_accuracy": float,
+    "hold_accuracy": float,
+}
+```
+
+#### `get_snapshots(self) -> list[dict]`
+Returns portfolio snapshots.
+
+---
+
+## src/backfill.py
+
+### `HistoricalBackfill` Class
+
+#### `__init__(self, ledger: Ledger)`
+Creates a backfill instance.
+
+#### `run(self, tickers=None, lookback_days=252) -> dict`
+Reconstructs historical decisions for meta-controller training.
+
+**Returns:**
+```python
+{
+    "total_decisions": int,
+    "tickers_processed": int,
+    "lookback_days": int,
+}
+```
+
+---
+
+## src/paper_trader.py
+
+### `PaperTrader` Class
+
+#### `__init__(self, initial_capital=200000)`
+```python
+# Supports both long and short positions
+```
+
+#### `place_order(self, ticker, side, order_type, quantity, price=None) -> str`
+Places an order. Returns order ID.
+
+#### `on_bar(self, ticker, open, high, low, close) -> list[dict]`
+Processes fills for a ticker's OHLCV bar. Returns filled orders.
+
+#### `get_equity(self) -> float`
+Returns total equity (cash + positions - short liabilities).
+
+#### `get_position(self, ticker) -> Position or None`
+Returns current position for a ticker.
+
+#### `save_state(self, path=None) -> None`
+Persists state to `data/paper_state.json`.
+
+#### `load_state(self, path=None) -> bool`
+Loads state from disk. Returns True if loaded.
+
+#### `get_summary(self) -> dict`
+```python
+{
+    "initial_capital": float,
+    "cash": float,
+    "equity": float,
+    "unrealized_pnl": float,
+    "realized_pnl": float,
+    "positions": int,
+    "total_trades": int,
+}
+```
+
+---
+
+## src/ranking.py
+
+### `rank_stocks(stock_data, weights=None, use_fundamentals=False, ml_signals=None) -> list[dict]`
+Ranks stocks using multi-factor model with optional ML signal integration.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `stock_data` | `dict[str, DataFrame]` | required | {ticker: OHLCV DataFrame} |
+| `weights` | `dict` | None | Factor weights |
+| `use_fundamentals` | `bool` | False | Include fundamental scores |
+| `ml_signals` | `dict[str, float]` | None | ML signals (-1 to +1) per ticker |
+
+**Returns:** List of ranking dicts sorted by composite score.
+
+### `get_recommendation(rankings, ticker) -> dict`
+Gets buy/hold/sell recommendation based on rank + ML signal.
+
+**Returns:**
+```python
+{
+    "recommendation": str,  # "STRONG BUY", "BUY", "HOLD", "SELL", "STRONG SELL"
+    "rank": int,
+    "total": int,
+    "percentile": float,
+    "composite_score": float,
+    "ml_score": float,
+    "reasoning": str,
+}
+```
+
+---
+
+## src/regime.py
+
+### `detect_regime(close, lookback=200, ohlc=None) -> dict`
+Detects current market regime using SMA crossover + RSI + ADX.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `close` | `pd.Series` | required | Closing prices |
+| `lookback` | `int` | `200` | SMA lookback period |
+| `ohlc` | `pd.DataFrame` | `None` | OHLCV data for ADX computation |
+
+**Returns:**
+```python
+{
+    "regime": str,          # "Bull", "Bear", "Sideways"
+    "confidence": float,    # 0-100
+    "sma_200": float,
+    "rsi": float,
+    "adx": float,
+    "atr": float,
+}
+```
+
+---
+
+## src/volatility.py
+
+### `forecast_volatility(returns, window=20) -> float`
+Forecasts next-day volatility using GARCH(1,1).
+
+---
+
+## src/features.py (updated)
+
+### `add_technical_indicators(df, ticker=None) -> pd.DataFrame`
+Adds 48 features to the input DataFrame.
+
+**Feature count: 48** (33 technical + 15 alternative/derived)
