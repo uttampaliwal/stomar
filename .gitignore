@@ -13,6 +13,7 @@ models/*.keras
 results/
 .venv/
 venv/
+check/
 *.egg-info/
 .DS_Store
 .pytest_cache/
