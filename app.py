@@ -1050,9 +1050,11 @@ def tab_optimizer():
                     bar = "█" * int(w * 30)
                     st.markdown(f"  {t.replace('.NS','')}: **{w:.1%}** `{bar}`")
             with c2:
-                st.markdown(f'<div class="stat-item"><div class="metric-label">EXP. RETURN</div><div class="metric-val" style="font-size:1.2rem;">{p["return"]:.1%}</div></div>', unsafe_allow_html=True)
+                ret_val = p.get("return", 0)
+                st.markdown(f'<div class="stat-item"><div class="metric-label">EXP. RETURN</div><div class="metric-val" style="font-size:1.2rem;">{ret_val:.1%}</div></div>', unsafe_allow_html=True)
             with c3:
-                st.markdown(f'<div class="stat-item"><div class="metric-label">VOLATILITY</div><div class="metric-val" style="font-size:1.2rem;">{p["volatility"]:.1%}</div></div>', unsafe_allow_html=True)
+                vol_val = p.get("volatility", 0)
+                st.markdown(f'<div class="stat-item"><div class="metric-label">VOLATILITY</div><div class="metric-val" style="font-size:1.2rem;">{vol_val:.1%}</div></div>', unsafe_allow_html=True)
             st.markdown('<hr style="border:none;border-top:1px solid var(--border-primary);margin:1rem 0;">', unsafe_allow_html=True)
 
         if result["efficient_frontier"]:
