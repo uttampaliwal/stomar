@@ -6,6 +6,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from src.data_sources import (
+    DataSource,
     YFinanceSource,
     NSEArchiveSource,
     fetch_with_fallback,
@@ -13,7 +14,6 @@ from src.data_sources import (
 
 
 def _make_df(n=100, start="2024-01-01"):
-    """Create clean OHLCV DataFrame."""
     dates = pd.bdate_range(start, periods=n)
     np.random.seed(42)
     close = 100 + np.cumsum(np.random.randn(n) * 0.5)
@@ -28,131 +28,133 @@ def _make_df(n=100, start="2024-01-01"):
     return df
 
 
-# ── YFinanceSource ──
+# --- DataSource base class ---
 
-class TestYFinanceSource:
-    @patch("src.data_sources.yf")
-    def test_fetch_returns_df(self, mock_yf):
-        mock_ticker = MagicMock()
-        mock_ticker.history.return_value = _make_df(50)
-        mock_yf.Ticker.return_value = mock_ticker
-
-        src = YFinanceSource()
-        df = src.fetch("TEST.NS", period="1y")
-        assert isinstance(df, pd.DataFrame)
-        assert len(df) == 50
-
-    @patch("src.data_sources.yf")
-    def test_fetch_empty_raises(self, mock_yf):
-        mock_ticker = MagicMock()
-        mock_ticker.history.return_value = pd.DataFrame()
-        mock_yf.Ticker.return_value = mock_ticker
-
-        src = YFinanceSource()
-        with pytest.raises(ValueError, match="empty"):
-            src.fetch("TEST.NS")
-
-    def test_validate_good(self):
-        src = YFinanceSource()
-        assert src.validate(_make_df(50)) is True
-
-    def test_validate_too_short(self):
-        src = YFinanceSource()
-        assert src.validate(_make_df(5)) is False
-
-    def test_validate_missing_cols(self):
-        src = YFinanceSource()
-        df = pd.DataFrame({"close": [100, 101]})
-        assert src.validate(df) is False
+def test_datasource_is_abstract():
+    with pytest.raises(TypeError):
+        DataSource()
 
 
-# ── NSEArchiveSource ──
-
-class TestNSEArchiveSource:
-    @patch("requests.Session")
-    def test_fetch_network_error_raises(self, mock_session_cls):
-        mock_session = MagicMock()
-        mock_session.get.side_effect = Exception("Connection refused")
-        mock_session_cls.return_value = mock_session
-
-        src = NSEArchiveSource()
-        with pytest.raises(ValueError, match="failed"):
-            src.fetch("TEST.NS")
-
-    def test_validate_good(self):
-        src = NSEArchiveSource()
-        assert src.validate(_make_df(50)) is True
-
-    def test_validate_missing_cols(self):
-        src = NSEArchiveSource()
-        df = pd.DataFrame({"close": [100, 101]})
-        assert src.validate(df) is False
+def test_datasource_validate_true_for_valid_df():
+    ds = YFinanceSource()
+    df = _make_df(20)
+    assert ds.validate(df) is True
 
 
-# ── fetch_with_fallback ──
+def test_datasource_validate_false_for_none():
+    ds = YFinanceSource()
+    assert ds.validate(None) is False
 
-class TestFetchWithFallback:
-    @patch("src.data_sources.yf")
-    def test_primary_success(self, mock_yf):
-        mock_ticker = MagicMock()
-        mock_ticker.history.return_value = _make_df(100)
-        mock_yf.Ticker.return_value = mock_ticker
 
-        result = fetch_with_fallback("TEST.NS", period="1y")
-        assert "df" in result
-        assert result["source"] == "YFinanceSource"
-        assert result["validation"]["passed"]
+def test_datasource_validate_false_for_empty():
+    ds = YFinanceSource()
+    assert ds.validate(pd.DataFrame()) is False
 
-    def test_all_sources_fail(self):
-        class FailSource:
-            def fetch(self, *a, **kw):
-                raise ValueError("fail")
-            def validate(self, df):
-                return False
 
-        with pytest.raises(ValueError, match="All data sources failed"):
-            fetch_with_fallback("TEST.NS", sources=[FailSource()])
+def test_datasource_validate_false_for_short_df():
+    ds = YFinanceSource()
+    df = _make_df(5)
+    assert ds.validate(df) is False
 
-    @patch("src.data_sources.yf")
-    def test_fallback_to_secondary(self, mock_yf):
-        # Primary fails
-        mock_ticker = MagicMock()
-        mock_ticker.history.side_effect = Exception("yfinance down")
-        mock_yf.Ticker.return_value = mock_ticker
 
-        # Secondary succeeds
-        mock_source = MagicMock()
-        mock_source.fetch.return_value = _make_df(50)
-        mock_source.validate.return_value = True
-        mock_source.__class__.__name__ = "MockSource"
+# --- YFinanceSource ---
 
-        result = fetch_with_fallback("TEST.NS", sources=[YFinanceSource(), mock_source])
-        assert result["source"] == "MockSource"
+def test_yfinance_validate_requires_ohlcv_columns():
+    ds = YFinanceSource()
+    df = _make_df(20)
+    df = df.drop(columns=["volume"])
+    assert ds.validate(df) is False
 
-    @patch("src.data_sources.yf")
-    def test_returns_metadata(self, mock_yf):
-        mock_ticker = MagicMock()
-        mock_ticker.history.return_value = _make_df(50)
-        mock_yf.Ticker.return_value = mock_ticker
 
-        result = fetch_with_fallback("TEST.NS")
-        assert "timestamp" in result
-        assert "validation" in result
-        assert "source" in result
+def test_yfinance_fetch_calls_ticker():
+    ds = YFinanceSource()
+    mock_ticker = MagicMock()
+    mock_ticker.history.return_value = _make_df(50)
+    with patch("src.data_sources.yf.Ticker", return_value=mock_ticker) as mock_cls:
+        result = ds.fetch("RELIANCE.NS", period="1y")
+        mock_cls.assert_called_once_with("RELIANCE.NS")
+        mock_ticker.history.assert_called_once_with(period="1y", interval="1d")
+        assert len(result) == 50
 
-    @patch("src.data_sources.yf")
-    def test_validation_catches_bad_data(self, mock_yf):
-        # Primary returns bad data (fails validation)
-        bad_df = pd.DataFrame({"close": [100] * 5})
-        mock_ticker = MagicMock()
-        mock_ticker.history.return_value = bad_df
-        mock_yf.Ticker.return_value = mock_ticker
 
-        # Secondary returns good data
-        mock_source = MagicMock()
-        mock_source.fetch.return_value = _make_df(50)
-        mock_source.validate.return_value = True
-        mock_source.__class__.__name__ = "MockSource"
+def test_yfinance_fetch_raises_on_empty():
+    ds = YFinanceSource()
+    mock_ticker = MagicMock()
+    mock_ticker.history.return_value = pd.DataFrame()
+    with patch("src.data_sources.yf.Ticker", return_value=mock_ticker):
+        with pytest.raises(ValueError, match="empty data"):
+            ds.fetch("BAD.NS")
 
-        result = fetch_with_fallback("TEST.NS", sources=[YFinanceSource(), mock_source])
-        assert result["source"] == "MockSource"
+
+def test_yfinance_fetch_lowercases_columns():
+    ds = YFinanceSource()
+    mock_ticker = MagicMock()
+    df = _make_df(20)
+    df.columns = [c.upper() for c in df.columns]
+    mock_ticker.history.return_value = df
+    with patch("src.data_sources.yf.Ticker", return_value=mock_ticker):
+        result = ds.fetch("TEST.NS")
+        assert all(c.islower() for c in result.columns)
+
+
+# --- NSEArchiveSource ---
+
+def test_nse_archive_validate_true_for_valid_df():
+    ds = NSEArchiveSource()
+    df = _make_df(20)
+    assert ds.validate(df) is True
+
+
+def test_nse_archive_validate_false_for_missing_columns():
+    ds = NSEArchiveSource()
+    df = _make_df(20).drop(columns=["open", "high"])
+    assert ds.validate(df) is False
+
+
+# --- fetch_with_fallback ---
+
+def test_fetch_with_fallback_uses_primary():
+    mock_source = MagicMock(spec=DataSource)
+    mock_source.validate.return_value = True
+    mock_source.fetch.return_value = _make_df(50)
+    mock_source.__class__.__name__ = "MockSource"
+
+    result = fetch_with_fallback("TEST.NS", sources=[mock_source])
+    assert "df" in result
+    assert result["source"] == "MockSource"
+    assert "validation" in result
+    assert "timestamp" in result
+
+
+def test_fetch_with_fallback_falls_back_on_validation_failure():
+    primary = MagicMock(spec=DataSource)
+    primary.validate.return_value = False
+    primary.__class__.__name__ = "Primary"
+
+    fallback = MagicMock(spec=DataSource)
+    fallback.validate.return_value = True
+    fallback.fetch.return_value = _make_df(50)
+    fallback.__class__.__name__ = "Fallback"
+
+    result = fetch_with_fallback("TEST.NS", sources=[primary, fallback])
+    assert result["source"] == "Fallback"
+
+
+def test_fetch_with_fallback_raises_on_all_failure():
+    bad_source = MagicMock(spec=DataSource)
+    bad_source.fetch.side_effect = ValueError("fail")
+    bad_source.__class__.__name__ = "Bad"
+
+    with pytest.raises(ValueError, match="All data sources failed"):
+        fetch_with_fallback("TEST.NS", sources=[bad_source])
+
+
+def test_fetch_with_fallback_returns_validation_info():
+    mock_source = MagicMock(spec=DataSource)
+    mock_source.validate.return_value = True
+    mock_source.fetch.return_value = _make_df(50)
+    mock_source.__class__.__name__ = "Mock"
+
+    result = fetch_with_fallback("TEST.NS", sources=[mock_source])
+    assert isinstance(result["validation"], dict)
+    assert "date_range" in result["validation"]

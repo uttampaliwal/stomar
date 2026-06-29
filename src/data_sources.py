@@ -50,6 +50,8 @@ class YFinanceSource(DataSource):
         return df
 
     def validate(self, df: pd.DataFrame) -> bool:
+        if df is None or df.empty:
+            return False
         required = ["open", "high", "low", "close", "volume"]
         has_cols = all(c in df.columns for c in required)
         return has_cols and len(df) > 10
@@ -104,6 +106,8 @@ class NSEArchiveSource(DataSource):
         return df
 
     def validate(self, df: pd.DataFrame) -> bool:
+        if df is None or df.empty:
+            return False
         required = ["open", "high", "low", "close"]
         has_cols = all(c in df.columns for c in required)
         return has_cols and len(df) > 10

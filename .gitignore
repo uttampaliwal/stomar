@@ -5,9 +5,12 @@ __pycache__/
 data/*.parquet
 data/*.pkl
 data/*.json
+data/feature_versions/
+data/pipeline_logs/
 models/*.pkl
 models/*.pt
 models/*.keras
+results/
 .venv/
 venv/
 *.egg-info/
