@@ -2,13 +2,130 @@
 
 Ranks stocks relative to each other using multiple factors:
 - Momentum (short, medium, long-term)
-- Value (P/E, P/B, dividend yield)
+- Fundamental (P/E, P/B, ROCE, dividend yield, debt-to-equity)
 - Quality (ROE, profit margin, debt-to-equity)
 - Volatility (lower is better for risk-adjusted)
 - Volume (relative volume as liquidity proxy)
 """
+import logging
+
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+# Fundamental data cache (in-memory, per-session)
+_fundamental_cache: dict[str, dict] = {}
+
+
+def fetch_fundamentals(ticker: str) -> dict:
+    """Fetch fundamental data for a stock via yfinance.
+
+    Returns dict with pe_ratio, pb_ratio, roce, roe, dividend_yield,
+    debt_to_equity, market_cap, profit_margin.
+
+    Falls back to 0.0 for unavailable fields.
+    """
+    if ticker in _fundamental_cache:
+        return _fundamental_cache[ticker]
+
+    defaults = {
+        "pe_ratio": 0.0, "pb_ratio": 0.0, "roce": 0.0, "roe": 0.0,
+        "dividend_yield": 0.0, "debt_to_equity": 0.0, "market_cap": 0.0,
+        "profit_margin": 0.0,
+    }
+
+    try:
+        import yfinance as yf
+        stock = yf.Ticker(ticker)
+        info = stock.info
+
+        result = {
+            "pe_ratio": float(info.get("trailingPE", 0.0) or 0.0),
+            "pb_ratio": float(info.get("priceToBook", 0.0) or 0.0),
+            "roce": float(info.get("returnOnCapitalEmployed", 0.0) or 0.0),
+            "roe": float(info.get("returnOnEquity", 0.0) or 0.0),
+            "dividend_yield": float(info.get("dividendYield", 0.0) or 0.0),
+            "debt_to_equity": float(info.get("debtToEquity", 0.0) or 0.0),
+            "market_cap": float(info.get("marketCap", 0.0) or 0.0),
+            "profit_margin": float(info.get("profitMargins", 0.0) or 0.0),
+        }
+
+        _fundamental_cache[ticker] = result
+        return result
+
+    except Exception as e:
+        logger.warning("Failed to fetch fundamentals for %s: %s", ticker, e)
+        _fundamental_cache[ticker] = defaults
+        return defaults
+
+
+def clear_fundamental_cache():
+    """Clear the in-memory fundamental cache."""
+    _fundamental_cache.clear()
+
+
+def fundamental_score(fundamentals: dict) -> float:
+    """Score a stock on fundamental factors (0–100 scale).
+
+    Positive factors (higher = better): roe, roce, dividend_yield, profit_margin
+    Negative factors (lower = better): pe_ratio, pb_ratio, debt_to_equity
+
+    Returns composite fundamental score 0–100.
+    """
+    scores = []
+
+    # P/E: lower is better (but > 0). Score 100 at PE=5, 0 at PE=60
+    pe = fundamentals.get("pe_ratio", 0.0)
+    if pe > 0:
+        pe_score = max(0, min(100, (60 - pe) / 55 * 100))
+        scores.append(("pe", pe_score, 0.15))
+
+    # P/B: lower is better. Score 100 at PB=0.5, 0 at PB=10
+    pb = fundamentals.get("pb_ratio", 0.0)
+    if pb > 0:
+        pb_score = max(0, min(100, (10 - pb) / 9.5 * 100))
+        scores.append(("pb", pb_score, 0.10))
+
+    # ROE: higher is better. Score 0 at 0%, 100 at 30%
+    roe = fundamentals.get("roe", 0.0)
+    if isinstance(roe, (int, float)) and np.isfinite(roe):
+        roe_pct = roe * 100 if abs(roe) <= 1 else roe
+        roe_score = max(0, min(100, roe_pct / 30 * 100))
+        scores.append(("roe", roe_score, 0.20))
+
+    # ROCE: higher is better. Score 0 at 0%, 100 at 30%
+    roce = fundamentals.get("roce", 0.0)
+    if isinstance(roce, (int, float)) and np.isfinite(roce):
+        roce_pct = roce * 100 if abs(roce) <= 1 else roce
+        roce_score = max(0, min(100, roce_pct / 30 * 100))
+        scores.append(("roce", roce_score, 0.15))
+
+    # Dividend yield: higher is better. Score 0 at 0%, 100 at 5%
+    div = fundamentals.get("dividend_yield", 0.0)
+    if isinstance(div, (int, float)) and np.isfinite(div):
+        div_pct = div * 100 if abs(div) <= 1 else div
+        div_score = max(0, min(100, div_pct / 5 * 100))
+        scores.append(("dividend", div_score, 0.10))
+
+    # Debt-to-equity: lower is better. Score 100 at 0, 0 at 200
+    dte = fundamentals.get("debt_to_equity", 0.0)
+    if isinstance(dte, (int, float)) and np.isfinite(dte):
+        dte_score = max(0, min(100, (200 - dte) / 200 * 100))
+        scores.append(("debt", dte_score, 0.15))
+
+    # Profit margin: higher is better. Score 0 at 0%, 100 at 30%
+    pm = fundamentals.get("profit_margin", 0.0)
+    if isinstance(pm, (int, float)) and np.isfinite(pm):
+        pm_pct = pm * 100 if abs(pm) <= 1 else pm
+        pm_score = max(0, min(100, pm_pct / 30 * 100))
+        scores.append(("profit_margin", pm_score, 0.15))
+
+    if not scores:
+        return 50.0  # neutral if no data
+
+    total_weight = sum(w for _, _, w in scores)
+    return sum(s * w for _, s, w in scores) / total_weight
 
 
 def compute_momentum_score(close_series, windows=[5, 20, 60, 120]):
@@ -165,12 +282,13 @@ def compute_technical_score(df):
     return scores
 
 
-def rank_stocks(stock_data, weights=None):
+def rank_stocks(stock_data, weights=None, use_fundamentals=False):
     """Rank stocks using multi-factor model.
 
     Args:
         stock_data: Dict of {ticker: DataFrame} with OHLCV data
-        weights: Dict of factor weights (momentum, volatility, volume, technical)
+        weights: Dict of factor weights (momentum, volatility, volume, technical, fundamental)
+        use_fundamentals: If True, fetch and include fundamental scores
 
     Returns:
         List of ranking dicts sorted by composite score
@@ -182,6 +300,15 @@ def rank_stocks(stock_data, weights=None):
             "volume": 0.1,
             "technical": 0.4,
         }
+
+    if use_fundamentals and "fundamental" not in weights:
+        # Redistribute weights to include fundamental
+        n = len(weights) + 1
+        base = 1.0 / n
+        weights = {**weights, "fundamental": base}
+        # Scale others down proportionally
+        scale = (1.0 - base) / sum(v for k, v in weights.items() if k != "fundamental")
+        weights = {k: v * scale if k != "fundamental" else base for k, v in weights.items()}
 
     rankings = []
 
@@ -205,6 +332,13 @@ def rank_stocks(stock_data, weights=None):
             tech["technical_combined"] / 100 * weights["technical"]
         )
 
+        fund_score = 50.0
+        fund_data = {}
+        if use_fundamentals:
+            fund_data = fetch_fundamentals(ticker)
+            fund_score = fundamental_score(fund_data)
+            composite += fund_score / 100 * weights["fundamental"]
+
         rankings.append({
             "ticker": ticker,
             "composite_score": float(composite),
@@ -212,6 +346,8 @@ def rank_stocks(stock_data, weights=None):
             "volatility": vol,
             "volume": vol_score,
             "technical": tech,
+            "fundamental_score": float(fund_score),
+            "fundamentals": fund_data,
             "current_price": float(close.iloc[-1]),
             "daily_return": float((close.iloc[-1] / close.iloc[-2] - 1) * 100) if len(close) > 1 else 0,
         })

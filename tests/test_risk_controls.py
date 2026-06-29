@@ -2,8 +2,7 @@
 
 import pytest
 
-from src.risk_controls import RiskController, RiskLimits
-from src.risk import kelly_criterion
+from src.risk_controls import RiskController
 
 
 def _rc(**kwargs):

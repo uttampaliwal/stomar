@@ -8,8 +8,8 @@ from src.engine import (
 )
 
 
-def _bar(ticker="TEST.NS", ts="2025-01-01", o=100, h=105, l=95, c=102, v=1_000_000):
-    return Bar(ticker, ts, o, h, l, c, v)
+def _bar(ticker="TEST.NS", ts="2025-01-01", o=100, h=105, lo=95, c=102, v=1_000_000):
+    return Bar(ticker, ts, o, h, lo, c, v)
 
 
 # ── Order ──
@@ -54,7 +54,7 @@ class TestMarketOrderFills:
     def test_fills_at_open(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0))
         engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.MARKET, 10))
-        filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price == 100.0
         assert filled[0].filled_quantity == 10
@@ -62,7 +62,7 @@ class TestMarketOrderFills:
     def test_sell_fills_at_open(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0))
         engine.submit_order(Order("", "TEST.NS", OrderSide.SELL, OrderType.MARKET, 10))
-        filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price == 100.0
 
@@ -78,27 +78,27 @@ class TestLimitOrderFills:
     def test_limit_buy_fills_when_low_touches(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
         engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=101))
-        filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price <= 101.0
 
     def test_limit_buy_not_filled_when_price_high(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
         engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=85))
-        filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 0
 
     def test_limit_sell_fills_when_high_touches(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
         engine.submit_order(Order("", "TEST.NS", OrderSide.SELL, OrderType.LIMIT, 10, price=103))
-        filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price >= 103.0
 
     def test_limit_sell_not_filled_when_price_low(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
         engine.submit_order(Order("", "TEST.NS", OrderSide.SELL, OrderType.LIMIT, 10, price=120))
-        filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 0
 
 
@@ -107,7 +107,7 @@ class TestStopOrderFills:
         engine = ExecutionEngine(slippage_model=FixedSlippage(0))
         engine.submit_order(Order("", "TEST.NS", OrderSide.SELL, OrderType.STOP_LOSS,
                                   10, stop_price=97))
-        filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price == 97.0
 
@@ -115,14 +115,14 @@ class TestStopOrderFills:
         engine = ExecutionEngine(slippage_model=FixedSlippage(0))
         engine.submit_order(Order("", "TEST.NS", OrderSide.SELL, OrderType.STOP_LOSS,
                                   10, stop_price=90))
-        filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 0
 
     def test_stop_market_sell_fills_at_open(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0))
         engine.submit_order(Order("", "TEST.NS", OrderSide.SELL, OrderType.STOP_MARKET,
                                   10, stop_price=97))
-        filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price == 100.0  # Market fill at open
 
@@ -210,7 +210,7 @@ class TestFillProbability:
     def test_market_always_fills(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0))
         engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.MARKET, 10))
-        filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+        filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
 
     def test_limit_near_close_high_probability(self):
@@ -218,7 +218,7 @@ class TestFillProbability:
         for _ in range(20):
             engine = ExecutionEngine(slippage_model=FixedSlippage(0))
             engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=101))
-            filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+            filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
             results.append(len(filled) > 0)
         assert sum(results) >= 10  # ~70% probability, should usually pass
 
@@ -227,7 +227,7 @@ class TestFillProbability:
         for _ in range(20):
             engine = ExecutionEngine(slippage_model=FixedSlippage(0))
             engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=85))
-            filled = engine.on_bar(_bar(o=100, h=105, l=95, c=102))
+            filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
             results.append(len(filled) > 0)
         assert sum(results) < 15
 

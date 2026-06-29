@@ -4,6 +4,8 @@ Usage:
     python run_pipeline.py                       # All configured tickers
     python run_pipeline.py RELIANCE.NS TCS.NS    # Specific tickers
     python run_pipeline.py --paper               # Run paper trading after training
+    python run_pipeline.py --train-all           # Batch train all 20 NSE stocks
+    python run_pipeline.py --train RELIANCE.NS   # Train specific ticker(s)
 """
 
 import argparse
@@ -24,8 +26,42 @@ def main():
     parser.add_argument("tickers", nargs="*", help="Tickers to process")
     parser.add_argument("--paper", action="store_true",
                         help="Run paper trading after training")
+    parser.add_argument("--train-all", action="store_true",
+                        help="Batch train all 20 NSE stocks")
+    parser.add_argument("--train", nargs="+", metavar="TICKER",
+                        help="Train specific ticker(s) without running full pipeline")
     args = parser.parse_args()
 
+    # --- Batch train mode (standalone) ---
+    if args.train_all or args.train:
+        from src.trainer import batch_train
+
+        tickers = None if args.train_all else args.train
+        print("=== StoMar Batch Training ===")
+        if tickers:
+            print(f"Tickers: {tickers}")
+        else:
+            print("Tickers: ALL (20 NSE stocks)")
+        print()
+
+        summary = batch_train(tickers, force_retrain=False)
+
+        print("\n=== Training Summary ===")
+        print(f"Success: {len(summary['success'])}")
+        print(f"Failed:  {len(summary['failed'])}")
+        print(f"Skipped: {len(summary['skipped'])}")
+        print(f"Time:    {summary['duration_seconds']}s")
+
+        for t in summary["success"]:
+            print(f"  [OK]   {t}")
+        for t, err in summary["failed"].items():
+            print(f"  [FAIL] {t}: {err}")
+        for t in summary["skipped"]:
+            print(f"  [SKIP] {t} (already trained)")
+
+        sys.exit(0 if not summary["failed"] else 1)
+
+    # --- Normal pipeline mode ---
     config = PipelineConfig()
     if args.tickers:
         config.tickers = args.tickers

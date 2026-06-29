@@ -198,3 +198,44 @@ def train_multiple_stocks(tickers: list, force_retrain: bool = False):
             logger.error("training_failed ticker=%s error=%s", ticker, str(e))
             results[ticker] = {"error": str(e)}
     return results
+
+
+def batch_train(tickers: list = None, force_retrain: bool = False) -> dict:
+    """Train all configured tickers and return structured summary.
+
+    Returns:
+        {
+            "success": ["RELIANCE.NS", ...],
+            "failed": {"TCS.NS": "error msg"},
+            "skipped": ["HDFCBANK.NS", ...],
+            "duration_seconds": 123.4,
+            "results": {ticker: result_dict, ...}
+        }
+    """
+    import time
+
+    if tickers is None:
+        from src.data_fetcher import NSE_STOCKS
+        tickers = list(NSE_STOCKS)
+
+    start = time.time()
+    results = train_multiple_stocks(tickers, force_retrain)
+    elapsed = time.time() - start
+
+    summary = {
+        "success": [],
+        "failed": {},
+        "skipped": [],
+        "duration_seconds": round(elapsed, 1),
+        "results": results,
+    }
+
+    for ticker, result in results.items():
+        if isinstance(result, dict) and "error" in result:
+            summary["failed"][ticker] = result["error"]
+        elif isinstance(result, dict) and result.get("skipped"):
+            summary["skipped"].append(ticker)
+        else:
+            summary["success"].append(ticker)
+
+    return summary
