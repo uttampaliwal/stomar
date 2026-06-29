@@ -282,24 +282,37 @@ def compute_technical_score(df):
     return scores
 
 
-def rank_stocks(stock_data, weights=None, use_fundamentals=False):
+def rank_stocks(stock_data, weights=None, use_fundamentals=False, ml_signals=None):
     """Rank stocks using multi-factor model.
 
     Args:
         stock_data: Dict of {ticker: DataFrame} with OHLCV data
-        weights: Dict of factor weights (momentum, volatility, volume, technical, fundamental)
+        weights: Dict of factor weights (momentum, volatility, volume, technical, fundamental, ml_signal)
         use_fundamentals: If True, fetch and include fundamental scores
+        ml_signals: Dict of {ticker: float} ML/meta-controller signals (-1.0 to +1.0).
+            Positive = bullish, negative = bearish. If provided, adds ml_signal factor.
 
     Returns:
         List of ranking dicts sorted by composite score
     """
+    has_ml = ml_signals and len(ml_signals) > 0
+
     if weights is None:
-        weights = {
-            "momentum": 0.3,
-            "volatility": 0.2,
-            "volume": 0.1,
-            "technical": 0.4,
-        }
+        if has_ml:
+            weights = {
+                "momentum": 0.25,
+                "volatility": 0.15,
+                "volume": 0.10,
+                "technical": 0.35,
+                "ml_signal": 0.15,
+            }
+        else:
+            weights = {
+                "momentum": 0.3,
+                "volatility": 0.2,
+                "volume": 0.1,
+                "technical": 0.4,
+            }
 
     if use_fundamentals and "fundamental" not in weights:
         # Redistribute weights to include fundamental
@@ -332,6 +345,13 @@ def rank_stocks(stock_data, weights=None, use_fundamentals=False):
             tech["technical_combined"] / 100 * weights["technical"]
         )
 
+        ml_score = 50.0
+        if has_ml and ticker in ml_signals:
+            # Convert ML signal (-1 to +1) to score (0 to 100)
+            ml_signal_val = ml_signals[ticker]
+            ml_score = float(max(0, min(100, (ml_signal_val + 1) / 2 * 100)))
+            composite += ml_score / 100 * weights.get("ml_signal", 0)
+
         fund_score = 50.0
         fund_data = {}
         if use_fundamentals:
@@ -346,6 +366,7 @@ def rank_stocks(stock_data, weights=None, use_fundamentals=False):
             "volatility": vol,
             "volume": vol_score,
             "technical": tech,
+            "ml_score": float(ml_score),
             "fundamental_score": float(fund_score),
             "fundamentals": fund_data,
             "current_price": float(close.iloc[-1]),
@@ -362,7 +383,7 @@ def rank_stocks(stock_data, weights=None, use_fundamentals=False):
 
 
 def get_recommendation(rankings, ticker):
-    """Get buy/hold/sell recommendation for a stock based on rank.
+    """Get buy/hold/sell recommendation for a stock based on rank and ML signal.
 
     Args:
         rankings: List of ranking dicts from rank_stocks()
@@ -378,8 +399,28 @@ def get_recommendation(rankings, ticker):
     rank = stock["rank"]
     total = len(rankings)
     percentile = stock["percentile"]
+    ml_score = stock.get("ml_score", 50.0)
 
-    if percentile >= 80:
+    # ML signal direction overrides percentile if strong enough
+    ml_direction = "BUY" if ml_score > 60 else ("SELL" if ml_score < 40 else "NEUTRAL")
+
+    if ml_direction == "BUY" and percentile >= 40:
+        # ML agrees with above-average ranking
+        rec = "STRONG BUY"
+        reasoning = f"Rank #{rank}/{total} + ML bullish ({ml_score:.0f})"
+    elif ml_direction == "SELL" and percentile <= 60:
+        # ML agrees with below-average ranking
+        rec = "STRONG SELL"
+        reasoning = f"Rank #{rank}/{total} + ML bearish ({ml_score:.0f})"
+    elif ml_direction == "BUY" and percentile < 40:
+        # ML bullish but ranking is low — conflicting
+        rec = "BUY"
+        reasoning = f"ML bullish ({ml_score:.0f}) despite rank #{rank}/{total}"
+    elif ml_direction == "SELL" and percentile > 60:
+        # ML bearish but ranking is high — conflicting
+        rec = "SELL"
+        reasoning = f"ML bearish ({ml_score:.0f}) despite rank #{rank}/{total}"
+    elif percentile >= 80:
         rec = "STRONG BUY"
         reasoning = f"Top {100 - percentile:.0f}% — strong momentum, good technicals"
     elif percentile >= 60:
@@ -401,6 +442,7 @@ def get_recommendation(rankings, ticker):
         "total": total,
         "percentile": percentile,
         "composite_score": stock["composite_score"],
+        "ml_score": ml_score,
         "reasoning": reasoning,
     }
 

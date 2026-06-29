@@ -826,6 +826,10 @@ def tab_scanner():
                 background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
         <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Scanner</span>
         <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Multi-Stock Analysis</span>
+    </div>
+    <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:1rem;padding:0.5rem 1rem;background:rgba(59,130,246,0.08);border-left:3px solid #3b82f6;border-radius:0 6px 6px 0;">
+        <strong>Signal Type:</strong> Raw ML prediction (absolute direction — "price goes up or down"). Not relative to peers.
+        For relative ranking, see the <b>Ranking</b> tab. For unified signal, see <b>Consensus</b>.
     </div>""", unsafe_allow_html=True)
     trained = [t for t in NSE_STOCKS if models_exist(t)]
     st.markdown(f'<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;">Scanning <span style="color:var(--accent-cyan);font-weight:600;">{len(trained)}</span> of {len(NSE_STOCKS)} NSE stocks</div>', unsafe_allow_html=True)
@@ -862,6 +866,179 @@ def tab_scanner():
         c1.markdown(f'<div class="stat-item"><div class="metric-label">BUY SIGNALS</div><div class="metric-val" style="color:#10b981">{len(buys)}</div></div>', unsafe_allow_html=True)
         c2.markdown(f'<div class="stat-item"><div class="metric-label">SELL SIGNALS</div><div class="metric-val" style="color:#f43f5e">{len(sells)}</div></div>', unsafe_allow_html=True)
         st.dataframe(df_r, width='stretch', hide_index=True)
+
+
+def tab_consensus():
+    """Unified signal combining Scanner, Meta-Controller, Ranking, and Regime."""
+    st.markdown(f"""<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;padding:1rem 1.5rem;
+                background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
+                <span style="font-size:1.5rem">🎯</span>
+                <div><h3 style="margin:0;font-size:1.15rem;font-weight:700;">Signal Consensus</h3>
+                <p style="margin:0;font-size:0.82rem;color:var(--text-muted);">Unified view across all modules — the only signal that matters</p></div></div>""", unsafe_allow_html=True)
+
+    import pickle as _pickle
+    import warnings as _warnings
+
+    # Load meta-controller
+    mc = None
+    mc_path = os.path.join(os.path.dirname(__file__), "meta_controller.pkl")
+    if os.path.exists(mc_path):
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("ignore")
+            with open(mc_path, "rb") as f:
+                mc = _pickle.load(f)
+
+    results = []
+    progress = st.progress(0, text="Scanning all stocks...")
+
+    for i, ticker in enumerate(NSE_STOCKS):
+        progress.progress((i + 1) / len(NSE_STOCKS), text=f"Analyzing {ticker}...")
+        try:
+            df = fetch_stock_data(ticker, period="1y")
+            if df is None or len(df) < 50:
+                continue
+
+            df_feat = add_technical_indicators(df)
+            close = df["close"]
+
+            # 1. Ensemble signal
+            try:
+                models = load_models(ticker)
+                if models[0] is not None:
+                    lstm, gru, transformer, xgb, scaler, features, lgb = models
+                    d, conf, _ = predict_ensemble(
+                        lstm, gru, transformer, xgb, scaler, features, df_feat,
+                        lgb_model=lgb,
+                    )
+                    ensemble_signal = "BUY" if d == 1 else "SELL"
+                    ensemble_conf = conf
+                else:
+                    ensemble_signal = "N/A"
+                    ensemble_conf = 0
+            except Exception:
+                ensemble_signal = "N/A"
+                ensemble_conf = 0
+
+            # 2. Meta-controller signal
+            meta_signal = "N/A"
+            meta_conf = 0
+            if mc is not None and mc.model is not None:
+                try:
+                    from src.ensemble import predict_ensemble as pe
+                    from src.meta_controller import SIGNAL_NAMES
+                    from src.risk import compute_var, compute_cvar, compute_sharpe
+                    from src.volatility import forecast_volatility
+
+                    returns = close.pct_change().dropna()
+                    var_val = compute_var(returns) if len(returns) > 30 else 0
+                    cvar_val = compute_cvar(returns) if len(returns) > 30 else 0
+                    sharpe_val = compute_sharpe(returns) if len(returns) > 30 else 0
+                    vol_fc = forecast_volatility(returns) if len(returns) > 30 else 0
+
+                    regime_result = detect_regime(close, ohlc=df)
+                    regime = regime_result.get("regime", "Sideways")
+                    regime_bull = 1.0 if regime == "Bull" else 0.0
+                    regime_bear = 1.0 if regime == "Bear" else 0.0
+
+                    ens_dir = 1 if ensemble_signal == "BUY" else (0 if ensemble_signal == "SELL" else 0)
+                    ens_conf_val = ensemble_conf / 100.0 if ensemble_conf > 0 else 0.5
+
+                    state = {
+                        "ensemble_direction": float(ens_dir),
+                        "ensemble_confidence": float(ens_conf_val),
+                        "sentiment_score": 0.0,
+                        "fii_net": 0.0,
+                        "dii_net": 0.0,
+                        "pcr": 1.0,
+                        "mtf_signal": 0.0,
+                        "regime_bull": regime_bull,
+                        "regime_bear": regime_bear,
+                        "var_95": float(var_val),
+                        "cvar_95": float(cvar_val),
+                        "sharpe": float(sharpe_val),
+                        "volatility_forecast": float(vol_fc),
+                        "fundamental_score": 0.0,
+                    }
+                    decision = mc.decide(state)
+                    meta_signal = decision["action"]
+                    meta_conf = decision["confidence"]
+                except Exception:
+                    meta_signal = "N/A"
+
+            # 3. Regime
+            try:
+                regime_result = detect_regime(close, ohlc=df)
+                regime = regime_result.get("regime", "Sideways")
+            except Exception:
+                regime = "N/A"
+
+            # 4. Consensus
+            buy_votes = sum(1 for s in [ensemble_signal, meta_signal] if s == "BUY")
+            sell_votes = sum(1 for s in [ensemble_signal, meta_signal] if s == "SELL")
+
+            if buy_votes >= 2:
+                consensus = "STRONG BUY"
+                consensus_color = "#10b981"
+            elif buy_votes == 1 and sell_votes == 0 and meta_signal == "BUY":
+                consensus = "BUY"
+                consensus_color = "#10b981"
+            elif sell_votes >= 2:
+                consensus = "STRONG SELL"
+                consensus_color = "#f43f5e"
+            elif sell_votes == 1 and buy_votes == 0 and meta_signal == "SELL":
+                consensus = "SELL"
+                consensus_color = "#f43f5e"
+            elif buy_votes == 1 and sell_votes == 1:
+                consensus = "CONFLICTED"
+                consensus_color = "#f59e0b"
+            else:
+                consensus = "HOLD"
+                consensus_color = "#6b7280"
+
+            results.append({
+                "Stock": ticker.replace(".NS", ""),
+                "Ensemble": f"{'🟢' if ensemble_signal == 'BUY' else '🔴' if ensemble_signal == 'SELL' else '⚪'} {ensemble_signal}",
+                "Meta-Ctrl": f"{'🟢' if meta_signal == 'BUY' else '🔴' if meta_signal == 'SELL' else '⚪'} {meta_signal}",
+                "Regime": f"{'🟢' if regime == 'Bull' else '🔴' if regime == 'Bear' else '🟡'} {regime}",
+                "Confidence": f"{meta_conf:.0%}" if isinstance(meta_conf, float) and meta_conf > 0 else "—",
+                "Consensus": consensus,
+                "_color": consensus_color,
+            })
+        except Exception as e:
+            pass
+
+    progress.empty()
+
+    if results:
+        df_c = pd.DataFrame(results)
+
+        # Summary counts
+        buy_count = sum(1 for r in results if "BUY" in r["Consensus"] and "SELL" not in r["Consensus"])
+        sell_count = sum(1 for r in results if "SELL" in r["Consensus"] and "BUY" not in r["Consensus"])
+        hold_count = sum(1 for r in results if r["Consensus"] == "HOLD")
+        conflict_count = sum(1 for r in results if r["Consensus"] == "CONFLICTED")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.markdown(f'<div class="stat-item"><div class="metric-label">BUY</div><div class="metric-val" style="color:#10b981">{buy_count}</div></div>', unsafe_allow_html=True)
+        c2.markdown(f'<div class="stat-item"><div class="metric-label">SELL</div><div class="metric-val" style="color:#f43f5e">{sell_count}</div></div>', unsafe_allow_html=True)
+        c3.markdown(f'<div class="stat-item"><div class="metric-label">HOLD</div><div class="metric-val" style="color:#6b7280">{hold_count}</div></div>', unsafe_allow_html=True)
+        c4.markdown(f'<div class="stat-item"><div class="metric-label">CONFLICTED</div><div class="metric-val" style="color:#f59e0b">{conflict_count}</div></div>', unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("""**How to read:** Meta-Controller is the authoritative signal (combines all 14 modules).
+        Ensemble is the raw ML prediction. Regime shows market direction. **Consensus** requires Meta-Controller + Ensemble to agree.""")
+        st.markdown("---")
+
+        display_cols = ["Stock", "Ensemble", "Meta-Ctrl", "Regime", "Confidence", "Consensus"]
+        st.dataframe(df_c[display_cols], use_container_width=True, hide_index=True)
+    else:
+        st.warning("No stock data available. Train models first.")
+
+    st.markdown(f"""<div style="margin-top:1.5rem;padding:1rem 1.5rem;background:var(--bg-card);
+                border:1px solid var(--border-primary);border-radius:var(--radius-lg);font-size:0.82rem;color:var(--text-muted);">
+                <strong>Why modules disagree:</strong> Scanner shows raw ML prediction (absolute direction).
+                Ranking shows relative quality vs peers (a stock can be #1 ranked but still predicted to fall).
+                Risk shows market regime (portfolio-level, not per-stock). <strong>Only the Meta-Controller combines all signals.</strong></div>""", unsafe_allow_html=True)
 
 
 def tab_sentiment():
@@ -1151,6 +1328,10 @@ def tab_risk():
                 background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
         <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Risk Dashboard</span>
         <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">VaR + Kelly + Portfolio Risk</span>
+    </div>
+    <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:1rem;padding:0.5rem 1rem;background:rgba(239,68,68,0.08);border-left:3px solid #ef4444;border-radius:0 6px 6px 0;">
+        <strong>Signal Type:</strong> Portfolio-level regime detection (Bull/Bear/Sideways). Not a per-stock trade signal.
+        Shows market-wide conditions that affect ALL stocks. For per-stock signals, see <b>Scanner</b> or <b>Consensus</b>.
     </div>""", unsafe_allow_html=True)
 
     ticker = st.selectbox("Stock", NSE_STOCKS, key="risk_ticker", label_visibility="collapsed")
@@ -1330,6 +1511,10 @@ def tab_ranking():
                 background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
         <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Stock Ranking</span>
         <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Multi-Factor Cross-Sectional</span>
+    </div>
+    <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:1rem;padding:0.5rem 1rem;background:rgba(245,158,11,0.08);border-left:3px solid #f59e0b;border-radius:0 6px 6px 0;">
+        <strong>Signal Type:</strong> Relative ranking vs peers (percentile — "this stock is better/worse than others").
+        A stock can be #1 ranked but still predicted to fall. For absolute direction, see <b>Scanner</b>. For unified signal, see <b>Consensus</b>.
     </div>""", unsafe_allow_html=True)
 
     from src.ranking import rank_stocks, get_recommendation, factor_analysis
@@ -1337,14 +1522,30 @@ def tab_ranking():
     if st.button("⚡ Rank All Stocks", type="primary", width='stretch', key="rank_btn"):
         with st.spinner("Fetching data and ranking..."):
             stock_data = {}
+            ml_signals = {}
             for ticker in NSE_STOCKS[:10]:
                 try:
                     df = fetch_stock_data(ticker, period="1y")
                     stock_data[ticker] = df
+
+                    # Collect ML signal for ranking
+                    try:
+                        models = load_models(ticker)
+                        if models[0] is not None:
+                            df_feat = add_technical_indicators(df)
+                            lstm, gru, transformer, xgb, scaler, features, lgb = models
+                            d, conf, _ = predict_ensemble(
+                                lstm, gru, transformer, xgb, scaler, features, df_feat,
+                                lgb_model=lgb,
+                            )
+                            # Convert to -1 to +1 scale
+                            ml_signals[ticker] = (conf / 100.0) if d == 1 else -(conf / 100.0)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 
-            rankings = rank_stocks(stock_data)
+            rankings = rank_stocks(stock_data, ml_signals=ml_signals if ml_signals else None)
             fa = factor_analysis(stock_data)
 
         st.markdown('<div class="section-header">Stock Rankings</div>', unsafe_allow_html=True)
@@ -1366,6 +1567,7 @@ def tab_ranking():
                     <div class="metric-sub">Momentum: {r["momentum"]["momentum_combined"]:.3f}</div>
                     <div class="metric-sub">Vol Score: {r["volatility"]["vol_score"]:.0f}</div>
                     <div class="metric-sub">Technical: {r["technical"]["technical_combined"]:.0f}</div>
+                    <div class="metric-sub">ML Score: {r.get("ml_score", 50):.0f}</div>
                     <div class="metric-sub">Composite: {r["composite_score"]:.3f}</div>
                 </div>
             </div>''', unsafe_allow_html=True)
@@ -2023,25 +2225,26 @@ def tab_ledger():
 
 def main():
     # (header is now rendered inside tab_predictions)
-    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime", "📡 Monitoring", "🔄 Pipeline", "📝 Paper Trading", "🏦 MF Tracker", "📒 Ledger"])
+    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "🎯 Consensus", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime", "📡 Monitoring", "🔄 Pipeline", "📝 Paper Trading", "🏦 MF Tracker", "📒 Ledger"])
     with tabs[0]: tab_predictions()
     with tabs[1]: tab_portfolio()
     with tabs[2]: tab_backtest()
     with tabs[3]: tab_scanner()
-    with tabs[4]: tab_sentiment()
-    with tabs[5]: tab_market_pulse()
-    with tabs[6]: tab_optimizer()
-    with tabs[7]: tab_holdings()
-    with tabs[8]: tab_risk()
-    with tabs[9]: tab_volatility()
-    with tabs[10]: tab_ranking()
-    with tabs[11]: tab_scenarios()
-    with tabs[12]: tab_regime_strategy()
-    with tabs[13]: tab_monitoring()
-    with tabs[14]: tab_pipeline()
-    with tabs[15]: tab_paper_trading()
-    with tabs[16]: tab_mf_tracker()
-    with tabs[17]: tab_ledger()
+    with tabs[4]: tab_consensus()
+    with tabs[5]: tab_sentiment()
+    with tabs[6]: tab_market_pulse()
+    with tabs[7]: tab_optimizer()
+    with tabs[8]: tab_holdings()
+    with tabs[9]: tab_risk()
+    with tabs[10]: tab_volatility()
+    with tabs[11]: tab_ranking()
+    with tabs[12]: tab_scenarios()
+    with tabs[13]: tab_regime_strategy()
+    with tabs[14]: tab_monitoring()
+    with tabs[15]: tab_pipeline()
+    with tabs[16]: tab_paper_trading()
+    with tabs[17]: tab_mf_tracker()
+    with tabs[18]: tab_ledger()
     st.markdown("""
     <div style="text-align:center;padding:2rem 0 1rem;margin-top:2rem;border-top:1px solid var(--border-primary);">
         <div style="font-size:0.7rem;color:var(--text-muted);letter-spacing:0.05em;">
