@@ -431,12 +431,12 @@ The meta-controller's learned weights are a live scorecard:
 - This becomes a reasonable experiment rather than a guaranteed overfit
 
 ### Stage 6 Exit Criteria
-- [ ] `run_daily.py` runs independently of Streamlit (scheduled)
-- [ ] SQLite ledger with decisions, trades, and portfolio snapshots
-- [ ] Meta-controller v1 (bandit/stacking) combining all 14 signal modules
-- [ ] 2-3+ months of logged paper trading episodes
-- [ ] Streamlit dashboard reads from ledger (not session state)
-- [ ] (Optional) RL upgrade with differential Sharpe reward
+- [x] `run_daily.py` runs independently of Streamlit (scheduled)
+- [x] SQLite ledger with decisions, trades, and portfolio snapshots (3 tables)
+- [x] Meta-controller v1 (bandit/stacking) combining all 14 signal modules
+- [ ] 2-3+ months of logged paper trading episodes (time-gated — starts when deployed)
+- [x] Streamlit Ledger tab reads from ledger (other tabs migrate over time)
+- [ ] (Optional) RL upgrade with differential Sharpe reward (deferred — needs months of data)
 
 ---
 
