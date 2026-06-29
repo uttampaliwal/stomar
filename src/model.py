@@ -151,3 +151,44 @@ def models_exist(ticker: str) -> bool:
         return os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
     exts = ["lstm.pt", "gru.pt", "transformer.pt", "xgb.pkl", "scaler.pkl", "features.pkl", "lstm_dim.pkl"]
     return all(os.path.exists(base(e)) for e in exts)
+
+
+def promote_model(ticker: str, feature_hash: str = None) -> dict:
+    """Promote a trained model to production.
+
+    Copies model files to production paths and records metadata.
+    Full registry integration added in Task 6.
+
+    Args:
+        ticker: Stock ticker
+        feature_hash: Feature version hash for compatibility tracking
+
+    Returns:
+        Dict with status, ticker, model_path
+    """
+    import shutil
+    ticker_clean = ticker.replace(".", "_")
+    dest_dir = os.path.join(MODELS_DIR, "production")
+    os.makedirs(dest_dir, exist_ok=True)
+
+    src_dir = MODELS_DIR
+    copied = []
+    for ext in ["lstm.pt", "gru.pt", "transformer.pt", "xgb.pkl", "scaler.pkl", "features.pkl", "lstm_dim.pkl"]:
+        src = os.path.join(src_dir, f"{ticker_clean}_{ext}")
+        dst = os.path.join(dest_dir, f"{ticker_clean}_{ext}")
+        if os.path.exists(src):
+            shutil.copy2(src, dst)
+            copied.append(ext)
+
+    meta = {
+        "status": "promoted",
+        "ticker": ticker,
+        "feature_hash": feature_hash,
+        "files_promoted": copied,
+    }
+    import json
+    meta_path = os.path.join(dest_dir, f"{ticker_clean}_meta.json")
+    with open(meta_path, "w") as f:
+        json.dump(meta, f, indent=2)
+
+    return meta

@@ -1,0 +1,235 @@
+"""Tests for src/pipeline.py."""
+
+import numpy as np
+import pandas as pd
+from unittest.mock import patch
+
+from src.pipeline import RetrainingPipeline, PipelineConfig, PipelineResult
+
+
+def _mock_df(n=100):
+    dates = pd.bdate_range("2024-01-01", periods=n)
+    close = 100 + np.cumsum(np.random.randn(n) * 0.5)
+    return pd.DataFrame({
+        "open": close - 0.5, "high": close + 1.0, "low": close - 1.0,
+        "close": close, "volume": np.ones(n) * 5000,
+    }, index=dates)
+
+
+# ── PipelineConfig ──
+
+class TestPipelineConfig:
+    def test_defaults(self):
+        config = PipelineConfig()
+        assert len(config.tickers) == 3
+        assert config.lookback_period == "3y"
+        assert config.min_oos_accuracy == 0.50
+
+    def test_custom(self):
+        config = PipelineConfig(tickers=["TEST.NS"], min_oos_accuracy=0.55)
+        assert config.tickers == ["TEST.NS"]
+        assert config.min_oos_accuracy == 0.55
+
+
+# ── PipelineResult ──
+
+class TestPipelineResult:
+    def test_success_result(self):
+        r = PipelineResult(ticker="TEST.NS", stage="fetch", status="success", message="ok")
+        assert r.status == "success"
+        assert r.ticker == "TEST.NS"
+        assert r.timestamp
+
+    def test_default_metrics(self):
+        r = PipelineResult(ticker="T", stage="s", status="ok", message="m")
+        assert r.metrics == {}
+        assert r.feature_hash is None
+
+
+# ── Pipeline stages (mocked at source) ──
+
+class TestPipelineStages:
+    def test_fetch_success(self):
+        with patch("src.data_fetcher.fetch_stock_data") as mock:
+            mock.return_value = _mock_df(50)
+            pipeline = RetrainingPipeline()
+            result = pipeline._stage_fetch("TEST.NS")
+            assert result.status == "success"
+            assert "50" in result.message
+
+    def test_fetch_failure(self):
+        with patch("src.data_fetcher.fetch_stock_data", side_effect=Exception("network")):
+            pipeline = RetrainingPipeline()
+            result = pipeline._stage_fetch("TEST.NS")
+            assert result.status == "failed"
+            assert "network" in result.message
+
+    def test_validate_pass(self):
+        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data_validation.validate_data") as mock_val:
+            mock_fetch.return_value = _mock_df()
+            mock_val.return_value = {
+                "passed": True, "errors": [], "warnings": [],
+                "data_points": 100,
+            }
+            pipeline = RetrainingPipeline()
+            result = pipeline._stage_validate("TEST.NS")
+            assert result.status == "success"
+
+    def test_validate_failure(self):
+        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data_validation.validate_data") as mock_val:
+            mock_fetch.return_value = _mock_df()
+            mock_val.return_value = {
+                "passed": False, "errors": ["bad prices"], "warnings": [],
+                "data_points": 100,
+            }
+            pipeline = RetrainingPipeline()
+            result = pipeline._stage_validate("TEST.NS")
+            assert result.status == "failed"
+
+    def test_features_computes_hash(self):
+        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.features.add_technical_indicators") as mock_feat, \
+             patch("src.feature_store.compute_feature_hash") as mock_hash, \
+             patch("src.feature_store.register_feature_version") as mock_reg:
+            mock_fetch.return_value = _mock_df()
+            mock_feat.return_value = _mock_df()
+            mock_hash.return_value = "abc123def456"
+            mock_reg.return_value = {}
+
+            pipeline = RetrainingPipeline()
+            result = pipeline._stage_features("TEST.NS")
+            assert result.status == "success"
+            assert result.feature_hash == "abc123def456"
+
+    def test_evaluate_rejects_low_accuracy(self):
+        with patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+            mock_bt.return_value = {
+                "metrics": {
+                    "ensemble_accuracy": 0.48,
+                    "simulated_sharpe": -0.5,
+                    "max_drawdown": 0.15,
+                }
+            }
+            pipeline = RetrainingPipeline(PipelineConfig(min_oos_accuracy=0.55))
+            result = pipeline._stage_evaluate("TEST.NS")
+            assert result.status == "rejected"
+            assert "accuracy" in result.message.lower()
+
+    def test_evaluate_rejects_low_sharpe(self):
+        with patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+            mock_bt.return_value = {
+                "metrics": {
+                    "ensemble_accuracy": 0.53,
+                    "simulated_sharpe": -1.0,
+                    "max_drawdown": 0.15,
+                }
+            }
+            pipeline = RetrainingPipeline(PipelineConfig(min_oos_sharpe=-0.5))
+            result = pipeline._stage_evaluate("TEST.NS")
+            assert result.status == "rejected"
+            assert "sharpe" in result.message.lower()
+
+    def test_evaluate_rejects_high_drawdown(self):
+        with patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+            mock_bt.return_value = {
+                "metrics": {
+                    "ensemble_accuracy": 0.53,
+                    "simulated_sharpe": 0.5,
+                    "max_drawdown": 0.35,
+                }
+            }
+            pipeline = RetrainingPipeline(PipelineConfig(max_drawdown_threshold=0.20))
+            result = pipeline._stage_evaluate("TEST.NS")
+            assert result.status == "rejected"
+            assert "dd" in result.message.lower()
+
+    def test_evaluate_passes_good_model(self):
+        with patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+            mock_bt.return_value = {
+                "metrics": {
+                    "ensemble_accuracy": 0.53,
+                    "simulated_sharpe": 0.5,
+                    "max_drawdown": 0.15,
+                }
+            }
+            pipeline = RetrainingPipeline()
+            result = pipeline._stage_evaluate("TEST.NS")
+            assert result.status == "success"
+
+    def test_promote_success(self):
+        with patch("src.model.promote_model") as mock_promote:
+            pipeline = RetrainingPipeline()
+            prev = PipelineResult(
+                ticker="T", stage="eval", status="success", message="ok",
+                feature_hash="abc123",
+            )
+            result = pipeline._stage_promote("TEST.NS", prev)
+            assert result.status == "success"
+
+    def test_promote_failure(self):
+        with patch("src.model.promote_model", side_effect=Exception("disk full")):
+            pipeline = RetrainingPipeline()
+            prev = PipelineResult(
+                ticker="T", stage="eval", status="success", message="ok",
+            )
+            result = pipeline._stage_promote("TEST.NS", prev)
+            assert result.status == "failed"
+
+
+# ── Full run (mocked) ──
+
+class TestPipelineRun:
+    def test_run_stops_on_fetch_failure(self):
+        pipeline = RetrainingPipeline()
+        with patch("src.data_fetcher.fetch_stock_data", side_effect=Exception("down")):
+            result = pipeline.run("TEST.NS")
+            assert result.status == "failed"
+            assert result.stage == "fetch"
+            assert len(pipeline.results) == 1
+
+    def test_run_stops_on_validate_failure(self):
+        pipeline = RetrainingPipeline()
+        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data_validation.validate_data") as mock_val:
+            mock_fetch.return_value = _mock_df()
+            mock_val.return_value = {
+                "passed": False, "errors": ["bad"], "warnings": [], "data_points": 0,
+            }
+            result = pipeline.run("TEST.NS")
+            assert result.status == "failed"
+            assert result.stage == "validate"
+
+    def test_run_stops_on_evaluate_rejection(self):
+        pipeline = RetrainingPipeline(PipelineConfig(min_oos_accuracy=0.99))
+        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data_validation.validate_data") as mock_val, \
+             patch("src.features.add_technical_indicators") as mock_feat, \
+             patch("src.feature_store.compute_feature_hash") as mock_hash, \
+             patch("src.feature_store.register_feature_version"), \
+             patch("src.trainer.train_for_ticker") as mock_train, \
+             patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+            mock_fetch.return_value = _mock_df()
+            mock_val.return_value = {"passed": True, "errors": [], "warnings": [], "data_points": 100}
+            mock_feat.return_value = _mock_df()
+            mock_hash.return_value = "h1"
+            mock_train.return_value = {"metrics": {}}
+            mock_bt.return_value = {
+                "metrics": {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "max_drawdown": 0.15}
+            }
+            result = pipeline.run("TEST.NS")
+            assert result.status == "rejected"
+
+    def test_get_summary(self):
+        pipeline = RetrainingPipeline()
+        pipeline.results = [
+            PipelineResult("A", "p", "success", "ok"),
+            PipelineResult("B", "f", "failed", "err"),
+            PipelineResult("C", "p", "rejected", "bad"),
+        ]
+        s = pipeline.get_summary()
+        assert s["total"] == 3
+        assert s["success"] == 1
+        assert s["failed"] == 1
+        assert s["rejected"] == 1

@@ -60,3 +60,26 @@ def get_market_status() -> str:
     if market_open <= now <= market_close:
         return "Open"
     return "Closed"
+
+
+def fetch_with_validation(
+    ticker: str,
+    period: str = "2y",
+    interval: str = "1d",
+    force_refresh: bool = False,
+) -> dict:
+    """Fetch stock data with validation.
+
+    Returns:
+        Dict with df, validation, ticker
+    """
+    from src.data_validation import validate_data
+
+    df = fetch_stock_data(ticker, period=period, interval=interval, force_refresh=force_refresh)
+    validation = validate_data(df, ticker)
+
+    return {
+        "df": df,
+        "validation": validation,
+        "ticker": ticker,
+    }
