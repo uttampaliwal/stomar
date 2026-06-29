@@ -158,14 +158,26 @@ class Ledger:
                     actual_direction: int) -> None:
         """Log what actually happened (typically filled next day)."""
         decision = self.conn.execute(
-            "SELECT ensemble_direction FROM decisions WHERE id = ?", (decision_id,)
+            "SELECT action, ensemble_direction FROM decisions WHERE id = ?",
+            (decision_id,)
         ).fetchone()
         if decision is None:
             logger.warning(f"Decision {decision_id} not found, skipping outcome")
             return
 
+        action = decision["action"]
         ensemble_dir = decision["ensemble_direction"]
-        correct = 1 if (ensemble_dir is not None and ensemble_dir == actual_direction) else 0
+
+        # Determine if prediction was correct based on action taken
+        if action == "BUY":
+            correct = 1 if actual_direction == 1 else 0
+        elif action == "SELL":
+            correct = 1 if actual_direction == 0 else 0
+        elif ensemble_dir is not None:
+            # HOLD: correct if ensemble matched reality
+            correct = 1 if ensemble_dir == actual_direction else 0
+        else:
+            correct = None
 
         self.conn.execute("""
             UPDATE decisions SET actual_return = ?, actual_direction = ?, correct = ?

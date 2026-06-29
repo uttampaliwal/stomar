@@ -91,7 +91,12 @@ class HistoricalBackfill:
         try:
             from src.model import models_exist, load_models
             if models_exist(ticker):
-                models = load_models(ticker)
+                tup = load_models(ticker)
+                # load_models returns (lstm, gru, transformer, xgb, scaler, features, lgb_model)
+                models = {
+                    "lstm": tup[0], "gru": tup[1], "transformer": tup[2],
+                    "xgb": tup[3], "scaler": tup[4], "features": tup[5], "lgb": tup[6],
+                }
         except Exception:
             pass
 
@@ -157,31 +162,31 @@ class HistoricalBackfill:
         close_slice = close.iloc[:index + 1]
         returns_slice = returns.iloc[:index] if index > 0 else returns.iloc[:1]
 
-        # 1. Ensemble prediction (if models exist)
-        if models is not None:
-            signals.update(self._run_ensemble_historical(models, df_slice, ticker))
-
-        # 2. Sentiment — not available historically, use neutral
-        signals["sentiment_score"] = 0.0
-
-        # 3. FII/DII flow — not available historically, use neutral
-        signals["fii_net"] = 0.0
-        signals["dii_net"] = 0.0
-
-        # 4. Options PCR — not available historically, use neutral
-        signals["pcr"] = 1.0
-        signals["max_pain"] = None
-
-        # 5. Multi-timeframe — partially reconstructable
-        signals["mtf_signal"] = self._compute_simple_mtf(close_slice)
-
-        # 6. Regime detection (use pre-computed or compute on slice)
+        # 1. Regime detection (needed by ensemble weights)
         if regime_result is not None and len(returns_slice) >= 20:
             signals["regime"] = regime_result.get("regime", "Sideways")
             signals["regime_confidence"] = regime_result.get("confidence", 0.5)
         else:
             signals["regime"] = "Sideways"
             signals["regime_confidence"] = 0.5
+
+        # 2. Ensemble prediction (if models exist)
+        if models is not None:
+            signals.update(self._run_ensemble_historical(models, df_slice, ticker, regime=signals.get("regime")))
+
+        # 3. Sentiment — not available historically, use neutral
+        signals["sentiment_score"] = 0.0
+
+        # 4. FII/DII flow — not available historically, use neutral
+        signals["fii_net"] = 0.0
+        signals["dii_net"] = 0.0
+
+        # 5. Options PCR — not available historically, use neutral
+        signals["pcr"] = 1.0
+        signals["max_pain"] = None
+
+        # 6. Multi-timeframe — partially reconstructable
+        signals["mtf_signal"] = self._compute_simple_mtf(close_slice)
 
         # 7. Risk metrics
         signals.update(self._compute_risk_historical(returns_slice))
@@ -195,28 +200,31 @@ class HistoricalBackfill:
         return signals
 
     def _run_ensemble_historical(self, models: dict, df_slice: pd.DataFrame,
-                                 ticker: str) -> dict:
+                                 ticker: str, regime: str = None) -> dict:
         """Run ensemble on historical slice."""
         try:
             from src.features import add_technical_indicators
-            from src.trainer import FEATURE_COLS
             from src.ensemble import predict_ensemble
 
+            feature_cols = models["features"]
             df_feat = add_technical_indicators(df_slice)
-            df_feat = df_feat.dropna(subset=FEATURE_COLS)
+            df_feat = df_feat.dropna(subset=feature_cols)
 
             if len(df_feat) < 2:
                 return {}
 
-            prob, direction, confidence = predict_ensemble(
+            # predict_ensemble returns (direction, confidence, details)
+            direction, confidence, _ = predict_ensemble(
                 models["lstm"], models["gru"], models["transformer"],
-                models["xgb"], models["scaler"], FEATURE_COLS, df_feat
+                models["xgb"], models["scaler"], feature_cols, df_feat,
+                lgb_model=models.get("lgb"), regime=regime,
             )
             return {
                 "ensemble_direction": direction,
                 "ensemble_confidence": confidence / 100.0 if confidence else None,
             }
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Ensemble failed for {ticker}: {e}")
             return {}
 
     def _compute_simple_mtf(self, close: pd.Series) -> float:
