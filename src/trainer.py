@@ -171,8 +171,8 @@ def _walk_forward_xgb(X, y, ticker, n_splits=5):
             best_acc = acc
             best_fold = fold
 
-    # Train final model on all data up to the last fold's test start
-    final_test_start = n_splits * fold_size
+    # Train final model on first (n_splits-1) folds, test on last fold
+    final_test_start = (n_splits - 1) * fold_size
     if final_test_start >= len(X):
         X_tr_final, X_te_final, y_tr_final, y_te_final = train_test_split(X, y, test_size=0.2, shuffle=False)
     else:
@@ -190,14 +190,30 @@ def _walk_forward_xgb(X, y, ticker, n_splits=5):
 def _walk_forward_dl(scaled, seq_length, n_splits=5):
     """Walk-forward split for deep learning models.
 
-    Returns train/test indices for the best fold.
+    Uses the first (n_splits-1) folds for training and the last fold for testing.
+    Ensures test set has at least seq_length rows for ensemble backtest.
     """
-    fold_size = len(scaled) // n_splits
-    if fold_size < seq_length + 10:
-        split = int(len(scaled) * 0.8)
+    total = len(scaled)
+    # Reduce n_splits if test set would be too small
+    while n_splits > 2:
+        fold_size = total // n_splits
+        test_size = total - (n_splits - 1) * fold_size
+        if test_size >= seq_length + 10:
+            break
+        n_splits -= 1
+
+    fold_size = total // n_splits
+    if fold_size < 10:
+        split = int(total * 0.8)
         if split < seq_length + 10:
             return None, []
         return split, []
+
+    # Use (n_splits-1) folds for training, last fold for testing
+    split = (n_splits - 1) * fold_size
+    if split < seq_length + 10:
+        split = seq_length + 10
+    return split, []
 
     fold_accs = []
     for fold in range(n_splits):
