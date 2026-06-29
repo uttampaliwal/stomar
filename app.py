@@ -11,15 +11,15 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from src.data_fetcher import fetch_stock_data, NSE_STOCKS, get_market_status
 from src.features import add_technical_indicators
-from src.model import load_models, models_exist, DEVICE
+from src.model import load_models, models_exist
 from src.trainer import train_for_ticker, FEATURE_COLS
 from src.ensemble import predict_ensemble
 from src.portfolio import Portfolio
-from src.backtester import run_simple_backtest as run_backtest, generate_model_signals, run_walk_forward_backtest, compute_metrics
+from src.backtester import run_walk_forward_backtest
 from src.sentiment import get_stock_sentiment
 from src.flow import get_flow_sentiment, fetch_options_pcr
 from src.multitimeframe import fetch_mtf_data, get_combined_signal
-from src.risk import generate_risk_report, kelly_criterion, calculate_var, calculate_cvar
+from src.risk import generate_risk_report, kelly_criterion
 from src.optimizer import optimize_portfolio
 from src.holdings import parse_holdings_csv, compute_portfolio_stats
 from src.regime import detect_regime
@@ -1231,9 +1231,255 @@ def tab_risk():
         </div>''', unsafe_allow_html=True)
 
 
+def tab_volatility():
+    st.markdown(f"""<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;padding:1rem 1.5rem;
+                background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
+        <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Volatility Analysis</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Forecast + Regime + Position Sizing</span>
+    </div>""", unsafe_allow_html=True)
+
+    from src.volatility import full_volatility_analysis
+
+    ticker = st.selectbox("Stock", NSE_STOCKS, key="vol_ticker", label_visibility="collapsed")
+    period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=2, key="vol_period")
+
+    if st.button("⚡ Analyze Volatility", type="primary", width='stretch', key="vol_btn"):
+        with st.spinner("Computing volatility metrics..."):
+            df = fetch_stock_data(ticker, period=period)
+            df_feat = add_technical_indicators(df, ticker=ticker)
+            result = full_volatility_analysis(df_feat)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown('<div class="section-header">Current Volatility</div>', unsafe_allow_html=True)
+            vol = result["current"]
+            regime = result["regime"]
+
+            regime_color = {"Low": "#10b981", "Medium": "#f59e0b", "High": "#f43f5e"}[regime["current_regime"]]
+            st.markdown(f'''<div class="glass" style="text-align:center;padding:1.5rem;">
+                <div class="metric-label">VOLATILITY REGIME</div>
+                <div style="font-size:1.8rem;font-weight:800;color:{regime_color};margin:0.5rem 0;">{regime["current_regime"]}</div>
+                <div class="metric-sub">Current: {regime["current_vol"]:.1%} annualized</div>
+                <div class="metric-sub">Percentile: {regime["vol_percentile"]:.0f}%</div>
+            </div>''', unsafe_allow_html=True)
+
+            vol_grid = [
+                ("Historical", f"{vol['hist_vol']:.1%}"),
+                ("EWMA", f"{vol['ewma_vol']:.1%}"),
+                ("Parkinson", f"{vol['parkinson_vol']:.1%}"),
+                ("Garman-Klass", f"{vol['garman_klass_vol']:.1%}"),
+                ("Yang-Zhang", f"{vol['yang_zhang_vol']:.1%}"),
+                ("ATR", f"{vol['atr_pct']:.2%}"),
+                ("BB Width", f"{vol['bollinger_bandwidth']:.3f}"),
+                ("BB %B", f"{vol['bollinger_pct_b']:.2f}"),
+            ]
+            for i in range(0, len(vol_grid), 2):
+                cols = st.columns(2)
+                for j in range(2):
+                    if i+j < len(vol_grid):
+                        label, val = vol_grid[i+j]
+                        cols[j].markdown(f'<div class="stat-item" style="padding:0.5rem;"><div class="metric-label">{label}</div><div class="metric-val">{val}</div></div>', unsafe_allow_html=True)
+
+        with c2:
+            st.markdown('<div class="section-header">5-Day Forecast</div>', unsafe_allow_html=True)
+            forecast = result["forecast"]
+            fig = go.Figure()
+            days = list(range(1, forecast["horizon"] + 1))
+            fig.add_trace(go.Scatter(x=days, y=forecast["forecast_vols"], mode="lines+markers",
+                line=dict(color="#22d3ee", width=2), name="Forecast"))
+            fig.add_hline(y=forecast["current_vol"], line_dash="dash", line_color="#f59e0b", annotation_text="Current")
+            fig.add_hline(y=forecast["long_term_vol"], line_dash="dot", line_color="#10b981", annotation_text="Long-term")
+            fig.update_layout(template="plotly_dark", height=250, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(family="Inter, sans-serif"), yaxis_title="Annualized Vol", xaxis_title="Days",
+                margin=dict(l=0,r=0,t=10,b=0), xaxis=dict(gridcolor="rgba(51,65,85,0.2)"), yaxis=dict(gridcolor="rgba(51,65,85,0.2)"))
+            st.plotly_chart(fig, width='stretch')
+
+            st.markdown('<div class="section-header">Position Sizing</div>', unsafe_allow_html=True)
+            ps = result["position_sizing"]
+            st.markdown(f'''<div class="glass">
+                <div class="metric-label">RECOMMENDED POSITION SIZE</div>
+                <div class="metric-val" style="font-size:1.8rem;margin:0.5rem 0;">{ps["position_size_pct"]:.1%}</div>
+                <div class="metric-sub">Vol scalar: {ps["vol_scalar"]:.2f}x</div>
+                <div class="metric-sub">{ps["reasoning"]}</div>
+            </div>''', unsafe_allow_html=True)
+
+        st.markdown('<div class="section-header" style="margin-top:1.5rem;">Volatility Cone</div>', unsafe_allow_html=True)
+        cone = result["cone"]
+        cone_data = []
+        for w, data in cone.items():
+            cone_data.append({"Window": w, "Min": data["min"], "Mean": data["mean"], "Max": data["max"], "Current": data["current"]})
+        cone_df = pd.DataFrame(cone_data)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=cone_df["Window"], y=cone_df["Max"], mode="lines", line=dict(color="#f43f5e", width=1), name="Max"))
+        fig.add_trace(go.Scatter(x=cone_df["Window"], y=cone_df["Mean"], mode="lines", line=dict(color="#f59e0b", width=2), name="Mean"))
+        fig.add_trace(go.Scatter(x=cone_df["Window"], y=cone_df["Min"], mode="lines", line=dict(color="#10b981", width=1), name="Min"))
+        fig.add_trace(go.Scatter(x=cone_df["Window"], y=cone_df["Current"], mode="markers", marker=dict(color="#22d3ee", size=10), name="Current"))
+        fig.update_layout(template="plotly_dark", height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="Inter, sans-serif"), yaxis_title="Annualized Vol", xaxis_title="Window (days)",
+            margin=dict(l=0,r=0,t=10,b=0), xaxis=dict(gridcolor="rgba(51,65,85,0.2)"), yaxis=dict(gridcolor="rgba(51,65,85,0.2)"))
+        st.plotly_chart(fig, width='stretch')
+
+
+def tab_ranking():
+    st.markdown(f"""<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;padding:1rem 1.5rem;
+                background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
+        <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Stock Ranking</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Multi-Factor Cross-Sectional</span>
+    </div>""", unsafe_allow_html=True)
+
+    from src.ranking import rank_stocks, get_recommendation, factor_analysis
+
+    if st.button("⚡ Rank All Stocks", type="primary", width='stretch', key="rank_btn"):
+        with st.spinner("Fetching data and ranking..."):
+            stock_data = {}
+            for ticker in NSE_STOCKS[:10]:
+                try:
+                    df = fetch_stock_data(ticker, period="1y")
+                    stock_data[ticker] = df
+                except Exception:
+                    pass
+
+            rankings = rank_stocks(stock_data)
+            fa = factor_analysis(stock_data)
+
+        st.markdown('<div class="section-header">Stock Rankings</div>', unsafe_allow_html=True)
+        for r in rankings:
+            rec = get_recommendation(rankings, r["ticker"])
+            rec_color = {"STRONG BUY": "#10b981", "BUY": "#22d3ee", "HOLD": "#f59e0b", "SELL": "#f97316", "STRONG SELL": "#f43f5e"}[rec["recommendation"]]
+            st.markdown(f'''<div class="glass" style="padding:1rem;margin-bottom:0.5rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                        <span style="font-weight:700;font-size:1.1rem;">#{r["rank"]} {r["ticker"]}</span>
+                        <span style="color:{rec_color};font-weight:600;margin-left:1rem;">{rec["recommendation"]}</span>
+                    </div>
+                    <div style="text-align:right;">
+                        <div class="metric-val">₹{r["current_price"]:.2f}</div>
+                        <div class="metric-sub">{r["daily_return"]:+.2f}%</div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:2rem;margin-top:0.5rem;">
+                    <div class="metric-sub">Momentum: {r["momentum"]["momentum_combined"]:.3f}</div>
+                    <div class="metric-sub">Vol Score: {r["volatility"]["vol_score"]:.0f}</div>
+                    <div class="metric-sub">Technical: {r["technical"]["technical_combined"]:.0f}</div>
+                    <div class="metric-sub">Composite: {r["composite_score"]:.3f}</div>
+                </div>
+            </div>''', unsafe_allow_html=True)
+
+        if not fa.get("insufficient_data"):
+            st.markdown('<div class="section-header" style="margin-top:1.5rem;">Factor Analysis</div>', unsafe_allow_html=True)
+            for factor, corr in fa["factor_correlations"].items():
+                color = "#10b981" if corr > 0 else "#f43f5e"
+                st.markdown(f'<div class="metric-sub">{factor}: {corr:.3f} {"↑" if corr > 0 else "↓"}</div>', unsafe_allow_html=True)
+
+
+def tab_scenarios():
+    st.markdown(f"""<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;padding:1rem 1.5rem;
+                background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
+        <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Strategy Scenarios</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Compare Different Strategies</span>
+    </div>""", unsafe_allow_html=True)
+
+    from src.scenarios import run_all_scenarios
+
+    ticker = st.selectbox("Stock", NSE_STOCKS, key="scenario_ticker", label_visibility="collapsed")
+    period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=2, key="scenario_period")
+
+    if st.button("⚡ Run Scenarios", type="primary", width='stretch', key="scenario_btn"):
+        with st.spinner("Running all scenarios..."):
+            df = fetch_stock_data(ticker, period=period)
+            scenarios = run_all_scenarios(df)
+
+        st.markdown('<div class="section-header">Scenario Results</div>', unsafe_allow_html=True)
+        for s in scenarios:
+            ret_color = "#10b981" if s["annualized_return"] > 0 else "#f43f5e"
+            sharpe_color = "#10b981" if s["sharpe"] > 1 else "#f59e0b" if s["sharpe"] > 0 else "#f43f5e"
+            st.markdown(f'''<div class="glass" style="padding:1rem;margin-bottom:0.5rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                        <span style="font-weight:700;">{s["name"]}</span>
+                        <span class="metric-sub" style="margin-left:1rem;">{s["n_trades"]} trades</span>
+                    </div>
+                    <div style="text-align:right;">
+                        <span style="color:{ret_color};font-weight:700;">{s["annualized_return"]:.1%}</span>
+                        <span class="metric-sub" style="margin-left:0.5rem;">Sharpe: <span style="color:{sharpe_color}">{s["sharpe"]:.2f}</span></span>
+                    </div>
+                </div>
+                <div style="display:flex;gap:2rem;margin-top:0.5rem;">
+                    <div class="metric-sub">Total Return: {s["total_return"]:.1%}</div>
+                    <div class="metric-sub">Volatility: {s["annualized_vol"]:.1%}</div>
+                    <div class="metric-sub">Max DD: {s["max_drawdown"]:.1%}</div>
+                </div>
+            </div>''', unsafe_allow_html=True)
+
+        fig = go.Figure()
+        names = [s["name"] for s in scenarios]
+        sharpes = [s["sharpe"] for s in scenarios]
+        colors = ["#10b981" if s > 1 else "#f59e0b" if s > 0 else "#f43f5e" for s in sharpes]
+        fig.add_trace(go.Bar(x=names, y=sharpes, marker_color=colors))
+        fig.update_layout(template="plotly_dark", height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="Inter, sans-serif"), yaxis_title="Sharpe Ratio", xaxis_title="Strategy",
+            margin=dict(l=0,r=0,t=10,b=0), xaxis=dict(gridcolor="rgba(51,65,85,0.2)"), yaxis=dict(gridcolor="rgba(51,65,85,0.2)"))
+        st.plotly_chart(fig, width='stretch')
+
+
+def tab_regime_strategy():
+    st.markdown(f"""<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;padding:1rem 1.5rem;
+                background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
+        <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Regime Strategy</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Adaptive to Market Conditions</span>
+    </div>""", unsafe_allow_html=True)
+
+    from src.regime_strategy import backtest_regime_strategy, get_regime_allocation
+    from src.regime import detect_regime
+
+    ticker = st.selectbox("Stock", NSE_STOCKS, key="regime_strat_ticker", label_visibility="collapsed")
+    period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=2, key="regime_strat_period")
+
+    if st.button("⚡ Analyze Regime Strategy", type="primary", width='stretch', key="regime_strat_btn"):
+        with st.spinner("Analyzing regime strategy..."):
+            df = fetch_stock_data(ticker, period=period)
+            returns = df["close"].pct_change().dropna()
+            regime_result = detect_regime(returns)
+            bt = backtest_regime_strategy(df, regime_result)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            regime = bt["regime"]
+            regime_color = {"Bull": "#10b981", "Bear": "#f43f5e", "Sideways": "#f59e0b"}[regime]
+            st.markdown(f'''<div class="glass" style="text-align:center;padding:2rem;">
+                <div class="metric-label">CURRENT REGIME</div>
+                <div style="font-size:2rem;font-weight:800;color:{regime_color};margin:0.5rem 0;">{regime}</div>
+                <div class="metric-sub">Equity Allocation: {bt["equity_allocation"]:.0%}</div>
+            </div>''', unsafe_allow_html=True)
+
+            alloc = get_regime_allocation(regime, regime_result["confidence"])
+            st.markdown(f'''<div class="glass">
+                <div class="section-header">Strategy Recommendation</div>
+                <div style="font-weight:600;margin:0.5rem 0;">{alloc["strategy"].title()}</div>
+                <div class="metric-sub">{alloc["reasoning"]}</div>
+            </div>''', unsafe_allow_html=True)
+
+        with c2:
+            st.markdown('<div class="section-header">Performance Comparison</div>', unsafe_allow_html=True)
+            perf_grid = [
+                ("Strategy Return", f"{bt['strategy_return']:.1%}", "#10b981" if bt['strategy_return'] > 0 else "#f43f5e"),
+                ("Buy & Hold Return", f"{bt['buy_hold_return']:.1%}", "#10b981" if bt['buy_hold_return'] > 0 else "#f43f5e"),
+                ("Strategy Annual", f"{bt['strategy_annualized']:.1%}", "var(--text-secondary)"),
+                ("Buy & Hold Annual", f"{bt['buy_hold_annualized']:.1%}", "var(--text-secondary)"),
+                ("Strategy Sharpe", f"{bt['strategy_sharpe']:.3f}", "#10b981" if bt['strategy_sharpe'] > 1 else "#f43f5e"),
+                ("Excess Return", f"{bt['excess_return']:.1%}", "#10b981" if bt['excess_return'] > 0 else "#f43f5e"),
+            ]
+            for i in range(0, len(perf_grid), 2):
+                cols = st.columns(2)
+                for j in range(2):
+                    if i+j < len(perf_grid):
+                        label, val, color = perf_grid[i+j]
+                        cols[j].markdown(f'<div class="stat-item" style="padding:0.5rem;"><div class="metric-label">{label}</div><div class="metric-val" style="color:{color}">{val}</div></div>', unsafe_allow_html=True)
+
+
 def main():
     # (header is now rendered inside tab_predictions)
-    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk"])
+    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime"])
     with tabs[0]: tab_predictions()
     with tabs[1]: tab_portfolio()
     with tabs[2]: tab_backtest()
@@ -1243,6 +1489,10 @@ def main():
     with tabs[6]: tab_optimizer()
     with tabs[7]: tab_holdings()
     with tabs[8]: tab_risk()
+    with tabs[9]: tab_volatility()
+    with tabs[10]: tab_ranking()
+    with tabs[11]: tab_scenarios()
+    with tabs[12]: tab_regime_strategy()
     st.markdown("""
     <div style="text-align:center;padding:2rem 0 1rem;margin-top:2rem;border-top:1px solid var(--border-primary);">
         <div style="font-size:0.7rem;color:var(--text-muted);letter-spacing:0.05em;">
