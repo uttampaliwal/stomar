@@ -10,11 +10,11 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class StockLSTM(nn.Module):
     def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 3):
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, dropout=0.2)
-        self.dropout = nn.Dropout(0.2)
-        self.fc1 = nn.Linear(hidden_dim, 16)
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, dropout=0.3)
+        self.dropout = nn.Dropout(0.3)
+        self.fc1 = nn.Linear(hidden_dim, 32)
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(16, 1)
+        self.fc2 = nn.Linear(32, 1)
 
     def forward(self, x):
         out, _ = self.lstm(x)
@@ -26,7 +26,7 @@ class StockLSTM(nn.Module):
 
 
 class StockGRU(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 2):
+    def __init__(self, input_dim: int, hidden_dim: int = 64, num_layers: int = 2):
         super().__init__()
         self.gru = nn.GRU(input_dim, hidden_dim, num_layers, batch_first=True, dropout=0.2)
         self.dropout = nn.Dropout(0.2)
@@ -44,25 +44,28 @@ class StockGRU(nn.Module):
 
 
 class StockTransformer(nn.Module):
-    def __init__(self, input_dim: int, d_model: int = 64, nhead: int = 4, num_layers: int = 3):
+    def __init__(self, input_dim: int, d_model: int = 64, nhead: int = 4, num_layers: int = 3,
+                 max_seq_len: int = 120):
         super().__init__()
         self.input_proj = nn.Linear(input_dim, d_model)
-        self.pos_encoding = nn.Parameter(torch.randn(1, 60, d_model) * 0.1)
+        self.pos_encoding = nn.Parameter(torch.randn(1, max_seq_len, d_model) * 0.1)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=nhead, dim_feedforward=256,
-            dropout=0.2, batch_first=True,
+            dropout=0.2, batch_first=True, norm_first=True,
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.norm = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(0.2)
-        self.fc1 = nn.Linear(d_model, 16)
+        self.fc1 = nn.Linear(d_model, 32)
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(16, 1)
+        self.fc2 = nn.Linear(32, 1)
 
     def forward(self, x):
         x = self.input_proj(x)
         x = x + self.pos_encoding[:, :x.size(1), :]
         x = self.transformer(x)
         x = x[:, -1, :]
+        x = self.norm(x)
         x = self.dropout(x)
         x = self.relu(self.fc1(x))
         x = self.fc2(x)
@@ -84,18 +87,21 @@ def build_transformer(input_dim: int) -> StockTransformer:
 def build_xgb_model():
     import xgboost as xgb
     return xgb.XGBClassifier(
-        n_estimators=200, max_depth=6, learning_rate=0.05,
-        subsample=0.8, colsample_bytree=0.8, scale_pos_weight=1.05,
-        random_state=42, eval_metric="logloss",
+        n_estimators=300, max_depth=4, learning_rate=0.03,
+        subsample=0.8, colsample_bytree=0.7,
+        min_child_weight=5, gamma=0.1,
+        reg_alpha=0.1, reg_lambda=1.0,
+        scale_pos_weight=1.0, random_state=42, eval_metric="logloss",
     )
 
 
 def build_lgb_model():
     import lightgbm as lgb
     return lgb.LGBMClassifier(
-        n_estimators=300, max_depth=6, learning_rate=0.05,
-        subsample=0.8, colsample_bytree=0.8,
-        reg_alpha=0.1, reg_lambda=0.1,
+        n_estimators=300, max_depth=4, learning_rate=0.03,
+        subsample=0.8, colsample_bytree=0.7,
+        min_child_samples=30,
+        reg_alpha=0.5, reg_lambda=1.0,
         random_state=42, verbose=-1,
     )
 

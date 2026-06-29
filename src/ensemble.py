@@ -179,6 +179,14 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
 
     current_scaled = latest_scaled[-1, 0]
 
+    # Convert regression outputs to probabilities (sigmoid of price diff)
+    diff_lstm = pred_lstm - current_scaled
+    diff_gru = pred_gru - current_scaled
+    diff_tf = pred_transformer - current_scaled
+    prob_lstm = 1.0 / (1.0 + np.exp(-diff_lstm * 10))
+    prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
+    prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
+
     dir_lstm = 1 if pred_lstm > current_scaled else 0
     dir_gru = 1 if pred_gru > current_scaled else 0
     dir_transformer = 1 if pred_transformer > current_scaled else 0
@@ -193,13 +201,13 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
         lgb_prob = lgb_model.predict_proba(xgb_input)[0]
         dir_lgb = int(lgb_model.predict(xgb_input)[0])
 
-    # Build model probability vector
+    # Build model probability vector (continuous probabilities for all models)
     meta_X = np.array([[
         float(xgb_prob[1]),   # xgb P(up)
         float(lgb_prob[1]),   # lgb P(up)
-        float(dir_lstm),      # lstm direction
-        float(dir_gru),       # gru direction
-        float(dir_transformer),  # transformer direction
+        float(prob_lstm),     # lstm P(up) -- continuous
+        float(prob_gru),      # gru P(up) -- continuous
+        float(prob_tf),       # transformer P(up) -- continuous
     ]])
 
     # Use meta-learner if available
@@ -217,26 +225,23 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
             w = 1.0 / n_models
             weights = {"lstm": w, "gru": w, "transformer": w, "xgb": w, "lgb": w}
 
-        dl_prob = (dir_lstm * weights.get("lstm", 0.2) +
-                   dir_gru * weights.get("gru", 0.2) +
-                   dir_transformer * weights.get("transformer", 0.2))
-
-        xgb_weighted = xgb_prob[1] * weights.get("xgb", 0.2)
-        lgb_weighted = lgb_prob[1] * weights.get("lgb", 0.2)
-
-        ensemble_prob = dl_prob + xgb_weighted + lgb_weighted
-        total_weight = sum(weights.values())
-        if total_weight > 0:
-            ensemble_prob = ensemble_prob / total_weight
+        # Use continuous probabilities for all models
+        ensemble_prob = (
+            prob_lstm * weights.get("lstm", 0.2) +
+            prob_gru * weights.get("gru", 0.2) +
+            prob_tf * weights.get("transformer", 0.2) +
+            xgb_prob[1] * weights.get("xgb", 0.2) +
+            lgb_prob[1] * weights.get("lgb", 0.2)
+        )
         weights_used = weights
 
     ensemble_dir = 1 if ensemble_prob > 0.5 else 0
     confidence = abs(ensemble_prob - 0.5) * 2 * 100
 
     details = {
-        "lstm_dir": dir_lstm, "lstm_pred": pred_lstm,
-        "gru_dir": dir_gru, "gru_pred": pred_gru,
-        "transformer_dir": dir_transformer, "transformer_pred": pred_transformer,
+        "lstm_dir": dir_lstm, "lstm_pred": pred_lstm, "lstm_prob": float(prob_lstm),
+        "gru_dir": dir_gru, "gru_pred": pred_gru, "gru_prob": float(prob_gru),
+        "transformer_dir": dir_transformer, "transformer_pred": pred_transformer, "transformer_prob": float(prob_tf),
         "xgb_dir": dir_xgb, "xgb_prob_up": float(xgb_prob[1]),
         "lgb_dir": dir_lgb, "lgb_prob_up": float(lgb_prob[1]),
         "ensemble_prob": float(ensemble_prob),
@@ -279,12 +284,20 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
         if lgb_model is not None:
             lgb_p = lgb_model.predict_proba(xgb_inp)[0][1]
 
+        # Convert DL regression to probabilities
+        diff_lstm = p_lstm - prev_close
+        diff_gru = p_gru - prev_close
+        diff_tf = p_tf - prev_close
+        prob_lstm = 1.0 / (1.0 + np.exp(-diff_lstm * 10))
+        prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
+        prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
+
         d_lstm = 1 if p_lstm > prev_close else 0
         d_gru = 1 if p_gru > prev_close else 0
         d_tf = 1 if p_tf > prev_close else 0
 
-        # Build meta features
-        meta_X = np.array([[xgb_p, lgb_p, d_lstm, d_gru, d_tf]])
+        # Build meta features (continuous probabilities)
+        meta_X = np.array([[xgb_p, lgb_p, prob_lstm, prob_gru, prob_tf]])
 
         if meta_model is not None:
             final_prob = float(predict_with_metalearner(meta_model, meta_X)[0])
@@ -294,15 +307,13 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
             else:
                 weights = {"lstm": 0.2, "gru": 0.2, "transformer": 0.2, "xgb": 0.2, "lgb": 0.2}
 
-            dl_prob = (d_lstm * weights.get("lstm", 0.2) +
-                       d_gru * weights.get("gru", 0.2) +
-                       d_tf * weights.get("transformer", 0.2))
-            xgb_weighted = xgb_p * weights.get("xgb", 0.2)
-            lgb_weighted = lgb_p * weights.get("lgb", 0.2)
-            final_prob = dl_prob + xgb_weighted + lgb_weighted
-            total_weight = sum(weights.values())
-            if total_weight > 0:
-                final_prob = final_prob / total_weight
+            final_prob = (
+                prob_lstm * weights.get("lstm", 0.2) +
+                prob_gru * weights.get("gru", 0.2) +
+                prob_tf * weights.get("transformer", 0.2) +
+                xgb_p * weights.get("xgb", 0.2) +
+                lgb_p * weights.get("lgb", 0.2)
+            )
 
         final = 1 if final_prob > 0.5 else 0
         dl_ens = (d_lstm + d_gru + d_tf) / 3

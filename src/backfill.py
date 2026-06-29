@@ -82,7 +82,7 @@ class HistoricalBackfill:
         regime_result = None
         try:
             from src.regime import detect_regime
-            regime_result = detect_regime(returns)
+            regime_result = detect_regime(close, ohlc=df)
         except Exception:
             pass
 

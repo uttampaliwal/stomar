@@ -117,7 +117,7 @@ class DailyOrchestrator:
         signals.update(self._run_mtf(ticker, df))
 
         # 7. Regime detection
-        signals.update(self._run_regime(returns))
+        signals.update(self._run_regime(close, df))
 
         # 8. Risk metrics
         signals.update(self._run_risk(returns))
@@ -219,13 +219,13 @@ class DailyOrchestrator:
             logger.debug(f"MTF failed for {ticker}: {e}")
             return {}
 
-    def _run_regime(self, returns: pd.Series) -> dict:
+    def _run_regime(self, close: pd.Series, df: pd.DataFrame = None) -> dict:
         """Run regime detection."""
         try:
             from src.regime import detect_regime
-            if len(returns) < 20:
+            if len(close) < 20:
                 return {}
-            result = detect_regime(returns)
+            result = detect_regime(close, ohlc=df)
             return {
                 "regime": result.get("regime", "Sideways"),
                 "regime_confidence": result.get("confidence", 0.5),

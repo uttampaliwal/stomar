@@ -68,7 +68,8 @@ class NSEArchiveSource(DataSource):
         import requests
 
         symbol = ticker.replace(".NS", "")
-        url = f"https://archives.nseindia.com/content/historical/EQUITIES/{datetime.now().year}/cm{symbol}Apr2024bhav.csv.zip"
+        now = datetime.now()
+        url = f"https://archives.nseindia.com/content/historical/EQUITIES/{now.year}/cm{symbol}{now.strftime('%b%Y')}bhav.csv.zip"
 
         session = requests.Session()
         session.headers.update({

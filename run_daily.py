@@ -7,6 +7,8 @@ Usage:
     python run_daily.py --backfill               # Backfill 1 year history + train meta
     python run_daily.py --backfill --days 126    # Backfill 6 months + train
     python run_daily.py --train-meta             # Train meta-controller only
+    python run_daily.py --paper-trade            # Auto-execute paper trades
+    python run_daily.py --paper-trade --capital 500000
 """
 
 import argparse
@@ -20,6 +22,92 @@ from src.data_fetcher import NSE_STOCKS
 from src.ledger import Ledger
 from src.orchestrator import DailyOrchestrator
 from src.meta_controller import MetaController
+
+
+def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
+                     state_path: str = "paper_state.json"):
+    """Auto-execute paper trades based on orchestrator decisions."""
+    from src.paper_trader import PaperTrader
+    from src.engine import OrderSide, OrderType
+
+    trader = PaperTrader(initial_capital=capital)
+    trader.load_state(state_path)
+
+    print(f"\n=== Paper Trading ===")
+    print(f"Capital:    Rs. {trader.initial_capital:,.0f}")
+    print(f"Cash:       Rs. {trader.cash:,.0f}")
+    print(f"Equity:     Rs. {trader.get_equity():,.0f}")
+
+    executed = 0
+    for d in decisions:
+        ticker = d["ticker"]
+        action = d["action"]
+        conf = d.get("confidence", 0)
+        size_pct = d.get("position_size", 0)
+
+        if action == "HOLD" or size_pct <= 0:
+            continue
+
+        price = d.get("current_price", 0)
+        if price <= 0:
+            continue
+
+        equity = trader.get_equity()
+        invest_amount = equity * size_pct
+        qty = max(1, int(invest_amount / price))
+
+        if action == "BUY":
+            from src.data_fetcher import get_live_price
+            current_price = get_live_price(ticker)
+            if current_price <= 0:
+                current_price = price
+
+            order = trader.place_order(
+                ticker, OrderSide.BUY, OrderType.MARKET, qty, price=current_price,
+            )
+            if order.status.value == "filled":
+                trader.on_bar(ticker, current_price, current_price, current_price, current_price)
+                executed += 1
+                print(f"  BUY  {qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
+
+        elif action == "SELL":
+            if ticker in trader.positions and trader.positions[ticker].quantity > 0:
+                sell_qty = min(qty, trader.positions[ticker].quantity)
+                from src.data_fetcher import get_live_price
+                current_price = get_live_price(ticker)
+                if current_price <= 0:
+                    current_price = price
+
+                order = trader.place_order(
+                    ticker, OrderSide.SELL, OrderType.MARKET, sell_qty, price=current_price,
+                )
+                if order.status.value == "filled":
+                    trader.on_bar(ticker, current_price, current_price, current_price, current_price)
+                    executed += 1
+                    print(f"  SELL {sell_qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
+
+    # Update current prices for open positions
+    for ticker in list(trader.positions.keys()):
+        try:
+            from src.data_fetcher import get_live_price
+            current_price = get_live_price(ticker)
+            if current_price > 0:
+                trader.update_prices({ticker: current_price})
+        except Exception:
+            pass
+
+    summary = trader.get_summary()
+    print(f"\nExecuted: {executed} trades")
+    print(f"Equity:   Rs. {summary['current_equity']:,.0f}")
+    print(f"Return:   {summary['total_return_pct']:.2%}")
+    print(f"Trades:   {summary['total_trades']}")
+    if summary['open_positions']:
+        print("Open positions:")
+        for t, p in summary['open_positions'].items():
+            print(f"  {t}: {p['quantity']} @ Rs.{p['avg_cost']:.2f} (P&L: Rs.{p['unrealized_pnl']:,.0f})")
+
+    trader.save_state(state_path)
+    return summary
 
 
 def main():
@@ -42,6 +130,10 @@ def main():
                         help="Trading days to backfill (default: 252 = ~1 year)")
     parser.add_argument("--train-meta", action="store_true",
                         help="Train meta-controller on ledger history")
+    parser.add_argument("--paper-trade", action="store_true",
+                        help="Auto-execute paper trades based on signals")
+    parser.add_argument("--capital", type=float, default=200_000,
+                        help="Paper trading capital (default: 200000)")
     args = parser.parse_args()
 
     tickers = args.ticker if args.ticker else NSE_STOCKS
@@ -100,6 +192,7 @@ def main():
     print(f"Tickers:  {len(tickers)}")
     print(f"Ledger:   {args.db}")
     print(f"Dry run:  {args.dry_run}")
+    print(f"Paper:    {args.paper_trade}")
     print()
 
     meta_controller = MetaController()
@@ -143,6 +236,10 @@ def main():
 
     for e in summary["errors"]:
         print(f"  [ERR]  {e['ticker']:15s} {e['error']}")
+
+    # Auto-execute paper trades if requested
+    if args.paper_trade and summary["decisions"]:
+        run_paper_trades(summary["decisions"], ledger, capital=args.capital)
 
     ledger.close()
     sys.exit(0 if not summary["errors"] else 1)

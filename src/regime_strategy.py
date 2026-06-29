@@ -100,7 +100,7 @@ def generate_regime_signals(df, regime_result=None):
     returns = close.pct_change().dropna()
 
     if regime_result is None:
-        regime_result = detect_regime(returns)
+        regime_result = detect_regime(close, ohlc=df)
 
     regime = regime_result["regime"]
     confidence = regime_result["confidence"]
@@ -149,7 +149,7 @@ def backtest_regime_strategy(df, regime_result=None):
     returns = close.pct_change().dropna()
 
     if regime_result is None:
-        regime_result = detect_regime(returns)
+        regime_result = detect_regime(close, ohlc=df)
 
     regime = regime_result["regime"]
     allocation = get_regime_allocation(regime, regime_result["confidence"])

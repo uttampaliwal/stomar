@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 
-def detect_regime(prices: pd.Series, lookback: int = 200) -> dict:
+def detect_regime(prices: pd.Series, lookback: int = 200, ohlc: pd.DataFrame = None) -> dict:
     if len(prices) < lookback:
         return {"regime": "Unknown", "confidence": 0, "indicators": {}}
 
@@ -16,7 +16,7 @@ def detect_regime(prices: pd.Series, lookback: int = 200) -> dict:
     current = close[-1]
     rsi = _compute_rsi(prices, 14)
 
-    adx = _compute_adx(prices, 14)
+    adx = _compute_adx(prices, 14, ohlc)
 
     vol_20 = prices.pct_change().rolling(20).std().iloc[-1] * np.sqrt(252)
     vol_50 = prices.pct_change().rolling(50).std().iloc[-1] * np.sqrt(252)
@@ -117,10 +117,19 @@ def _compute_rsi(prices: pd.Series, period: int = 14) -> float:
     return 100 - (100 / (1 + rs))
 
 
-def _compute_adx(prices: pd.Series, period: int = 14) -> float:
-    high = prices * 1.01
-    low = prices * 0.99
-    tr = pd.concat([high - low, abs(high - prices.shift(1)), abs(low - prices.shift(1))], axis=1).max(axis=1)
+def _compute_adx(prices: pd.Series, period: int = 14, ohlc: pd.DataFrame = None) -> float:
+    if ohlc is not None and "high" in ohlc.columns and "low" in ohlc.columns:
+        high = ohlc["high"].values
+        low = ohlc["low"].values
+        prev_close = ohlc["close"].shift(1).values
+        tr = pd.concat([
+            pd.Series(high - low),
+            pd.Series(np.abs(high - prev_close)),
+            pd.Series(np.abs(low - prev_close)),
+        ], axis=1).max(axis=1)
+    else:
+        tr = prices.diff().abs() * 1.5
+
     atr = tr.rolling(period).mean()
 
     up = prices.diff()

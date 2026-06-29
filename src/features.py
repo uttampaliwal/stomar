@@ -168,6 +168,28 @@ def add_technical_indicators(df: pd.DataFrame, ticker: str = None) -> pd.DataFra
     df["volume_sma"] = ta.trend.sma_indicator(volume, window=20)
     df["volume_ratio"] = volume / df["volume_sma"].replace(0, np.nan)
 
+    # Stochastic Oscillator
+    stoch = ta.momentum.StochasticOscillator(high, low, close, window=14, smooth_window=3)
+    df["stoch_k"] = stoch.stoch()
+    df["stoch_d"] = stoch.stoch_signal()
+
+    # Williams %R
+    df["williams_r"] = ta.momentum.williams_r(high, low, close, lbp=14)
+
+    # CCI
+    df["cci"] = ta.trend.cci(high, low, close, window=20)
+
+    # MFI (Money Flow Index)
+    df["mfi"] = ta.volume.money_flow_index(high, low, close, volume, window=14)
+
+    # ADX
+    adx = ta.trend.ADXIndicator(high, low, close, window=14)
+    df["adx"] = adx.adx()
+
+    # VWAP (intraday approximation using daily data)
+    typical_price = (high + low + close) / 3
+    df["vwap"] = (typical_price * volume).cumsum() / volume.cumsum()
+
     # Price position in range
     df["high_low_pct"] = (high - low) / close * 100
     df["close_open_pct"] = (close - df["open"]) / df["open"] * 100
@@ -184,6 +206,19 @@ def add_technical_indicators(df: pd.DataFrame, ticker: str = None) -> pd.DataFra
     # Lagged returns
     for lag in [1, 2, 3, 5]:
         df[f"return_lag_{lag}"] = df["returns_1d"].shift(lag)
+
+    # Interaction features
+    df["rsi_x_volume"] = df["rsi"] * df["volume_ratio"]
+    df["macd_x_bb_width"] = df["macd"] * df["bb_width"]
+    df["adx_x_volatility"] = df["adx"] * df["volatility_20d"]
+    df["momentum_x_vol"] = df["returns_5d"] * df["volatility_10d"]
+
+    # Rolling correlation of returns and volume
+    df["return_vol_corr"] = df["returns_1d"].rolling(20).corr(df["volume_ratio"])
+
+    # Rolling skewness and kurtosis of returns
+    df["return_skew"] = df["returns_1d"].rolling(20).skew()
+    df["return_kurt"] = df["returns_1d"].rolling(20).kurt()
 
     # Calendar features
     if df.index.dtype == "datetime64[ns]" or isinstance(df.index, pd.DatetimeIndex):
