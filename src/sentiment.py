@@ -39,16 +39,30 @@ SOURCE_WEIGHTS = {
 
 
 def get_finbert():
-    """Lazy-load FinBERT pipeline."""
+    """Lazy-load FinBERT pipeline with timeout fallback."""
     global _finbert_pipeline
-    if _finbert_pipeline is None:
-        from transformers import pipeline
-        _finbert_pipeline = pipeline(
-            "sentiment-analysis",
-            model="ProsusAI/finbert",
-            max_length=512,
-            truncation=True,
-        )
+    if _finbert_pipeline is not None:
+        return _finbert_pipeline
+
+    try:
+        import concurrent.futures
+
+        def _load():
+            from transformers import pipeline
+            return pipeline(
+                "sentiment-analysis",
+                model="ProsusAI/finbert",
+                max_length=512,
+                truncation=True,
+            )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_load)
+            _finbert_pipeline = future.result(timeout=30)
+    except Exception as e:
+        logger.warning("FinBERT load failed (%s), using keyword fallback", e)
+        _finbert_pipeline = "fallback"
+
     return _finbert_pipeline
 
 
@@ -244,6 +258,61 @@ def fetch_news_headlines(ticker: str, max_articles: int = 30) -> list:
     return _deduplicate(all_articles)[:max_articles]
 
 
+# ---------------------------------------------------------------------------
+# Keyword-based sentiment fallback (when FinBERT unavailable)
+# ---------------------------------------------------------------------------
+
+_POSITIVE_WORDS = {
+    "surge", "rally", "gain", "profit", "bull", "rise", "jump", "high",
+    "record", "growth", "strong", "upgrade", "outperform", "buy", "boost",
+    "dividend", "expansion", "recovery", "optimism", "beat", "exceed",
+}
+_NEGATIVE_WORDS = {
+    "crash", "loss", "bear", "fall", "drop", "decline", "plunge", "low",
+    "weak", "downgrade", "underperform", "sell", "fear", "risk", "debt",
+    "recession", "slowdown", "warning", "miss", "lawsuit", "fraud",
+}
+
+
+def _keyword_sentiment(articles: list) -> dict:
+    """Simple keyword-based sentiment analysis."""
+    pos = 0
+    neg = 0
+    neu = 0
+    scores = []
+
+    for article in articles:
+        title = (article.get("title", "") + " " + article.get("summary", "")).lower()
+        words = set(title.split())
+        p = len(words & _POSITIVE_WORDS)
+        n = len(words & _NEGATIVE_WORDS)
+        if p > n:
+            val = min(1.0, p * 0.2)
+            pos += 1
+        elif n > p:
+            val = -min(1.0, n * 0.2)
+            neg += 1
+        else:
+            val = 0
+            neu += 1
+        scores.append(val)
+
+    avg = float(np.mean(scores)) if scores else 0.0
+    label = "Positive" if avg > 0.1 else ("Negative" if avg < -0.1 else "Neutral")
+
+    return {
+        "score": round(avg, 4),
+        "weighted_score": round(avg, 4),
+        "label": label,
+        "positive": pos,
+        "negative": neg,
+        "neutral": neu,
+        "total": len(articles),
+        "source_breakdown": {},
+        "sources_used": ["keyword"],
+    }
+
+
 def analyze_sentiment(articles: list) -> dict:
     """Run FinBERT sentiment analysis on articles.
 
@@ -268,6 +337,10 @@ def analyze_sentiment(articles: list) -> dict:
                 "source_breakdown": {},
                 "weighted_score": 0.0,
             }
+
+        # Keyword fallback if FinBERT unavailable
+        if pipe == "fallback":
+            return _keyword_sentiment(articles)
 
         results = pipe(texts)
 

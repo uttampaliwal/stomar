@@ -65,26 +65,27 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
             order = trader.place_order(
                 ticker, OrderSide.BUY, OrderType.MARKET, qty, price=current_price,
             )
-            if order.status.value == "filled":
-                trader.on_bar(ticker, current_price, current_price, current_price, current_price)
+            filled = trader.on_bar(ticker, current_price, current_price, current_price, current_price)
+            if filled and any(r.side == "BUY" for r in filled):
                 executed += 1
                 print(f"  BUY  {qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
 
         elif action == "SELL":
+            sell_qty = qty
             if ticker in trader.positions and trader.positions[ticker].quantity > 0:
                 sell_qty = min(qty, trader.positions[ticker].quantity)
-                from src.data_fetcher import get_live_price
-                current_price = get_live_price(ticker)
-                if current_price <= 0:
-                    current_price = price
+            from src.data_fetcher import get_live_price
+            current_price = get_live_price(ticker)
+            if current_price <= 0:
+                current_price = price
 
-                order = trader.place_order(
-                    ticker, OrderSide.SELL, OrderType.MARKET, sell_qty, price=current_price,
-                )
-                if order.status.value == "filled":
-                    trader.on_bar(ticker, current_price, current_price, current_price, current_price)
-                    executed += 1
-                    print(f"  SELL {sell_qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
+            order = trader.place_order(
+                ticker, OrderSide.SELL, OrderType.MARKET, sell_qty, price=current_price,
+            )
+            filled = trader.on_bar(ticker, current_price, current_price, current_price, current_price)
+            if filled and any(r.side == "SELL" for r in filled):
+                executed += 1
+                print(f"  SELL {sell_qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
 
     # Update current prices for open positions
     for ticker in list(trader.positions.keys()):

@@ -94,6 +94,7 @@ class DailyOrchestrator:
             "position_size": decision["position_size"],
             "confidence": decision["confidence"],
             "reasoning": decision["reasoning"],
+            "current_price": signals.get("current_price", 0),
         }
 
         if not dry_run:
@@ -123,6 +124,7 @@ class DailyOrchestrator:
 
         close = df["close"]
         returns = close.pct_change().dropna()
+        signals["current_price"] = float(close.iloc[-1])
 
         # 2. Collect auxiliary signals FIRST (needed as ensemble features)
         signals.update(self._run_sentiment(ticker))

@@ -37,11 +37,15 @@ class Position:
 
     @property
     def pnl(self) -> float:
-        return (self.current_price - self.avg_cost) * self.quantity if self.quantity > 0 else 0.0
+        if self.quantity > 0:
+            return (self.current_price - self.avg_cost) * self.quantity
+        elif self.quantity < 0:
+            return (self.avg_cost - self.current_price) * abs(self.quantity)
+        return 0.0
 
     @property
     def pnl_pct(self) -> float:
-        cost_basis = self.avg_cost * self.quantity
+        cost_basis = abs(self.avg_cost * self.quantity)
         return (self.pnl / cost_basis) if cost_basis > 0 else 0.0
 
 
@@ -133,7 +137,14 @@ class PaperTrader:
         pnl = 0.0
         if order.side == OrderSide.SELL and order.ticker in self.positions:
             pos = self.positions[order.ticker]
-            pnl = (order.filled_price - pos.avg_cost) * order.filled_quantity
+            if pos.quantity > 0:
+                pnl = (order.filled_price - pos.avg_cost) * order.filled_quantity
+            else:
+                pnl = (pos.avg_cost - order.filled_price) * order.filled_quantity
+        elif order.side == OrderSide.BUY and order.ticker in self.positions:
+            pos = self.positions[order.ticker]
+            if pos.quantity < 0:
+                pnl = (pos.avg_cost - order.filled_price) * min(order.filled_quantity, abs(pos.quantity))
 
         self.cumulative_pnl += pnl
 
@@ -158,13 +169,37 @@ class PaperTrader:
         ticker = order.ticker
 
         if order.side == OrderSide.BUY:
-            if ticker not in self.positions:
-                self.positions[ticker] = Position(ticker=ticker)
-            pos = self.positions[ticker]
-            total_cost = pos.avg_cost * pos.quantity + order.filled_price * order.filled_quantity
-            pos.quantity += order.filled_quantity
-            pos.avg_cost = total_cost / pos.quantity if pos.quantity > 0 else 0
-            self.cash -= order.fill_cost
+            if ticker in self.positions and self.positions[ticker].quantity < 0:
+                # Covering a short position
+                pos = self.positions[ticker]
+                cover_qty = min(order.filled_quantity, abs(pos.quantity))
+                realized = (pos.avg_cost - order.filled_price) * cover_qty
+                self.closed_positions.append({
+                    "ticker": ticker,
+                    "avg_cost": pos.avg_cost,
+                    "sell_price": order.filled_price,
+                    "quantity": cover_qty,
+                    "pnl": realized,
+                })
+                self.cash -= order.fill_cost
+                remaining = order.filled_quantity - cover_qty
+                if remaining > 0:
+                    # Flip to long
+                    pos.quantity = remaining
+                    pos.avg_cost = order.filled_price
+                elif abs(pos.quantity) == cover_qty:
+                    del self.positions[ticker]
+                else:
+                    pos.quantity += cover_qty
+            else:
+                # Opening/adding to long position
+                if ticker not in self.positions:
+                    self.positions[ticker] = Position(ticker=ticker)
+                pos = self.positions[ticker]
+                total_cost = pos.avg_cost * pos.quantity + order.filled_price * order.filled_quantity
+                pos.quantity += order.filled_quantity
+                pos.avg_cost = total_cost / pos.quantity if pos.quantity > 0 else 0
+                self.cash -= order.fill_cost
 
         elif order.side == OrderSide.SELL:
             if ticker in self.positions:
@@ -188,6 +223,15 @@ class PaperTrader:
                         del self.positions[ticker]
                 else:
                     pos.quantity -= order.filled_quantity
+            else:
+                # Open a short position
+                self.positions[ticker] = Position(
+                    ticker=ticker,
+                    quantity=-order.filled_quantity,
+                    avg_cost=order.filled_price,
+                    current_price=order.filled_price,
+                )
+                self.cash += order.fill_cost
 
     def update_prices(self, prices: dict[str, float]):
         """Update current prices for all positions."""

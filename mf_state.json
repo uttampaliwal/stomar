@@ -1,0 +1,11 @@
+{
+  "holdings": {
+    "0P0000SKGZ.BO": {
+      "units": 100.0,
+      "avg_nav": 100.0,
+      "fund_name": "Edelweiss Greater China Equity Offshore Fund",
+      "category": "Equity"
+    }
+  },
+  "nav_cache": {}
+}

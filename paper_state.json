@@ -1,11 +1,139 @@
 {
   "initial_capital": 200000.0,
-  "cash": 200000.0,
+  "cash": 383410.35828863527,
   "cumulative_pnl": 0.0,
-  "positions": {},
-  "closed_positions": [],
-  "trade_log": [],
+  "positions": {
+    "RELIANCE.NS": {
+      "quantity": 20,
+      "avg_cost": 1301.349,
+      "current_price": 1302.0
+    },
+    "TCS.NS": {
+      "quantity": 16,
+      "avg_cost": 2091.553797607422,
+      "current_price": 2092.60009765625
+    },
+    "HDFCBANK.NS": {
+      "quantity": 45,
+      "avg_cost": 796.9513005981445,
+      "current_price": 797.3499755859375
+    },
+    "INFY.NS": {
+      "quantity": 42,
+      "avg_cost": 1033.483,
+      "current_price": 1034.0
+    },
+    "ICICIBANK.NS": {
+      "quantity": 32,
+      "avg_cost": 1387.306,
+      "current_price": 1388.0
+    }
+  },
+  "closed_positions": [
+    {
+      "ticker": "RELIANCE.NS",
+      "avg_cost": 1301.349,
+      "sell_price": 1301.349,
+      "quantity": -10,
+      "pnl": 0.0
+    },
+    {
+      "ticker": "TCS.NS",
+      "avg_cost": 2091.553797607422,
+      "sell_price": 2091.553797607422,
+      "quantity": -7,
+      "pnl": 0.0
+    },
+    {
+      "ticker": "HDFCBANK.NS",
+      "avg_cost": 796.9513005981445,
+      "sell_price": 796.9513005981445,
+      "quantity": -17,
+      "pnl": 0.0
+    },
+    {
+      "ticker": "INFY.NS",
+      "avg_cost": 1033.483,
+      "sell_price": 1033.483,
+      "quantity": -14,
+      "pnl": 0.0
+    },
+    {
+      "ticker": "ICICIBANK.NS",
+      "avg_cost": 1387.306,
+      "sell_price": 1387.306,
+      "quantity": -9,
+      "pnl": 0.0
+    }
+  ],
+  "trade_log": [
+    {
+      "timestamp": "2026-06-29T19:45:15.211001",
+      "ticker": "RELIANCE.NS",
+      "side": "SELL",
+      "order_type": "MARKET",
+      "quantity": 10,
+      "fill_price": 1301.349,
+      "fill_cost": 13031.6531,
+      "slippage": 0.0,
+      "pnl": 0.0,
+      "cumulative_pnl": 0.0,
+      "cash_after": 268252.1821934204
+    },
+    {
+      "timestamp": "2026-06-29T19:45:15.330602",
+      "ticker": "TCS.NS",
+      "side": "SELL",
+      "order_type": "MARKET",
+      "quantity": 9,
+      "fill_price": 2091.553797607422,
+      "fill_cost": 18850.256978466798,
+      "slippage": 0.0,
+      "pnl": 0.0,
+      "cumulative_pnl": 0.0,
+      "cash_after": 281283.8352934204
+    },
+    {
+      "timestamp": "2026-06-29T19:45:15.455295",
+      "ticker": "HDFCBANK.NS",
+      "side": "SELL",
+      "order_type": "MARKET",
+      "quantity": 28,
+      "fill_price": 796.9513005981445,
+      "fill_cost": 22345.781216748044,
+      "slippage": 0.0,
+      "pnl": 0.0,
+      "cumulative_pnl": 0.0,
+      "cash_after": 300134.09227188723
+    },
+    {
+      "timestamp": "2026-06-29T19:45:15.567901",
+      "ticker": "INFY.NS",
+      "side": "SELL",
+      "order_type": "MARKET",
+      "quantity": 28,
+      "fill_price": 1033.483,
+      "fill_cost": 28977.912399999997,
+      "slippage": 0.0,
+      "pnl": 0.0,
+      "cumulative_pnl": 0.0,
+      "cash_after": 322479.8734886353
+    },
+    {
+      "timestamp": "2026-06-29T19:45:15.684666",
+      "ticker": "ICICIBANK.NS",
+      "side": "SELL",
+      "order_type": "MARKET",
+      "quantity": 23,
+      "fill_price": 1387.306,
+      "fill_cost": 31952.5724,
+      "slippage": 0.0,
+      "pnl": 0.0,
+      "cumulative_pnl": 0.0,
+      "cash_after": 351457.78588863526
+    }
+  ],
   "risk_daily_pnl": 0.0,
   "risk_weekly_pnl": 0.0,
-  "risk_peak_equity": 200000.0
+  "risk_peak_equity": 566656.7087525025
 }
