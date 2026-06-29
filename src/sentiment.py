@@ -19,7 +19,9 @@ import pandas as pd
 import requests
 import yfinance as yf
 
-warnings.filterwarnings("ignore")
+# Only suppress specific known noisy warnings, not all warnings
+warnings.filterwarnings("ignore", message=".*token.*")
+warnings.filterwarnings("ignore", message=".*tokenizer.*")
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +44,7 @@ def get_finbert():
     """Lazy-load FinBERT pipeline with timeout fallback."""
     global _finbert_pipeline
     if _finbert_pipeline is not None:
-        return _finbert_pipeline
+        return _finbert_pipeline if _finbert_pipeline != "fallback" else None
 
     try:
         import concurrent.futures
@@ -63,7 +65,7 @@ def get_finbert():
         logger.warning("FinBERT load failed (%s), using keyword fallback", e)
         _finbert_pipeline = "fallback"
 
-    return _finbert_pipeline
+    return _finbert_pipeline if _finbert_pipeline != "fallback" else None
 
 
 # ---------------------------------------------------------------------------
@@ -266,11 +268,14 @@ _POSITIVE_WORDS = {
     "surge", "rally", "gain", "profit", "bull", "rise", "jump", "high",
     "record", "growth", "strong", "upgrade", "outperform", "buy", "boost",
     "dividend", "expansion", "recovery", "optimism", "beat", "exceed",
+    "ebitda", "capex", "downstream", "revenue", "margin", "upside",
+    "breakout", "momentum", "accumulate", "accumulate", "inflow",
 }
 _NEGATIVE_WORDS = {
     "crash", "loss", "bear", "fall", "drop", "decline", "plunge", "low",
     "weak", "downgrade", "underperform", "sell", "fear", "risk", "debt",
     "recession", "slowdown", "warning", "miss", "lawsuit", "fraud",
+    "downstream", "capex", "impairment", "restructure", "outflow",
 }
 
 
@@ -339,7 +344,7 @@ def analyze_sentiment(articles: list) -> dict:
             }
 
         # Keyword fallback if FinBERT unavailable
-        if pipe == "fallback":
+        if pipe is None:
             return _keyword_sentiment(articles)
 
         results = pipe(texts)

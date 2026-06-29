@@ -245,13 +245,38 @@ def add_technical_indicators(df: pd.DataFrame, ticker: str = None) -> pd.DataFra
 
 
 def prepare_lstm_data(
-    df: pd.DataFrame, feature_cols: list, seq_length: int = 60
+    df: pd.DataFrame, feature_cols: list, seq_length: int = 60,
+    train_ratio: float = 0.8,
 ):
+    """Prepare LSTM data with proper train/test split to prevent scaler leakage.
+
+    The scaler is fit ONLY on the training portion of the data, then applied
+    to both train and test. This prevents information from the test set
+    leaking into the training preprocessing.
+
+    Args:
+        df: DataFrame with features
+        feature_cols: List of feature column names
+        seq_length: Sequence length for LSTM input
+        train_ratio: Fraction of data to use for training (default 0.8)
+
+    Returns:
+        (X, y, scaler) where X is (N, seq_length, n_features), y is (N,),
+        and scaler is fitted on training data only.
+    """
     from sklearn.preprocessing import MinMaxScaler
 
     data = df[feature_cols].dropna().values
+
+    # Split into train/test BEFORE fitting scaler
+    split_idx = int(len(data) * train_ratio)
+    train_data = data[:split_idx]
+
     scaler = MinMaxScaler()
-    scaled = scaler.fit_transform(data)
+    scaler.fit(train_data)
+
+    # Transform all data with the training-fitted scaler
+    scaled = scaler.transform(data)
 
     X, y = [], []
     for i in range(seq_length, len(scaled)):

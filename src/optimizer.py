@@ -104,13 +104,20 @@ def black_litterman(market_weights: np.ndarray, cov_matrix: np.ndarray,
             "posterior_return": pi,
         }
 
-    P = np.zeros((len(views), n))
-    Q = np.zeros(len(views))
+    n_views = len(views)
+    P = np.zeros((n_views, n))
+    Q = np.zeros(n_views)
     for i, (view_idx, view_return) in enumerate(views):
-        P[i, view_idx] = 1
+        if isinstance(view_idx, int) and 0 <= view_idx < n:
+            P[i, view_idx] = 1
         Q[i] = view_return
 
-    omega = np.diag([tau * cov_matrix[i, i] * (1 - c) / max(c, 0.01)
+    # Omega: uncertainty of views. Use diagonal with tau * sigma^2 * (1/c - 1)
+    # confidences should have n_views elements (one per view)
+    if len(confidences) != n_views:
+        confidences = [0.5] * n_views
+
+    omega = np.diag([tau * cov_matrix[min(i, n-1), min(i, n-1)] * (1 - c) / max(c, 0.01)
                      for i, c in enumerate(confidences)])
 
     try:

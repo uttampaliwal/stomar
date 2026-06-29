@@ -157,10 +157,12 @@ def sma_crossover(returns, short_window=10, long_window=50):
     """
     returns = np.asarray(returns)
     price_series = np.cumprod(1 + returns)
-    sma_short = pd.Series(price_series).rolling(short_window).mean().bfill().values
-    sma_long = pd.Series(price_series).rolling(long_window).mean().bfill().values
+    sma_short = pd.Series(price_series).rolling(short_window).mean().values
+    sma_long = pd.Series(price_series).rolling(long_window).mean().values
 
-    signals = np.where(sma_short > sma_long, 1, 0)
+    # Use NaN for warmup periods (no signal = no position = flat)
+    signals = np.where(np.isnan(sma_short) | np.isnan(sma_long), 0,
+                       np.where(sma_short > sma_long, 1, 0))
     strategy_returns = signals * returns
     cum_return = float(np.prod(1 + strategy_returns) - 1)
 

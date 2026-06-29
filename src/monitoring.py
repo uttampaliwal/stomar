@@ -189,21 +189,48 @@ class ModelMonitor:
         return alert
 
     def generate_report(self, ticker: str) -> MonitoringReport:
-        """Generate a monitoring report for a ticker."""
+        """Generate a monitoring report for a ticker.
+
+        Reads baseline metrics and alert history, then writes the
+        latest report to disk.
+        """
         report = MonitoringReport(ticker=ticker)
 
         baseline_path = os.path.join(
             MONITORING_DIR, f"{ticker.replace('.', '_')}_baseline.json"
         )
         if os.path.exists(baseline_path):
-            with open(baseline_path) as f:
-                report.metrics["baseline"] = json.load(f)
+            try:
+                with open(baseline_path) as f:
+                    report.metrics["baseline"] = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning("Failed to read baseline for %s: %s", ticker, e)
+
+        # Load recent alert history
+        history_path = os.path.join(
+            MONITORING_DIR, f"{ticker.replace('.', '_')}_alerts.json"
+        )
+        if os.path.exists(history_path):
+            try:
+                with open(history_path) as f:
+                    alerts = json.load(f)
+                # Include critical/warning alerts from last 24h
+                from datetime import timedelta
+                cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+                recent = [a for a in alerts if a.get("timestamp", "") > cutoff
+                          and a.get("severity") in ("warning", "critical")]
+                report.metrics["recent_alerts"] = recent
+            except (json.JSONDecodeError, OSError):
+                pass
 
         report_path = os.path.join(
             MONITORING_DIR, f"{ticker.replace('.', '_')}_latest.json"
         )
-        with open(report_path, "w") as f:
-            json.dump(report.to_dict(), f, indent=2)
+        try:
+            with open(report_path, "w") as f:
+                json.dump(report.to_dict(), f, indent=2)
+        except OSError as e:
+            logger.warning("Failed to write report for %s: %s", ticker, e)
 
         return report
 

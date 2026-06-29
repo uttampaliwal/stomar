@@ -78,8 +78,8 @@ class RiskController:
         else:
             checks.append({"passed": True, "check": "position_concentration"})
 
-        # 2. Daily loss limit
-        daily_loss_limit = self.initial_capital * self.limits.max_daily_loss_pct
+        # 2. Daily loss limit (based on current equity, not initial)
+        daily_loss_limit = self.current_equity * self.limits.max_daily_loss_pct
         if self.daily_pnl < -daily_loss_limit:
             checks.append({
                 "passed": False, "check": "daily_loss",
@@ -89,8 +89,8 @@ class RiskController:
         else:
             checks.append({"passed": True, "check": "daily_loss"})
 
-        # 3. Weekly loss limit
-        weekly_loss_limit = self.initial_capital * self.limits.max_weekly_loss_pct
+        # 3. Weekly loss limit (based on current equity, not initial)
+        weekly_loss_limit = self.current_equity * self.limits.max_weekly_loss_pct
         if self.weekly_pnl < -weekly_loss_limit:
             checks.append({
                 "passed": False, "check": "weekly_loss",
@@ -186,9 +186,9 @@ class RiskController:
             "daily_pnl": self.daily_pnl,
             "weekly_pnl": self.weekly_pnl,
             "daily_loss_remaining": (
-                self.initial_capital * self.limits.max_daily_loss_pct + self.daily_pnl
+                self.current_equity * self.limits.max_daily_loss_pct + self.daily_pnl
             ),
             "weekly_loss_remaining": (
-                self.initial_capital * self.limits.max_weekly_loss_pct + self.weekly_pnl
+                self.current_equity * self.limits.max_weekly_loss_pct + self.weekly_pnl
             ),
         }

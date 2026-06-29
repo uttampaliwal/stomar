@@ -3,8 +3,12 @@ import pandas as pd
 import json
 import os
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 FLOW_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+os.makedirs(FLOW_CACHE_DIR, exist_ok=True)
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json, text/html",
@@ -50,7 +54,10 @@ def fetch_fii_dii() -> pd.DataFrame:
                     dii_row = row
 
         if not fii_row:
-            return pd.read_parquet(cache_file) if os.path.exists(cache_file) else pd.DataFrame()
+            logger.warning("FII row not found in NSE response, using cached data")
+            if os.path.exists(cache_file):
+                return pd.read_parquet(cache_file)
+            return pd.DataFrame()
 
         date = pd.Timestamp(fii_row.get("date", ""))
         fii_buy = _parse_val(fii_row.get("buyValue", 0))
@@ -87,8 +94,11 @@ def fetch_options_pcr() -> dict:
     if os.path.exists(cache_file):
         mtime = os.path.getmtime(cache_file)
         if time.time() - mtime < 3600:
-            with open(cache_file) as f:
-                return json.load(f)
+            try:
+                with open(cache_file) as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning("Failed to read PCR cache: %s", e)
 
     for symbol in ["NIFTY", "BANKNIFTY"]:
         try:
@@ -100,15 +110,30 @@ def fetch_options_pcr() -> dict:
             data = resp.json()
             pcr = _compute_pcr(data)
             pcr["symbol"] = symbol
-            with open(cache_file, "w") as f:
-                json.dump(pcr, f)
+            # Write to temp file first, then rename for atomicity
+            import tempfile
+            fd, tmp_path = tempfile.mkstemp(dir=FLOW_CACHE_DIR, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump(pcr, f)
+                os.replace(tmp_path, cache_file)
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
             return pcr
-        except Exception:
+        except Exception as e:
+            logger.debug("PCR fetch failed for %s: %s", symbol, e)
             continue
 
     if os.path.exists(cache_file):
-        with open(cache_file) as f:
-            return json.load(f)
+        try:
+            with open(cache_file) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
     return {"pcr_oi": 0, "pcr_volume": 0, "max_pain": 0, "call_oi": 0, "put_oi": 0, "symbol": "NIFTY"}
 
 

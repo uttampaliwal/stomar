@@ -39,7 +39,7 @@ class Portfolio:
             "price": price, "quantity": quantity,
             "cost": total_cost, "costs": costs,
         })
-        self._update_equity(date)
+        self._update_equity(date, prices={ticker: price})
         return True
 
     def sell(self, ticker, price, quantity, date, brokerage=BROKERAGE_RATE):
@@ -64,13 +64,16 @@ class Portfolio:
             "price": price, "quantity": quantity,
             "proceeds": net_proceeds, "costs": costs, "pnl": pnl,
         })
-        self._update_equity(date)
+        self._update_equity(date, prices={ticker: price})
         return True
 
-    def _update_equity(self, date):
+    def _update_equity(self, date, prices=None):
         total = self.cash
         for ticker, (qty, avg_p) in self.holdings.items():
-            total += qty * avg_p
+            if prices and ticker in prices:
+                total += qty * prices[ticker]
+            else:
+                total += qty * avg_p
         self.equity_curve.append({"date": date, "equity": total})
 
     def portfolio_value(self, prices=None):

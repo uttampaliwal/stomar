@@ -3,13 +3,30 @@ import pandas as pd
 import ta
 import os
 import time
-import streamlit as st
+import logging
+
+logger = logging.getLogger(__name__)
+
+try:
+    import streamlit as st
+    _has_streamlit = True
+except ImportError:
+    _has_streamlit = False
 
 MTF_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+os.makedirs(MTF_CACHE_DIR, exist_ok=True)
 
 
-@st.cache_data
-def fetch_mtf_data(ticker: str) -> dict:
+if _has_streamlit:
+    @st.cache_data
+    def fetch_mtf_data(ticker: str) -> dict:
+        return _fetch_mtf_data_impl(ticker)
+else:
+    def fetch_mtf_data(ticker: str) -> dict:
+        return _fetch_mtf_data_impl(ticker)
+
+
+def _fetch_mtf_data_impl(ticker: str) -> dict:
     cache_file = os.path.join(MTF_CACHE_DIR, f"mtf_{ticker.replace('.','_')}.pkl")
     if os.path.exists(cache_file):
         mtime = os.path.getmtime(cache_file)
@@ -64,7 +81,7 @@ def _add_tf_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["adx"] = ta.trend.adx(h, lo, c, window=14)
     df["stoch_k"] = ta.momentum.stoch(h, lo, c)
     df["stoch_d"] = ta.momentum.stoch_signal(h, lo, c)
-    df["vwap"] = (v * (h + lo + c) / 3).cumsum() / v.cumsum()
+    df["vwap"] = (v * (h + lo + c) / 3).rolling(20).sum() / v.rolling(20).sum()
     df["obv"] = ta.volume.on_balance_volume(c, v)
     df["returns"] = c.pct_change()
     df["volatility"] = df["returns"].rolling(20).std()
@@ -168,9 +185,7 @@ def get_combined_signal(mtf_data: dict) -> dict:
             tf_signals[tf] = sig
             weighted_score += sig["direction"] * sig["strength"] * weight
 
-    if abs(weighted_score) > 0.3:
-        final_dir = 1 if weighted_score > 0 else -1
-    elif abs(weighted_score) > 0.15:
+    if abs(weighted_score) > 0.15:
         final_dir = 1 if weighted_score > 0 else -1
     else:
         final_dir = 0
