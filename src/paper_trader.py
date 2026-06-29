@@ -202,22 +202,31 @@ class PaperTrader:
                 self.cash -= order.fill_cost
 
         elif order.side == OrderSide.SELL:
-            if ticker in self.positions:
+            if ticker in self.positions and self.positions[ticker].quantity < 0:
+                # Adding to short position
                 pos = self.positions[ticker]
-                realized = (order.filled_price - pos.avg_cost) * order.filled_quantity
+                old_qty = abs(pos.quantity)
+                total_cost = pos.avg_cost * old_qty + order.filled_price * order.filled_quantity
+                pos.quantity -= order.filled_quantity
+                pos.avg_cost = total_cost / abs(pos.quantity)
                 self.cash += order.fill_cost
-
+            elif ticker in self.positions and self.positions[ticker].quantity > 0:
+                # Closing/reducing long position
+                pos = self.positions[ticker]
+                realized = (order.filled_price - pos.avg_cost) * min(order.filled_quantity, pos.quantity)
+                self.cash += order.fill_cost
+                self.closed_positions.append({
+                    "ticker": ticker,
+                    "avg_cost": pos.avg_cost,
+                    "sell_price": order.filled_price,
+                    "quantity": min(order.filled_quantity, pos.quantity),
+                    "pnl": realized,
+                })
                 if order.filled_quantity >= pos.quantity:
-                    self.closed_positions.append({
-                        "ticker": ticker,
-                        "avg_cost": pos.avg_cost,
-                        "sell_price": order.filled_price,
-                        "quantity": pos.quantity,
-                        "pnl": realized,
-                    })
                     remaining = order.filled_quantity - pos.quantity
                     if remaining > 0:
-                        pos.quantity = remaining
+                        # Flip to short
+                        pos.quantity = -remaining
                         pos.avg_cost = order.filled_price
                     else:
                         del self.positions[ticker]
