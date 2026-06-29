@@ -57,7 +57,7 @@ class StockTransformer(nn.Module):
             d_model=d_model, nhead=nhead, dim_feedforward=256,
             dropout=0.2, batch_first=True, norm_first=True,
         )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers, enable_nested_tensor=False)
         self.norm = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(0.2)
         self.fc1 = nn.Linear(d_model, 32)
