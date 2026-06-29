@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 class DailyOrchestrator:
     """Runs the full signal pipeline once per day."""
 
+    MAX_DAILY_TRADES = 5
+    MAX_PORTFOLIO_EXPOSURE = 0.50
+
     def __init__(self, tickers: list[str], ledger, meta_controller=None):
         self.tickers = tickers
         self.ledger = ledger
@@ -42,10 +45,29 @@ class DailyOrchestrator:
             date = datetime.now().strftime("%Y-%m-%d")
 
         summary = {"date": date, "decisions": [], "trades": [], "errors": []}
+        trade_count = 0
+        total_exposure = 0.0
 
         for ticker in self.tickers:
             try:
                 result = self._process_ticker(ticker, date, dry_run)
+
+                # Enforce daily trade limit
+                if result["action"] != "HOLD":
+                    if trade_count >= self.MAX_DAILY_TRADES:
+                        logger.info(f"{ticker}: trade blocked (daily limit {self.MAX_DAILY_TRADES} reached)")
+                        result["action"] = "HOLD"
+                        result["position_size"] = 0.0
+                        result["reasoning"] = f"Daily trade limit ({self.MAX_DAILY_TRADES}) reached"
+                    elif total_exposure + result["position_size"] > self.MAX_PORTFOLIO_EXPOSURE:
+                        logger.info(f"{ticker}: trade blocked (portfolio exposure would exceed {self.MAX_PORTFOLIO_EXPOSURE:.0%})")
+                        result["action"] = "HOLD"
+                        result["position_size"] = 0.0
+                        result["reasoning"] = f"Portfolio exposure cap ({self.MAX_PORTFOLIO_EXPOSURE:.0%}) reached"
+                    else:
+                        trade_count += 1
+                        total_exposure += result["position_size"]
+
                 summary["decisions"].append(result)
             except Exception as e:
                 logger.error(f"Failed to process {ticker}: {e}")
@@ -53,7 +75,8 @@ class DailyOrchestrator:
 
         logger.info(
             f"Daily run complete: {len(summary['decisions'])} decisions, "
-            f"{len(summary['trades'])} trades, {len(summary['errors'])} errors"
+            f"{trade_count} trades, {len(summary['errors'])} errors, "
+            f"exposure={total_exposure:.1%}"
         )
         return summary
 

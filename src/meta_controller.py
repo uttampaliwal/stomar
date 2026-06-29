@@ -35,6 +35,7 @@ SIGNAL_NAMES = [
 MAX_POSITION_PCT = 0.10
 BUY_THRESHOLD = 0.6
 SELL_THRESHOLD = 0.4
+MIN_CONFIDENCE_TO_TRADE = 0.3
 MIN_SAMPLES_TO_TRAIN = 100
 
 
@@ -90,18 +91,28 @@ class MetaController:
             return self._rule_based_decide(signals)
 
         prob = self.model.predict_proba(vector.reshape(1, -1))[0, 1]
+        confidence = round(abs(prob - 0.5) * 2, 4)
+
+        if confidence < MIN_CONFIDENCE_TO_TRADE:
+            return {
+                "action": "HOLD",
+                "position_size": 0.0,
+                "confidence": confidence,
+                "reasoning": f"Confidence {confidence:.2f} below threshold {MIN_CONFIDENCE_TO_TRADE}",
+            }
 
         if prob > BUY_THRESHOLD:
             action = "BUY"
-            position_size = min(MAX_POSITION_PCT, (prob - 0.5) * 0.5)
         elif prob < SELL_THRESHOLD:
             action = "SELL"
-            position_size = min(MAX_POSITION_PCT, (0.5 - prob) * 0.5)
         else:
             action = "HOLD"
-            position_size = 0.0
 
-        confidence = round(abs(prob - 0.5) * 2, 4)
+        # Scale position size by confidence (higher confidence = larger position)
+        if action != "HOLD":
+            position_size = min(MAX_POSITION_PCT, confidence * MAX_POSITION_PCT)
+        else:
+            position_size = 0.0
 
         return {
             "action": action,
