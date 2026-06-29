@@ -1477,9 +1477,157 @@ def tab_regime_strategy():
                         cols[j].markdown(f'<div class="stat-item" style="padding:0.5rem;"><div class="metric-label">{label}</div><div class="metric-val" style="color:{color}">{val}</div></div>', unsafe_allow_html=True)
 
 
+def tab_monitoring():
+    st.markdown("""<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;padding:1rem 1.5rem;
+                background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
+        <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Monitoring</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Drift Detection & Alerts</span>
+    </div>""", unsafe_allow_html=True)
+
+    from src.monitoring import ModelMonitor, MONITORING_DIR
+    import json
+
+    monitor = ModelMonitor()
+    trained = [t for t in NSE_STOCKS if models_exist(t)]
+
+    if not trained:
+        st.markdown("""<div class="glass" style="text-align:center;padding:3rem;">
+            <div style="font-size:2rem;margin-bottom:0.5rem;">📡</div>
+            <div style="font-weight:600;color:var(--text-primary);">No Trained Models</div>
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-top:0.3rem;">Train models in the <b>Predictions</b> tab first</div>
+        </div>""", unsafe_allow_html=True)
+        return
+
+    ticker = st.selectbox("Stock", trained, key="mon_ticker", label_visibility="collapsed")
+
+    if st.button("🔍 Run Health Check", type="primary", width='stretch', key="mon_health_btn"):
+        with st.spinner("Running health checks..."):
+            from src.data_fetcher import fetch_stock_data
+            from src.data_validation import validate_data
+
+            df = fetch_stock_data(ticker, period="1y")
+            validation = validate_data(df, ticker)
+
+            alerts = []
+            if not validation["passed"]:
+                for err in validation["errors"]:
+                    alerts.append({"metric": "data_quality", "severity": "critical", "message": err})
+            for warn in validation["warnings"]:
+                alerts.append({"metric": "data_quality", "severity": "warning", "message": warn})
+
+            stale = monitor.check_data_freshness(ticker, df.index[-1].to_pydatetime())
+            alerts.append({"metric": stale.metric, "severity": stale.severity, "message": stale.message})
+
+            feature_drift = monitor.check_feature_drift(
+                ticker,
+                df[["close", "volume"]].iloc[:-20].values,
+                df[["close", "volume"]].iloc[-20:].values,
+            )
+            alerts.append({"metric": feature_drift.metric, "severity": feature_drift.severity, "message": feature_drift.message})
+
+            st.session_state.mon_results = {"alerts": alerts, "validation": validation, "ticker": ticker}
+
+    if "mon_results" in st.session_state and st.session_state.mon_results.get("ticker") == ticker:
+        results = st.session_state.mon_results
+        alerts = results["alerts"]
+
+        critical = [a for a in alerts if a["severity"] == "critical"]
+        warnings = [a for a in alerts if a["severity"] == "warning"]
+        info = [a for a in alerts if a["severity"] == "info"]
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Critical", len(critical), delta=None)
+        c2.metric("Warnings", len(warnings), delta=None)
+        c3.metric("Info", len(info), delta=None)
+
+        if critical:
+            st.markdown('<div class="section-header" style="color:#f43f5e;">Critical Alerts</div>', unsafe_allow_html=True)
+            for a in critical:
+                st.markdown(f'<div class="glass" style="border-left:3px solid #f43f5e;padding:0.8rem 1rem;margin-bottom:0.5rem;"><div style="font-weight:600;color:#f43f5e;">{a["metric"]}</div><div style="font-size:0.85rem;color:var(--text-muted);">{a["message"]}</div></div>', unsafe_allow_html=True)
+
+        if warnings:
+            st.markdown('<div class="section-header" style="color:#f59e0b;">Warnings</div>', unsafe_allow_html=True)
+            for a in warnings:
+                st.markdown(f'<div class="glass" style="border-left:3px solid #f59e0b;padding:0.8rem 1rem;margin-bottom:0.5rem;"><div style="font-weight:600;color:#f59e0b;">{a["metric"]}</div><div style="font-size:0.85rem;color:var(--text-muted);">{a["message"]}</div></div>', unsafe_allow_html=True)
+
+        if info:
+            st.markdown('<div class="section-header" style="color:#10b981;">Healthy</div>', unsafe_allow_html=True)
+            for a in info:
+                st.markdown(f'<div class="glass" style="border-left:3px solid #10b981;padding:0.8rem 1rem;margin-bottom:0.5rem;"><div style="font-weight:600;color:#10b981;">{a["metric"]}</div><div style="font-size:0.85rem;color:var(--text-muted);">{a["message"]}</div></div>', unsafe_allow_html=True)
+
+        val = results["validation"]
+        st.markdown('<div class="section-header">Data Validation Summary</div>', unsafe_allow_html=True)
+        vc1, vc2, vc22, vc3 = st.columns(4)
+        vc1.metric("Data Points", val["data_points"])
+        vc2.metric("Date Range", val["date_range"][:20] + "...")
+        vc22.metric("Gaps", len(val["gaps"]))
+        vc3.metric("Corporate Actions", len(val["corporate_actions"]))
+
+    st.markdown('<div class="section-header" style="margin-top:1.5rem;">Alert History</div>', unsafe_allow_html=True)
+    alerts_dir = os.path.join(MONITORING_DIR, f"{ticker.replace('.', '_')}_alerts.json")
+    if os.path.exists(alerts_dir):
+        with open(alerts_dir) as f:
+            history = json.load(f)
+        if history:
+            recent = history[-10:]
+            for a in reversed(recent):
+                sev_color = {"critical": "#f43f5e", "warning": "#f59e0b", "info": "#10b981"}.get(a["severity"], "#94a3b8")
+                st.markdown(f'<div style="padding:0.4rem 0;border-bottom:1px solid var(--border-primary);font-size:0.8rem;"><span style="color:{sev_color};font-weight:600;">{a["severity"].upper()}</span> <span style="color:var(--text-muted);">{a["timestamp"][:16]}</span> — {a["message"]}</div>', unsafe_allow_html=True)
+        else:
+            st.caption("No alerts recorded yet.")
+    else:
+        st.caption("No alert history. Run a health check first.")
+
+
+def tab_pipeline():
+    st.markdown("""<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;padding:1rem 1.5rem;
+                background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
+        <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Pipeline</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Automated Retraining</span>
+    </div>""", unsafe_allow_html=True)
+
+    from src.pipeline import RetrainingPipeline, PipelineConfig
+
+    st.markdown('<div class="glass" style="padding:1rem;margin-bottom:1rem;"><div style="font-size:0.85rem;color:var(--text-muted);">6-stage pipeline: Fetch → Validate → Features → Train → Evaluate → Promote. Models that fail validation gates are rejected.</div></div>', unsafe_allow_html=True)
+
+    selected = st.multiselect("Tickers", NSE_STOCKS, default=trained[:3] if (trained := [t for t in NSE_STOCKS if models_exist(t)]) else NSE_STOCKS[:3], key="pipe_tickers", label_visibility="collapsed")
+    min_acc = st.slider("Min OOS Accuracy", 0.45, 0.60, 0.50, 0.01, key="pipe_min_acc")
+    min_sharpe = st.slider("Min Sharpe", -2.0, 1.0, -1.0, 0.1, key="pipe_min_sharpe")
+    max_dd = st.slider("Max Drawdown", 0.10, 0.50, 0.30, 0.05, key="pipe_max_dd")
+
+    if st.button("🚀 Run Pipeline", type="primary", width='stretch', key="pipe_run_btn"):
+        config = PipelineConfig(
+            tickers=selected,
+            min_oos_accuracy=min_acc,
+            min_oos_sharpe=min_sharpe,
+            max_drawdown_threshold=max_dd,
+        )
+        pipeline = RetrainingPipeline(config)
+
+        progress = st.progress(0)
+        status_text = st.empty()
+
+        for i, ticker in enumerate(selected):
+            status_text.text(f"Running pipeline for {ticker}...")
+            progress.progress((i) / len(selected))
+            result = pipeline.run(ticker)
+            icon = {"success": "✅", "failed": "❌", "rejected": "⚠️"}.get(result.status, "❓")
+            st.markdown(f'{icon} **{ticker}** [{result.stage}] {result.message}')
+
+        progress.progress(1.0)
+        status_text.text("Pipeline complete!")
+
+        summary = pipeline.get_summary()
+        sc1, sc2, sc3, sc4 = st.columns(4)
+        sc1.metric("Total", summary["total"])
+        sc2.metric("Success", summary["success"])
+        sc3.metric("Failed", summary["failed"])
+        sc4.metric("Rejected", summary["rejected"])
+
+
 def main():
     # (header is now rendered inside tab_predictions)
-    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime"])
+    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime", "📡 Monitoring", "🔄 Pipeline"])
     with tabs[0]: tab_predictions()
     with tabs[1]: tab_portfolio()
     with tabs[2]: tab_backtest()
@@ -1493,6 +1641,8 @@ def main():
     with tabs[10]: tab_ranking()
     with tabs[11]: tab_scenarios()
     with tabs[12]: tab_regime_strategy()
+    with tabs[13]: tab_monitoring()
+    with tabs[14]: tab_pipeline()
     st.markdown("""
     <div style="text-align:center;padding:2rem 0 1rem;margin-top:2rem;border-top:1px solid var(--border-primary);">
         <div style="font-size:0.7rem;color:var(--text-muted);letter-spacing:0.05em;">

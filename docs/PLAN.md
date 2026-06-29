@@ -10,14 +10,20 @@ This stage is about infrastructure — not improving the signal. The signal was 
 
 ## Stage 3 Exit Criteria (from IMPROVEMENTS.md)
 
-| # | Criterion | Status | Priority |
-|---|-----------|--------|----------|
-| 1 | Primary data feed with SLA (validation, fallback) | ❌ NOT DONE | CRITICAL |
-| 2 | Data validation (gaps, splits, dividends checked) | ❌ NOT DONE | CRITICAL |
-| 3 | Feature store with versioning | ❌ NOT DONE | HIGH |
-| 4 | Nightly retraining pipeline running | ❌ NOT DONE | HIGH |
-| 5 | Monitoring dashboard with drift alerts | ❌ NOT DONE | HIGH |
-| 6 | Model registry with promotion logic | ❌ NOT DONE | HIGH |
+| # | Criterion | Status | Notes |
+|---|-----------|--------|-------|
+| 1 | Primary data feed with SLA (validation, fallback) | ⚠️ PARTIAL | yfinance + NSE archive fallback (free). No SLA — Kite Connect (₹500/mo) needed for production SLA. |
+| 2 | Data validation (gaps, splits, dividends checked) | ✅ DONE | `src/data_validation.py` — gap detection, corporate actions, price sanity, stale data |
+| 3 | Feature store with versioning | ✅ DONE | `src/feature_store.py` — hash pinning, compatibility check |
+| 4 | Nightly retraining pipeline running | ✅ DONE | `src/pipeline.py` + `run_pipeline.py` + `schedule_pipeline.py` (Windows Task Scheduler) |
+| 5 | Monitoring dashboard with drift alerts | ✅ DONE | `src/monitoring.py` + UI tab (performance drift, feature drift via KS test, data freshness) |
+| 6 | Model registry with promotion logic | ✅ DONE | `src/model_registry.py` — staging → production → archived lifecycle |
+
+### Honest Assessment
+
+- **Data feed**: Free sources (yfinance, NSE archive) have no SLA. For real money, you need Kite Connect (₹500/month). For research/learning, the current setup is sufficient.
+- **Scheduling**: `schedule_pipeline.py` uses Windows Task Scheduler (schtasks). Run `python schedule_pipeline.py` to install. Requires Windows — not cross-platform.
+- **Monitoring dashboard**: Basic UI tab with health checks and alert history. Not a real-time streaming dashboard — checks are on-demand.
 
 ---
 
