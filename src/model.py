@@ -1,3 +1,7 @@
+import warnings
+warnings.filterwarnings("ignore", message=".*unpickle.*")
+warnings.filterwarnings("ignore", message=".*pickle.*")
+
 import torch
 import torch.nn as nn
 import joblib
@@ -122,10 +126,13 @@ def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker, lgb_m
 
 
 def load_models(ticker: str):
+    import warnings
     ticker_clean = ticker.replace(".", "_")
     def base(name):
         return os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
-    input_dim = joblib.load(base("lstm_dim.pkl"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        input_dim = joblib.load(base("lstm_dim.pkl"))
 
     lstm = StockLSTM(input_dim=input_dim).to(DEVICE)
     lstm.load_state_dict(torch.load(base("lstm.pt"), map_location=DEVICE, weights_only=True))
@@ -139,14 +146,16 @@ def load_models(ticker: str):
     transformer.load_state_dict(torch.load(base("transformer.pt"), map_location=DEVICE, weights_only=True))
     transformer.eval()
 
-    xgb = joblib.load(base("xgb.pkl"))
-    scaler = joblib.load(base("scaler.pkl"))
-    features = joblib.load(base("features.pkl"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        xgb = joblib.load(base("xgb.pkl"))
+        scaler = joblib.load(base("scaler.pkl"))
+        features = joblib.load(base("features.pkl"))
 
-    lgb_model = None
-    lgb_path = base("lgb.pkl")
-    if os.path.exists(lgb_path):
-        lgb_model = joblib.load(lgb_path)
+        lgb_model = None
+        lgb_path = base("lgb.pkl")
+        if os.path.exists(lgb_path):
+            lgb_model = joblib.load(lgb_path)
 
     return lstm, gru, transformer, xgb, scaler, features, lgb_model
 

@@ -15,6 +15,9 @@ import argparse
 import logging
 import sys
 import os
+import warnings
+warnings.filterwarnings("ignore", message=".*pickle.*")
+warnings.filterwarnings("ignore", message=".*unpickle.*")
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -201,22 +204,28 @@ def main():
     # Try loading pre-trained meta-controller
     import pickle
     model_path = os.path.join(os.path.dirname(__file__), "meta_controller.pkl")
-    if os.path.exists(model_path):
-        with open(model_path, "rb") as f:
-            meta_controller = pickle.load(f)
-        print("Loaded pre-trained meta-controller.")
-    elif args.train_meta:
+    if args.train_meta:
         print("Training meta-controller on ledger history...")
         result = meta_controller.train(ledger)
         print(f"  Status: {result['status']}")
         if result["status"] == "trained":
             print(f"  Accuracy: {result['accuracy']:.1%}")
-            print(f"  Samples: {result['n_samples']}")
+            print(f"  Samples:  {result['n_samples']}")
             weights = meta_controller.get_weights()
             print("  Top signals:")
             for name, weight in list(weights.items())[:5]:
                 direction = "positive" if weight > 0 else "negative"
                 print(f"    {name}: {weight:+.4f} ({direction})")
+            import pickle as _pickle
+            with open(model_path, "wb") as f:
+                _pickle.dump(meta_controller, f)
+            print(f"  Saved to {model_path}")
+    elif os.path.exists(model_path):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with open(model_path, "rb") as f:
+                meta_controller = pickle.load(f)
+        print("Loaded pre-trained meta-controller.")
     print()
 
     orchestrator = DailyOrchestrator(

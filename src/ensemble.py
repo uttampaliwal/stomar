@@ -142,8 +142,11 @@ def save_meta_model(meta_model: Pipeline, path: str):
 
 def load_meta_model(path: str) -> Pipeline:
     """Load meta-learner from disk."""
-    with open(path, "rb") as f:
-        meta_model = pickle.load(f)
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with open(path, "rb") as f:
+            meta_model = pickle.load(f)
     logger.info("Meta-learner loaded from %s", path)
     return meta_model
 
