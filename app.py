@@ -425,6 +425,18 @@ if "last_ticker" not in st.session_state:
 if "shared_ticker" not in st.session_state:
     st.session_state.shared_ticker = NSE_STOCKS[0]
 
+# --- Auto-pipeline: runs once on first page load ---
+if "_pipeline_started" not in st.session_state:
+    st.session_state._pipeline_started = True
+    try:
+        from auto_pipeline import AutoPipeline
+        _ap = AutoPipeline()
+        import threading
+        threading.Thread(target=_ap.run, daemon=True, name="auto-pipeline").start()
+        st.session_state["_auto_pipeline"] = _ap
+    except Exception:
+        pass  # Non-critical: app works without auto-pipeline
+
 
 @st.cache_data(ttl=3600)
 def get_data(ticker, period):
@@ -1958,6 +1970,29 @@ def tab_pipeline():
         <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Pipeline</span>
         <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Automated Retraining</span>
     </div>""", unsafe_allow_html=True)
+
+    # --- Auto-Pipeline Status ---
+    ap = st.session_state.get("_auto_pipeline")
+    if ap:
+        status_color = {"completed": "#10b981", "running": "#f59e0b", "error": "#f43f5e",
+                        "completed_today": "#10b981", "idle": "#6b7280"}.get(ap.status, "#6b7280")
+        st.markdown(f'<div class="glass" style="padding:0.75rem 1rem;margin-bottom:1rem;">'
+                    f'<div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Auto-Pipeline</div>'
+                    f'<div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.25rem;">'
+                    f'<span style="width:8px;height:8px;border-radius:50%;background:{status_color};display:inline-block;"></span>'
+                    f'<span style="font-size:0.85rem;font-weight:600;">{ap.status.replace("_", " ").title()}</span>'
+                    f'</div></div>', unsafe_allow_html=True)
+        if ap.log:
+            with st.expander("Auto-Pipeline Log", expanded=False):
+                for line in ap.log[-15:]:
+                    st.code(line, language=None)
+        if st.button("🔄 Run Auto-Pipeline Now", key="auto_pipeline_rerun"):
+            import threading
+            threading.Thread(target=ap.run, daemon=True, name="auto-pipeline-rerun").start()
+            st.toast("Auto-pipeline triggered!")
+            st.rerun()
+
+    st.markdown('<div style="margin-top:0.5rem;"></div>', unsafe_allow_html=True)
 
     from src.pipeline import RetrainingPipeline, PipelineConfig
 

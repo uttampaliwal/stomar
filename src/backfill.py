@@ -102,11 +102,17 @@ class HistoricalBackfill:
 
         decisions = 0
         outcomes = 0
+        skipped = 0
         warmup = 60  # Need 60 days of history for features
 
         for i in range(warmup, len(df) - 1):
             date = str(df.index[i].date()) if hasattr(df.index[i], 'date') else str(df.index[i])[:10]
             current_close = close.iloc[i]
+
+            # Idempotency: skip if decision already exists for this date+ticker
+            if self.ledger.has_decision(date, ticker):
+                skipped += 1
+                continue
 
             # Compute regime using only data up to current day (no look-ahead)
             day_regime_result = None
@@ -147,8 +153,8 @@ class HistoricalBackfill:
             self.ledger.log_outcome(decision_id, actual_return, actual_direction)
             outcomes += 1
 
-        logger.info(f"{ticker}: {decisions} decisions, {outcomes} outcomes")
-        return {"decisions": decisions, "outcomes": outcomes}
+        logger.info(f"{ticker}: {decisions} decisions, {outcomes} outcomes, {skipped} skipped (already logged)")
+        return {"decisions": decisions, "outcomes": outcomes, "skipped": skipped}
 
     def _fetch_data(self, ticker: str, lookback_days: int) -> pd.DataFrame | None:
         """Fetch historical OHLCV data."""

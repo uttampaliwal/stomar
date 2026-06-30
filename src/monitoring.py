@@ -166,6 +166,8 @@ class ModelMonitor:
     def check_data_freshness(self, ticker: str, last_data_date: datetime) -> DriftAlert:
         """Check if data is fresh enough."""
         now = datetime.now()
+        if last_data_date.tzinfo is not None:
+            last_data_date = last_data_date.replace(tzinfo=None)
         age_days = (now - last_data_date).days
 
         if age_days > 7:

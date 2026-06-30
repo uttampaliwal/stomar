@@ -315,5 +315,29 @@ class Ledger:
             result.append(d)
         return result
 
+    def get_last_decision_date(self) -> str | None:
+        """Return the most recent decision date, or None if ledger is empty."""
+        row = self.conn.execute(
+            "SELECT MAX(date) as last_date FROM decisions"
+        ).fetchone()
+        if row and row["last_date"]:
+            return row["last_date"]
+        return None
+
+    def get_dates_with_decisions(self) -> set[str]:
+        """Return set of all dates that have decisions logged."""
+        rows = self.conn.execute(
+            "SELECT DISTINCT date FROM decisions"
+        ).fetchall()
+        return {row["date"] for row in rows}
+
+    def has_decision(self, date: str, ticker: str) -> bool:
+        """Check if a decision already exists for a date+ticker pair."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM decisions WHERE date = ? AND ticker = ?",
+            (date, ticker)
+        ).fetchone()
+        return row["cnt"] > 0
+
     def close(self):
         self.conn.close()
