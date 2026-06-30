@@ -29,13 +29,13 @@ def _consensus_one(ticker):
     ensemble_conf = 0.0
     if models_exist(ticker):
         m = _load(ticker)
-        direction, confidence, _ = predict_ensemble(
+        direction, confidence, details = predict_ensemble(
             m["lstm"], m["gru"], m["transformer"],
             m["xgb"], m["scaler"], FEATURE_COLS, df_feat,
             lgb_model=m["lgb"],
         )
         ensemble_signal = "BUY" if direction == 1 else "SELL"
-        ensemble_conf = round(float(confidence), 4)
+        ensemble_conf = round(float(details.get("ensemble_prob", confidence / 100)) if details else float(confidence) / 100, 4)
 
     regime = detect_regime(df["close"])
     regime_name = regime.get("regime", "Unknown")

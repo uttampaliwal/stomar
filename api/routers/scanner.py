@@ -28,18 +28,19 @@ def _scan_one(ticker):
         return None
     m = _load(ticker)
 
-    direction, confidence, _ = predict_ensemble(
+    direction, confidence, details = predict_ensemble(
         m["lstm"], m["gru"], m["transformer"],
         m["xgb"], m["scaler"], FEATURE_COLS, df_feat,
         lgb_model=m["lgb"],
     )
     direction_label = "BUY" if direction == 1 else "SELL"
+    ensemble_prob = float(details.get("ensemble_prob", confidence / 100)) if details else float(confidence) / 100
 
     day_return = round(float((last["close"] - last["open"]) / last["open"] * 100), 2) if last["open"] > 0 else 0
     return {
         "ticker": ticker,
         "signal": direction_label,
-        "confidence": round(float(confidence), 4),
+        "confidence": round(ensemble_prob, 4),
         "price": round(float(last["close"]), 2),
         "day_return": day_return,
         "rsi": round(float(last.get("rsi", 50)), 2),

@@ -50,7 +50,8 @@ def get_prediction(ticker: str):
             direction_label = "BUY" if direction == 1 else "SELL"
             prediction = {
                 "direction": direction_label,
-                "confidence": round(float(confidence), 4),
+                "confidence": round(float(details.get("ensemble_prob", confidence / 100)), 4),
+                "conviction": round(float(confidence), 4),
                 "details": {k: (round(float(v), 4) if isinstance(v, (int, float)) else str(v)) for k, v in details.items()} if details else {},
             }
 

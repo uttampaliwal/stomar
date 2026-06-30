@@ -43,7 +43,7 @@ export default function Predictions() {
                 <Badge variant={pred.direction === 'BUY' ? 'success' : 'danger'} className="text-lg px-4 py-1 mb-2">
                   {pred.direction}
                 </Badge>
-                <p className="font-mono text-3xl font-bold mt-2">{(pred.confidence * 100).toFixed(1)}%</p>
+                <p className="font-mono text-3xl font-bold mt-2">{((pred.confidence || 0) * 100).toFixed(1)}%</p>
                 <p className="text-sm text-muted-foreground mt-1">Confidence</p>
               </>
             ) : (
