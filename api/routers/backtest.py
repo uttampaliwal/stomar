@@ -21,7 +21,7 @@ def run_backtest(ticker: str):
         if result is None:
             return {"error": "Backtest failed — not enough data"}
 
-        stats, portfolio = result
+        stats, portfolio, test_results = run_walk_forward_backtest(ticker, df_feat, FEATURE_COLS)
         if not stats or stats.get("total_trades", 0) == 0:
             return {"error": "Backtest produced no trades"}
 

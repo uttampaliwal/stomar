@@ -67,7 +67,7 @@ export default function MFTracker() {
               <SectionHeader title="Concentration Risk" />
               {data.concentration_risk.map((r: any, i: number) => (
                 <Card key={i} className="border-amber/30 bg-amber/5">
-                  <p className="text-sm text-amber">{r.message || `${r.ticker}: ${r.weight}%`}</p>
+                  <p className="text-sm text-amber">{r.message || `${r.fund_name || r.ticker}: ${(r.weight * 100).toFixed(1)}%`}</p>
                 </Card>
               ))}
             </>

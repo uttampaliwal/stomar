@@ -34,7 +34,7 @@ export default function Regime() {
             <Badge variant={data.regime === 'Bull' ? 'success' : data.regime === 'Bear' ? 'danger' : 'warning'} className="text-xl px-6 py-1.5">
               {data.regime || 'Unknown'}
             </Badge>
-            <p className="text-sm text-muted-foreground mt-3">Confidence: {((data.confidence || 0) * 100).toFixed(1)}%</p>
+            <p className="text-sm text-muted-foreground mt-3">Confidence: {data.confidence > 1 ? (data.confidence || 0).toFixed(1) : ((data.confidence || 0) * 100).toFixed(1)}%</p>
           </Card>
 
           {data.recommendation && (

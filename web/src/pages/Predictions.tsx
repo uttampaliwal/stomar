@@ -65,7 +65,7 @@ export default function Predictions() {
               <SectionHeader title="Model Votes" />
               <Card>
                 <div className="space-y-2">
-                  {Object.entries(pred.details).map(([model, confidence]) => (
+                  {Object.entries(pred.details).filter(([k]) => !k.includes('weight') && !k.includes('pred')).map(([model, confidence]) => (
                     <div key={model} className="flex items-center gap-3">
                       <span className="w-24 text-xs font-mono uppercase text-muted-foreground">{model}</span>
                       <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">

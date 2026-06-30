@@ -26,6 +26,7 @@ def _get_trader():
 def portfolio_stats():
     try:
         trader = _get_trader()
+        equity = trader.get_equity()
         positions = []
         for ticker, p in trader.positions.items():
             if p.quantity != 0:
@@ -37,13 +38,15 @@ def portfolio_stats():
                     "pnl": round(p.pnl, 2),
                 })
 
+        realized = sum(cp["pnl"] for cp in trader.closed_positions) if trader.closed_positions else 0
+
         return {
-            "equity": round(trader.portfolio.equity, 2) if hasattr(trader.portfolio, "equity") else 0,
-            "cash": round(trader.portfolio.cash, 2),
+            "equity": round(equity, 2),
+            "cash": round(trader.cash, 2),
             "positions": positions,
-            "realized_pnl": round(trader.realized_pnl, 2) if hasattr(trader, "realized_pnl") else 0,
+            "realized_pnl": round(realized, 2),
             "unrealized_pnl": round(sum(p.pnl for p in trader.positions.values()), 2),
-            "total_trades": len(trader.trade_log) if hasattr(trader, "trade_log") else 0,
+            "total_trades": len(trader.trade_log),
         }
     except Exception as e:
         return {"error": str(e)}
@@ -59,8 +62,8 @@ def trade_log():
                 "ticker": t.ticker,
                 "side": t.side.name if hasattr(t.side, "name") else str(t.side),
                 "quantity": t.quantity,
-                "price": round(t.price, 2),
-                "date": str(t.date),
+                "price": round(t.fill_price, 2),
+                "date": str(t.timestamp),
             })
         return {"trades": trades}
     except Exception as e:

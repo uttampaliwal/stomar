@@ -47,7 +47,7 @@ export default function Scenarios() {
               <div className="grid grid-cols-3 gap-3 mt-3">
                 <Stat label="Sharpe" value={(s.sharpe || 0).toFixed(2)} />
                 <Stat label="Max DD" value={`${((s.max_drawdown || 0) * 100).toFixed(1)}%`} trend="down" />
-                <Stat label="Volatility" value={`${((s.volatility || 0) * 100).toFixed(1)}%`} />
+                <Stat label="Volatility" value={`${((s.annualized_vol || s.volatility || 0) * 100).toFixed(1)}%`} />
               </div>
             </Card>
           ))}

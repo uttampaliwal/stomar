@@ -41,7 +41,7 @@ export default function Risk() {
               <Badge variant={regime.regime === 'Bull' ? 'success' : regime.regime === 'Bear' ? 'danger' : 'warning'} className="text-lg px-4 py-1">
                 {regime.regime}
               </Badge>
-              <p className="text-sm text-muted-foreground mt-2">Confidence: {((regime.confidence || 0) * 100).toFixed(1)}%</p>
+              <p className="text-sm text-muted-foreground mt-2">Confidence: {regime.confidence > 1 ? (regime.confidence || 0).toFixed(1) : ((regime.confidence || 0) * 100).toFixed(1)}%</p>
               {regime.recommendation && (
                 <p className="text-xs text-muted-foreground mt-1">
                   {regime.recommendation.action} • {regime.recommendation.allocation} allocation
@@ -55,13 +55,13 @@ export default function Risk() {
             <>
               <SectionHeader title="Risk Metrics" />
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <Stat label="Annual Return" value={formatPercent((report.annual_return || 0) * 100)} trend={report.annual_return >= 0 ? 'up' : 'down'} />
-                <Stat label="Annual Vol" value={formatPercent((report.annual_volatility || 0) * 100)} />
+                <Stat label="Annual Return" value={formatPercent(report.annual_return || 0)} trend={report.annual_return >= 0 ? 'up' : 'down'} />
+                <Stat label="Annual Vol" value={formatPercent(report.annual_volatility || 0)} />
                 <Stat label="Sharpe" value={(report.sharpe || 0).toFixed(2)} trend={report.sharpe > 1 ? 'up' : 'neutral'} />
                 <Stat label="Sortino" value={(report.sortino || 0).toFixed(2)} />
-                <Stat label="Max Drawdown" value={formatPercent((report.max_drawdown || 0) * 100)} trend="down" />
-                <Stat label="VaR 95%" value={formatPercent((report.var_95 || 0) * 100)} trend="down" />
-                <Stat label="CVaR 95%" value={formatPercent((report.cvar_95 || 0) * 100)} trend="down" />
+                <Stat label="Max Drawdown" value={formatPercent(report.max_drawdown || 0)} trend="down" />
+                <Stat label="VaR 95%" value={formatPercent(report.var_95 || 0)} trend="down" />
+                <Stat label="CVaR 95%" value={formatPercent(report.cvar_95 || 0)} trend="down" />
                 <Stat label="Calmar" value={(report.calmar || 0).toFixed(2)} />
               </div>
             </>

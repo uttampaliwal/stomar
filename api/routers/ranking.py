@@ -37,7 +37,7 @@ def get_rankings():
                         m["xgb"], m["scaler"], FEATURE_COLS, df_feat,
                         lgb_model=m["lgb"],
                     )
-                    ml_signals[ticker] = {"direction": "BUY" if direction == 1 else "SELL", "confidence": float(confidence)}
+                    ml_signals[ticker] = 1.0 if direction == 1 else -1.0
             except Exception:
                 continue
 
