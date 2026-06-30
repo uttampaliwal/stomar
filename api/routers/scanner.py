@@ -37,12 +37,20 @@ def _scan_one(ticker):
     ensemble_prob = float(details.get("ensemble_prob", confidence / 100)) if details else float(confidence) / 100
 
     day_return = round(float((last["close"] - last["open"]) / last["open"] * 100), 2) if last["open"] > 0 else 0
+    chg_5d = 0.0
+    if len(df_feat) >= 6:
+        close_now = float(last["close"])
+        close_5d = float(df_feat.iloc[-6]["close"])
+        if close_5d > 0:
+            chg_5d = round((close_now / close_5d - 1) * 100, 2)
+
     return {
         "ticker": ticker,
         "signal": direction_label,
         "confidence": round(ensemble_prob, 4),
         "price": round(float(last["close"]), 2),
         "day_return": day_return,
+        "chg_5d": chg_5d,
         "rsi": round(float(last.get("rsi", 50)), 2),
     }
 
@@ -50,6 +58,7 @@ def _scan_one(ticker):
 @router.get("/")
 def scan_stocks():
     try:
+        trained_count = sum(1 for t in NSE_STOCKS if models_exist(t))
         raw = parallel_fetch(_scan_one, NSE_STOCKS, max_workers=8)
         results = [v for v in raw.values() if v is not None]
 
@@ -60,6 +69,9 @@ def scan_stocks():
             "results": results,
             "buy_count": buy_count,
             "sell_count": sell_count,
+            "scanned": len(results),
+            "total": len(NSE_STOCKS),
+            "trained": trained_count,
         }
     except Exception as e:
         return {"error": str(e)}
