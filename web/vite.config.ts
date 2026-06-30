@@ -22,4 +22,14 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'recharts': ['recharts'],
+          'vendor': ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
 })
