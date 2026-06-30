@@ -138,14 +138,16 @@ class PaperTrader:
         pnl = 0.0
         if order.side == OrderSide.SELL and order.ticker in self.positions:
             pos = self.positions[order.ticker]
+            sell_costs = order.fill_cost - order.filled_price * order.filled_quantity
             if pos.quantity > 0:
-                pnl = (order.filled_price - pos.avg_cost) * order.filled_quantity
+                pnl = (order.filled_price - pos.avg_cost) * order.filled_quantity - sell_costs
             else:
-                pnl = (pos.avg_cost - order.filled_price) * order.filled_quantity
+                pnl = (pos.avg_cost - order.filled_price) * order.filled_quantity - sell_costs
         elif order.side == OrderSide.BUY and order.ticker in self.positions:
             pos = self.positions[order.ticker]
             if pos.quantity < 0:
-                pnl = (pos.avg_cost - order.filled_price) * min(order.filled_quantity, abs(pos.quantity))
+                buy_costs = order.fill_cost - order.filled_price * order.filled_quantity
+                pnl = (pos.avg_cost - order.filled_price) * min(order.filled_quantity, abs(pos.quantity)) - buy_costs
 
         self.cumulative_pnl += pnl
 
@@ -377,6 +379,23 @@ class PaperTrader:
             for t, v in state.get("positions", {}).items()
         }
         self.closed_positions = state.get("closed_positions", [])
+        raw_log = state.get("trade_log", [])
+        self.trade_log = [
+            PaperTradeRecord(
+                timestamp=r.get("timestamp", ""),
+                ticker=r.get("ticker", ""),
+                side=r.get("side", ""),
+                order_type=r.get("order_type", ""),
+                quantity=r.get("quantity", 0),
+                fill_price=r.get("fill_price", 0.0),
+                fill_cost=r.get("fill_cost", 0.0),
+                slippage=r.get("slippage", 0.0),
+                pnl=r.get("pnl", 0.0),
+                cumulative_pnl=r.get("cumulative_pnl", 0.0),
+                cash_after=r.get("cash_after", 0.0),
+            )
+            for r in raw_log
+        ]
         self.risk_controller.daily_pnl = state.get("risk_daily_pnl", 0.0)
         self.risk_controller.weekly_pnl = state.get("risk_weekly_pnl", 0.0)
         self.risk_controller.peak_equity = state.get(

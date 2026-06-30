@@ -166,10 +166,10 @@ def compute_ic_series(df, feature_col, target_col, window=60):
     if len(valid_data) < window:
         return pd.Series(dtype=float)
 
-    ranks_feat = valid_data[feature_col].rolling(window).rank()
-    ranks_tgt = valid_data[target_col].rolling(window).rank()
-    ic_values = ranks_tgt.corr(ranks_feat)
-    return ic_values
+    ranks_feat = valid_data[feature_col].rank()
+    ranks_tgt = valid_data[target_col].rank()
+    ic_values = ranks_tgt.rolling(window).corr(ranks_feat)
+    return ic_values.dropna()
 
 
 def signal_autocorrelation(df, feature_col, max_lag=10):

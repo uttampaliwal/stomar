@@ -62,7 +62,8 @@ def parkinson_volatility(high, low, window=20, annualize=True):
     Returns:
         Series of volatility values
     """
-    log_hl = np.log(high / low)
+    low_safe = low.replace(0, np.nan)
+    log_hl = np.log(high / low_safe)
     vol = np.sqrt((log_hl ** 2).rolling(window).mean() / (4 * np.log(2)))
     if annualize:
         vol = vol * np.sqrt(252)
@@ -85,8 +86,10 @@ def garman_klass_volatility(open_, high, low, close, window=20, annualize=True):
     Returns:
         Series of volatility values
     """
-    log_hl = np.log(high / low)
-    log_co = np.log(close / open_)
+    low_safe = low.replace(0, np.nan)
+    open_safe = open_.replace(0, np.nan)
+    log_hl = np.log(high / low_safe)
+    log_co = np.log(close / open_safe)
     gk_raw = 0.5 * log_hl ** 2 - (2 * np.log(2) - 1) * log_co ** 2
     gk_raw = gk_raw.clip(lower=0)  # Prevent negative variance
     vol = np.sqrt(gk_raw.rolling(window).mean())
@@ -114,10 +117,12 @@ def yang_zhang_volatility(open_, high, low, close, window=20, annualize=True):
     if window <= 1:
         window = 2
 
-    log_co = np.log(close / open_)
-    log_oc = np.log(open_ / close.shift(1))
-    log_ho = np.log(high / open_)
-    log_lo = np.log(low / open_)
+    open_safe = open_.replace(0, np.nan)
+    close_shift_safe = close.shift(1).replace(0, np.nan)
+    log_co = np.log(close / open_safe)
+    log_oc = np.log(open_safe / close_shift_safe)
+    log_ho = np.log(high / open_safe)
+    log_lo = np.log(low / open_safe)
 
     k = 0.34 / (1.34 + (window + 1) / (window - 1))
     o_var = log_oc.rolling(window).var()
@@ -274,7 +279,7 @@ def compute_bollinger_bands(close, window=20, num_std=2):
     }
 
 
-def volatility_cone(high, low, close, windows=[5, 10, 20, 60, 120]):
+def volatility_cone(high, low, close, windows=None):
     """Compute volatility cone (min, max, avg vol at different windows).
 
     Useful for understanding current vol relative to historical ranges.
@@ -283,11 +288,13 @@ def volatility_cone(high, low, close, windows=[5, 10, 20, 60, 120]):
         high: Series of high prices
         low: Series of low prices
         close: Series of close prices
-        windows: List of window sizes
+        windows: List of window sizes (default: [5, 10, 20, 60, 120])
 
     Returns:
         Dict with min, max, mean, current vol for each window
     """
+    if windows is None:
+        windows = [5, 10, 20, 60, 120]
     returns = close.pct_change()
     cone = {}
 

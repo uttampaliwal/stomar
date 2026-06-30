@@ -431,6 +431,12 @@ def get_data(ticker, period):
     return fetch_stock_data(ticker, period=period)
 
 
+@st.cache_data(ttl=3600)
+def get_nifty_data(start, end):
+    import yfinance as yf
+    return yf.download("^NSEI", start=start, end=end, progress=False)
+
+
 def metric_card(label, value, delta=None, help_text=None, icon=None):
     icon_html = f'<span style="font-size:1.2rem;margin-right:0.3rem;">{icon}</span>' if icon else ""
     if delta is not None:
@@ -720,8 +726,7 @@ def tab_portfolio():
             name="Portfolio", line=dict(color="#10b981", width=2),
             fill="tozeroy", fillcolor="rgba(16,185,129,0.08)"))
         try:
-            import yfinance as yf
-            nifty = yf.download("^NSEI", start=eq["date"].iloc[0], end=eq["date"].iloc[-1], progress=False)
+            nifty = get_nifty_data(str(eq["date"].iloc[0])[:10], str(eq["date"].iloc[-1])[:10])
             if len(nifty) > 1:
                 nifty_close = nifty["Close"].values.flatten()
                 nifty_norm = nifty_close / nifty_close[0] * float(eq["equity"].iloc[0])
@@ -956,7 +961,8 @@ def tab_consensus():
                     var_val = calculate_var(returns) if len(returns) > 30 else 0
                     cvar_val = calculate_cvar(returns) if len(returns) > 30 else 0
                     sharpe_val = calculate_sharpe(returns) if len(returns) > 30 else 0
-                    vol_fc = forecast_volatility(returns) if len(returns) > 30 else 0
+                    vol_fc = forecast_volatility(returns) if len(returns) > 30 else {"current_vol": 0}
+                    vol_fc_val = vol_fc.get("current_vol", 0) if isinstance(vol_fc, dict) else vol_fc
 
                     regime_result = detect_regime(close, ohlc=df)
                     regime = regime_result.get("regime", "Sideways")
@@ -1017,7 +1023,7 @@ def tab_consensus():
                         "var_95": float(var_val),
                         "cvar_95": float(cvar_val),
                         "sharpe": float(sharpe_val),
-                        "volatility_forecast": float(vol_fc),
+                        "volatility_forecast": float(vol_fc_val),
                         "fundamental_score": 0.0,
                     }
                     decision = mc.decide(state)
@@ -1744,7 +1750,7 @@ def tab_regime_strategy():
             with st.spinner("Analyzing regime strategy..."):
                 df = fetch_stock_data(ticker, period=period)
                 returns = df["close"].pct_change().dropna()
-                regime_result = detect_regime(returns)
+                regime_result = detect_regime(df["close"], ohlc=df)
                 bt = backtest_regime_strategy(df, regime_result)
         except Exception as e:
             st.error(f"Regime strategy analysis failed: {e}")

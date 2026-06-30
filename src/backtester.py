@@ -39,8 +39,9 @@ def compute_metrics(equity_curve, trades, risk_free_rate=RISK_FREE_RATE):
     ann_vol = returns.std() * np.sqrt(252)
     sharpe = (ann_return - risk_free_rate) / ann_vol if ann_vol > 0 else 0
 
-    downside = returns[returns < 0]
-    downside_vol = downside.std() * np.sqrt(252) if len(downside) > 0 else 0.001
+    daily_mar = risk_free_rate / 252
+    downside_diff = np.minimum(returns.values - daily_mar, 0)
+    downside_vol = np.sqrt(np.mean(downside_diff ** 2)) * np.sqrt(252) if len(downside_diff) > 0 else 0.001
     sortino = (ann_return - risk_free_rate) / downside_vol
 
     cummax = eq.cummax()
@@ -127,6 +128,7 @@ def run_walk_forward_backtest(
     all_test_results = []
     portfolio = Portfolio(initial_capital)
     equity_points = []
+    in_position = False
 
     logger.info("walk_forward_start windows=%d train_years=%d test_years=%d", len(splits), train_years, test_years)
 
@@ -186,7 +188,7 @@ def run_walk_forward_backtest(
 
         for i in range(SEQ_LENGTH, len(test_scaled)):
             date_val = test_dates[i]
-            date = str(date_val.date()) if hasattr(date_val, 'date') else str(date_val)[:10]
+            date_str = str(date_val.date()) if hasattr(date_val, 'date') else str(date_val)[:10]
             inp = torch.tensor(test_scaled[i-SEQ_LENGTH:i], dtype=torch.float32).unsqueeze(0).to(DEVICE)
 
             prev_close_raw = test_values[i-1, close_idx]
@@ -216,7 +218,7 @@ def run_walk_forward_backtest(
             confidence = abs(ensemble_prob - 0.5) * 2
 
             all_test_results.append({
-                "date": date,
+                "date": date_str,
                 "predicted": final_dir,
                 "actual": actual_dir,
                 "confidence": confidence,
@@ -225,7 +227,30 @@ def run_walk_forward_backtest(
                 "lstm": d_l, "gru": d_g, "transformer": d_t, "xgb_prob": xgb_p,
             })
 
-            equity_points.append({"date": date, "equity": portfolio.portfolio_value()})
+            exec_price = curr_close_raw * (1 + slippage) if final_dir == 1 else curr_close_raw * (1 - slippage)
+
+            if final_dir == 1 and not in_position:
+                qty = int(portfolio.cash * position_pct / exec_price)
+                if qty > 0:
+                    portfolio.buy(ticker, exec_price, qty, date_val)
+                    in_position = True
+            elif final_dir == 0 and in_position:
+                ticker_key = list(portfolio.holdings.keys())[0] if portfolio.holdings else ticker
+                if ticker_key in portfolio.holdings:
+                    held_qty = portfolio.holdings[ticker_key][0]
+                    portfolio.sell(ticker_key, exec_price, held_qty, date_val)
+                    in_position = False
+
+            equity_points.append({"date": date_val, "equity": portfolio.portfolio_value({"ticker": curr_close_raw})})
+
+    if in_position and portfolio.holdings:
+        last_price = all_test_results[-1]["price"] if all_test_results else 0
+        if last_price > 0:
+            ticker_key = list(portfolio.holdings.keys())[0]
+            held_qty = portfolio.holdings[ticker_key][0]
+            portfolio.sell(ticker_key, last_price * (1 - slippage), held_qty,
+                           pd.Timestamp(all_test_results[-1]["date"]))
+            in_position = False
 
     if not all_test_results:
         return None, None, []
@@ -234,32 +259,15 @@ def run_walk_forward_backtest(
     act_arr = np.array([r["actual"] for r in all_test_results])
     ensemble_acc = accuracy_score(act_arr, pred_arr)
 
-    returns = []
-    for i in range(1, len(all_test_results)):
-        r = all_test_results[i]
-        prev_r = all_test_results[i-1]
-        if prev_r["predicted"] == 1 and r["actual"] == 1:
-            returns.append(0.01)
-        elif prev_r["predicted"] == 1 and r["actual"] == 0:
-            returns.append(-0.01)
-        else:
-            returns.append(0.0)
-
     metrics = {
         "ensemble_accuracy": ensemble_acc,
         "total_test_days": len(all_test_results),
         "n_windows": len(splits),
     }
 
-    if returns:
-        ret_arr = np.array(returns)
-        metrics["simulated_annual_return"] = float(ret_arr.mean() * 252)
-        metrics["simulated_sharpe"] = float(ret_arr.mean() / max(ret_arr.std(), 0.001) * np.sqrt(252))
-        metrics["simulated_win_rate"] = float((ret_arr > 0).mean() * 100)
-
     if equity_points:
         eq_df = pd.DataFrame(equity_points)
-        eq_metrics = compute_metrics(eq_df, [])
+        eq_metrics = compute_metrics(eq_df, portfolio.trades)
         metrics.update(eq_metrics)
 
     return metrics, portfolio, all_test_results
@@ -357,3 +365,82 @@ def generate_model_signals(ticker, df_feat, lstm, gru, transformer, xgb, scaler,
             "actual": 1 if scaled[i, 0] > prev_close else 0,
         }
     return {ticker: signals}
+
+
+def monte_carlo_backtest(equity_curve, trades, n_simulations=1000, seed=42):
+    """Run Monte Carlo simulation by shuffling trade outcomes.
+
+    Tests robustness: if the strategy's edge is real, performance should
+    remain positive across most random orderings of trades.
+
+    Args:
+        equity_curve: DataFrame with 'date' and 'equity' columns
+        trades: List of trade dicts with 'pnl' field
+        n_simulations: Number of random shuffles
+        seed: Random seed for reproducibility
+
+    Returns:
+        Dict with confidence intervals on key metrics
+    """
+    if not trades or len(trades) < 5:
+        return {"error": "Need at least 5 trades for Monte Carlo"}
+
+    rng = np.random.RandomState(seed)
+    pnls = np.array([t.get("pnl", 0) for t in trades])
+
+    simulated_returns = []
+    simulated_sharpes = []
+    simulated_max_dds = []
+    simulated_final_equity = []
+
+    initial_capital = equity_curve["equity"].iloc[0] if len(equity_curve) > 0 else 100000
+
+    for _ in range(n_simulations):
+        shuffled_pnls = rng.permutation(pnls)
+        equity = [initial_capital]
+        for pnl in shuffled_pnls:
+            equity.append(equity[-1] + pnl)
+
+        eq_arr = np.array(equity)
+        rets = np.diff(eq_arr) / eq_arr[:-1]
+        rets = rets[np.isfinite(rets)]
+
+        if len(rets) > 1:
+            ann_ret = float(np.mean(rets) * 252)
+            ann_vol = float(np.std(rets) * np.sqrt(252))
+            sharpe = ann_ret / ann_vol if ann_vol > 0 else 0
+            cummax = np.maximum.accumulate(eq_arr)
+            dd = (eq_arr - cummax) / np.maximum(cummax, 1)
+            max_dd = float(dd.min())
+
+            simulated_returns.append(ann_ret)
+            simulated_sharpes.append(sharpe)
+            simulated_max_dds.append(max_dd)
+            simulated_final_equity.append(eq_arr[-1])
+
+    if not simulated_returns:
+        return {"error": "Simulation produced no valid results"}
+
+    ret_arr = np.array(simulated_returns)
+    sharpe_arr = np.array(simulated_sharpes)
+    dd_arr = np.array(simulated_max_dds)
+    eq_arr = np.array(simulated_final_equity)
+
+    return {
+        "n_simulations": n_simulations,
+        "n_trades": len(trades),
+        "return_ci_5": float(np.percentile(ret_arr, 5)),
+        "return_ci_50": float(np.percentile(ret_arr, 50)),
+        "return_ci_95": float(np.percentile(ret_arr, 95)),
+        "return_mean": float(ret_arr.mean()),
+        "sharpe_ci_5": float(np.percentile(sharpe_arr, 5)),
+        "sharpe_ci_50": float(np.percentile(sharpe_arr, 50)),
+        "sharpe_ci_95": float(np.percentile(sharpe_arr, 95)),
+        "max_dd_ci_5": float(np.percentile(dd_arr, 5)),
+        "max_dd_ci_50": float(np.percentile(dd_arr, 50)),
+        "max_dd_ci_95": float(np.percentile(dd_arr, 95)),
+        "prob_profit": float((eq_arr > initial_capital).mean()),
+        "worst_case_5pct": float(np.percentile(eq_arr, 5)),
+        "median_outcome": float(np.percentile(eq_arr, 50)),
+        "best_case_95pct": float(np.percentile(eq_arr, 95)),
+    }

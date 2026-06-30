@@ -9,6 +9,9 @@ Checks:
 4. Current drawdown vs max drawdown (halts trading on breach)
 5. Total exposure vs max exposure
 6. Kelly-capped position sizing (quarter-Kelly)
+7. Kill switch (emergency halt + flatten)
+8. Correlation-based concentration limit
+9. Consecutive loss circuit breaker
 
 Usage:
     from src.risk_controls import RiskController, RiskLimits
@@ -19,7 +22,7 @@ Usage:
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,9 @@ class RiskLimits:
     kelly_fraction: float = 0.25
     max_total_exposure_pct: float = 0.95
     halt_on_breach: bool = True
+    max_correlated_exposure_pct: float = 0.40
+    max_consecutive_losses: int = 5
+    correlation_threshold: float = 0.70
 
 
 class RiskController:
@@ -49,6 +55,9 @@ class RiskController:
         self.current_equity = initial_capital
         self.halted = False
         self.halt_reason = ""
+        self.consecutive_losses = 0
+        self.sector_exposure = {}  # sector -> total value
+        self.position_correlations = {}  # (ticker_a, ticker_b) -> correlation
 
     def check_order(self, order_value: float, current_holdings_value: float,
                     ticker: str = "", holdings: dict = None,
@@ -191,4 +200,50 @@ class RiskController:
             "weekly_loss_remaining": (
                 self.current_equity * self.limits.max_weekly_loss_pct + self.weekly_pnl
             ),
+            "consecutive_losses": self.consecutive_losses,
         }
+
+    def kill_switch(self, reason: str = "Emergency kill switch activated"):
+        """Emergency halt: stop all trading immediately."""
+        self.halted = True
+        self.halt_reason = reason
+        logger.critical("KILL SWITCH ACTIVATED: %s", reason)
+
+    def update_consecutive_losses(self, is_loss: bool):
+        """Track consecutive losses for circuit breaker."""
+        if is_loss:
+            self.consecutive_losses += 1
+            if self.consecutive_losses >= self.limits.max_consecutive_losses:
+                self.kill_switch(
+                    f"Consecutive losses ({self.consecutive_losses}) "
+                    f"exceed limit ({self.limits.max_consecutive_losses})"
+                )
+        else:
+            self.consecutive_losses = 0
+
+    def update_correlation(self, ticker_a: str, ticker_b: str, corr: float):
+        """Update correlation between two positions."""
+        key = tuple(sorted([ticker_a, ticker_b]))
+        self.position_correlations[key] = corr
+
+    def check_correlated_exposure(self, holdings: dict, new_ticker: str,
+                                  new_value: float) -> dict:
+        """Check if adding a position would exceed correlated exposure limit."""
+        correlated_value = new_value
+        for existing_ticker, (qty, price) in holdings.items():
+            key = tuple(sorted([existing_ticker, new_ticker]))
+            corr = self.position_correlations.get(key, 0.0)
+            if abs(corr) >= self.limits.correlation_threshold:
+                correlated_value += qty * price
+
+        corr_pct = correlated_value / max(self.current_equity, 1)
+        if corr_pct > self.limits.max_correlated_exposure_pct:
+            return {
+                "passed": False,
+                "check": "correlated_exposure",
+                "message": (
+                    f"Correlated exposure {corr_pct:.1%} > "
+                    f"{self.limits.max_correlated_exposure_pct:.1%} limit"
+                ),
+            }
+        return {"passed": True, "check": "correlated_exposure"}

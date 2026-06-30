@@ -197,12 +197,8 @@ def compare_to_benchmarks(strategy_returns, actuals=None, returns=None):
     strategy_returns = np.asarray(strategy_returns)
 
     if returns is None:
-        # Derive returns from actuals if available, otherwise use strategy returns
-        # but flag accuracy as unreliable
-        if actuals is not None:
-            returns = np.where(np.asarray(actuals) == 1, 0.01, -0.01).astype(float)
-        else:
-            returns = strategy_returns
+        # Use strategy returns as the best available proxy
+        returns = strategy_returns
 
     benchmarks = [
         buy_and_hold(actuals, returns),

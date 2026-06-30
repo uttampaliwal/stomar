@@ -115,7 +115,7 @@ def _compute_rsi(prices: pd.Series, period: int = 14) -> float:
     avg_gain = gain.ewm(alpha=1/period, min_periods=period).mean()
     avg_loss = loss.ewm(alpha=1/period, min_periods=period).mean()
     if avg_loss.iloc[-1] == 0:
-        return 100.0
+        return 100.0 if avg_gain.iloc[-1] > 0 else 50.0
     rs = avg_gain.iloc[-1] / avg_loss.iloc[-1]
     return 100 - (100 / (1 + rs))
 

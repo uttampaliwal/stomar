@@ -89,7 +89,7 @@ def run_cpcv(df, feature_cols, target_col, backtest_fn,
         end = start + group_size if i < n_test_groups - 1 else n
         groups.append(df.iloc[start:end])
 
-    all_combos = list(combinations(range(n_test_groups), 1))
+    all_combos = list(combinations(range(n_test_groups), 2))
     if len(all_combos) > n_combinations:
         rng = np.random.RandomState(42)
         indices = rng.choice(len(all_combos), n_combinations, replace=False)
