@@ -841,6 +841,31 @@ def tab_backtest():
                         last_date = window_results[-1]["date"]
                         bar_c = "#10b981" if wr > 50 else "#f43f5e"
                         st.markdown(f'<div style="display:flex;align-items:center;gap:1rem;margin:0.3rem 0;"><span style="color:var(--text-muted);min-width:200px;font-size:0.85rem;font-family:var(--font-mono);">{first_date} → {last_date}</span><div style="flex:1;height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;"><div style="width:{wr}%;height:100%;background:{bar_c};border-radius:3px;"></div></div><span style="font-weight:600;min-width:50px;text-align:right;font-family:var(--font-mono);font-size:0.85rem;">{wr:.1f}%</span></div>', unsafe_allow_html=True)
+
+                if portfolio and portfolio.trades:
+                    st.markdown('<div class="section-header" style="margin-top:1.5rem;">Monte Carlo Validation (1000 simulations)</div>', unsafe_allow_html=True)
+                    try:
+                        from src.backtester import monte_carlo_backtest
+                        mc_result = monte_carlo_backtest(
+                            pd.DataFrame(portfolio.equity_curve),
+                            portfolio.trades, n_simulations=1000,
+                        )
+                        if "error" not in mc_result:
+                            mc1, mc2, mc3, mc4 = st.columns(4)
+                            prob = mc_result["prob_profit"]
+                            prob_c = "#10b981" if prob > 0.6 else "#f59e0b" if prob > 0.4 else "#f43f5e"
+                            mc1.markdown(f'<div class="stat-item"><div class="metric-label">PROB OF PROFIT</div><div class="metric-val" style="font-size:1.1rem;color:{prob_c}">{prob:.0%}</div></div>', unsafe_allow_html=True)
+                            mc2.markdown(f'<div class="stat-item"><div class="metric-label">MEDIAN OUTCOME</div><div class="metric-val" style="font-size:1.1rem;">₹{mc_result["median_outcome"]:,.0f}</div></div>', unsafe_allow_html=True)
+                            mc3.markdown(f'<div class="stat-item"><div class="metric-label">WORST 5%</div><div class="metric-val" style="font-size:1.1rem;color:#f43f5e;">₹{mc_result["worst_case_5pct"]:,.0f}</div></div>', unsafe_allow_html=True)
+                            mc4.markdown(f'<div class="stat-item"><div class="metric-label">SHARPE CI (5-95)</div><div class="metric-val" style="font-size:1.1rem;">{mc_result["sharpe_ci_5"]:.2f} – {mc_result["sharpe_ci_95"]:.2f}</div></div>', unsafe_allow_html=True)
+
+                            st.markdown(f'<div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;">Strategy remains profitable in <span style="color:{prob_c};font-weight:600;">{prob:.0%}</span> of 1000 random trade orderings. '
+                                        f'Annual return range: {mc_result["return_ci_5"]:.1%} to {mc_result["return_ci_95"]:.1%}. '
+                                        f'Max drawdown range: {mc_result["max_dd_ci_5"]:.1%} to {mc_result["max_dd_ci_95"]:.1%}.</div>', unsafe_allow_html=True)
+                        else:
+                            st.info(f"Monte Carlo: {mc_result['error']}")
+                    except Exception as e:
+                        st.warning(f"Monte Carlo validation unavailable: {e}")
         else:
             st.markdown(f"""<div class="glass" style="text-align:center;padding:2rem;">
                 <div style="font-size:1.5rem;margin-bottom:0.5rem;">⚠️</div>
@@ -1510,6 +1535,38 @@ def tab_risk():
                 <div class="metric-sub">Avg loss: {avg_loss:.3f}</div>
             </div>
         </div>''', unsafe_allow_html=True)
+
+    st.markdown('<div class="section-header" style="margin-top:2rem;">Risk Controls Status</div>', unsafe_allow_html=True)
+    try:
+        from src.risk_controls import RiskController, RiskLimits
+        if "risk_controller" not in st.session_state:
+            st.session_state.risk_controller = RiskController(RiskLimits(), initial_capital=100000)
+        rc = st.session_state.risk_controller
+        status = rc.get_status()
+
+        halt_c = "#f43f5e" if status["halted"] else "#10b981"
+        halt_text = "HALTED" if status["halted"] else "ACTIVE"
+        st.markdown(f'''<div class="glass" style="padding:1rem;">
+            <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;">
+                <div style="width:10px;height:10px;border-radius:50%;background:{halt_c};"></div>
+                <span style="font-weight:600;color:{halt_c};">Trading {halt_text}</span>
+                {f'<span style="font-size:0.8rem;color:var(--text-muted);">— {status["halt_reason"]}</span>' if status["halted"] else ''}
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;">
+                <div><div class="metric-label">DRAWDOWN</div><div style="font-weight:600;">{status["drawdown_pct"]:.1%}</div></div>
+                <div><div class="metric-label">DAILY P&L</div><div style="font-weight:600;color:{"#f43f5e" if status["daily_pnl"] < 0 else "#10b981"};">₹{status["daily_pnl"]:,.0f}</div></div>
+                <div><div class="metric-label">WEEKLY P&L</div><div style="font-weight:600;color:{"#f43f5e" if status["weekly_pnl"] < 0 else "#10b981"};">₹{status["weekly_pnl"]:,.0f}</div></div>
+                <div><div class="metric-label">CONSEC LOSSES</div><div style="font-weight:600;">{status["consecutive_losses"]}</div></div>
+            </div>
+        </div>''', unsafe_allow_html=True)
+
+        if status["halted"]:
+            if st.button("Resume Trading", key="resume_trading"):
+                rc.resume_trading()
+                st.success("Trading resumed")
+                st.rerun()
+    except Exception as e:
+        st.warning(f"Risk controls unavailable: {e}")
 
 
 def tab_volatility():

@@ -58,8 +58,9 @@ def fetch_fii_dii() -> pd.DataFrame:
 
         if not fii_row:
             logger.warning("FII row not found in NSE response, using cached data")
-            if os.path.exists(cache_file):
-                return pd.read_parquet(cache_file)
+            with _flow_lock:
+                if os.path.exists(cache_file):
+                    return pd.read_parquet(cache_file)
             return pd.DataFrame()
 
         date = pd.Timestamp(fii_row.get("date", "")).tz_localize(None).floor("D")
@@ -77,19 +78,19 @@ def fetch_fii_dii() -> pd.DataFrame:
             "dii_net": dii_net,
         }])
 
-        if os.path.exists(cache_file):
-            old = pd.read_parquet(cache_file)
-            combined = pd.concat([new_row, old], ignore_index=True)
-            combined = combined.drop_duplicates(subset=["date"], keep="first").head(60)
-        else:
-            combined = new_row
-
         with _flow_lock:
+            if os.path.exists(cache_file):
+                old = pd.read_parquet(cache_file)
+                combined = pd.concat([new_row, old], ignore_index=True)
+                combined = combined.drop_duplicates(subset=["date"], keep="first").head(60)
+            else:
+                combined = new_row
             combined.to_parquet(cache_file)
         return combined
     except Exception:
-        if os.path.exists(cache_file):
-            return pd.read_parquet(cache_file)
+        with _flow_lock:
+            if os.path.exists(cache_file):
+                return pd.read_parquet(cache_file)
         return pd.DataFrame()
 
 

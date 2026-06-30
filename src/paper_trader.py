@@ -408,7 +408,7 @@ class PaperTrader:
         """Estimate price for risk check if not yet available."""
         if ticker in self.positions:
             return self.positions[ticker].current_price
-        logger.warning("No price available for %s, using 0 for risk check", ticker)
+        logger.debug("No price available for %s, using 0 for risk check", ticker)
         return 0.0
 
     def reset(self):

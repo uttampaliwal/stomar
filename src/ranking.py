@@ -96,14 +96,14 @@ def fundamental_score(fundamentals: dict) -> float:
     # ROE: higher is better. Score 0 at 0%, 100 at 30%
     roe = fundamentals.get("roe", 0.0)
     if isinstance(roe, (int, float)) and np.isfinite(roe):
-        roe_pct = roe * 100 if abs(roe) <= 1 else roe
+        roe_pct = roe * 100 if abs(roe) <= 1.0 else roe
         roe_score = max(0, min(100, roe_pct / 30 * 100))
         scores.append(("roe", roe_score, 0.20))
 
     # ROCE: higher is better. Score 0 at 0%, 100 at 30%
     roce = fundamentals.get("roce", 0.0)
     if isinstance(roce, (int, float)) and np.isfinite(roce):
-        roce_pct = roce * 100 if abs(roce) <= 1 else roce
+        roce_pct = roce * 100 if abs(roce) <= 1.0 else roce
         roce_score = max(0, min(100, roce_pct / 30 * 100))
         scores.append(("roce", roce_score, 0.15))
 

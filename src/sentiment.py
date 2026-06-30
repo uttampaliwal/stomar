@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 _finbert_pipeline = None
 _finbert_lock = threading.Lock()
+_sentiment_cache_lock = threading.Lock()
 _sentiment_cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
 # Source weights: more authoritative sources get higher weight
@@ -440,13 +441,14 @@ def get_stock_sentiment(ticker: str) -> dict:
         _sentiment_cache_dir, f"sentiment_{ticker.replace('.', '_')}.json"
     )
 
-    # Check cache
-    if os.path.exists(cache_file):
-        mtime = os.path.getmtime(cache_file)
-        if time.time() - mtime < 1800:
-            import json
-            with open(cache_file) as f:
-                return json.load(f)
+    # Check cache (thread-safe)
+    with _sentiment_cache_lock:
+        if os.path.exists(cache_file):
+            mtime = os.path.getmtime(cache_file)
+            if time.time() - mtime < 1800:
+                import json
+                with open(cache_file) as f:
+                    return json.load(f)
 
     articles = fetch_news_headlines(ticker)
     result = analyze_sentiment(articles)
@@ -456,13 +458,14 @@ def get_stock_sentiment(ticker: str) -> dict:
         for a in articles[:8]
     ]
 
-    # Persist cache
+    # Persist cache (thread-safe)
     try:
         import json
         os.makedirs(_sentiment_cache_dir, exist_ok=True)
-        with open(cache_file, "w") as f:
-            json.dump(result, f, default=str)
-    except Exception:
-        pass
+        with _sentiment_cache_lock:
+            with open(cache_file, "w") as f:
+                json.dump(result, f, default=str)
+    except Exception as e:
+        logger.warning("Failed to write sentiment cache for %s: %s", ticker, e)
 
     return result
