@@ -64,6 +64,7 @@ results/
 
 # ─── Debug / Scratch ───
 check/
+stitch_the_command_center_prd/
 debug/
 tmp/
 temp/
