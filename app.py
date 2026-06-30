@@ -1019,20 +1019,20 @@ def tab_consensus():
                                         "Strong Bearish": -1.0, "Divergent": 0.0}
                             fii_n = flow_map.get(flow_sent, 0.0)
                             dii_n = fii_n
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Flow data unavailable for %s: %s", ticker, e)
                     try:
                         pcr_data = fetch_options_pcr()
                         pcr_val = pcr_data.get("pcr_oi", 1.0)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("PCR data unavailable for %s: %s", ticker, e)
                     try:
                         mtf_raw = fetch_mtf_data(ticker)
                         if mtf_raw:
                             mtf_combined = get_combined_signal(mtf_raw)
                             mtf_val = mtf_combined.get("direction", 0) * mtf_combined.get("confidence", 0) / 100.0
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("MTF data unavailable for %s: %s", ticker, e)
 
                     state = {
                         "ensemble_direction": float(ens_dir),

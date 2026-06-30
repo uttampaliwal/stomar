@@ -4,6 +4,8 @@ from datetime import datetime
 import os
 import logging
 
+from src.constants import DATA_DIR
+
 logger = logging.getLogger(__name__)
 
 NSE_STOCKS = [
@@ -13,7 +15,6 @@ NSE_STOCKS = [
     "MARUTI.NS", "SUNPHARMA.NS", "ASIANPAINT.NS", "NTPC.NS", "ONGC.NS",
 ]
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 

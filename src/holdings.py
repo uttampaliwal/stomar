@@ -2,7 +2,7 @@ import pandas as pd
 import yfinance as yf
 import os
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+from src.constants import DATA_DIR
 
 INDIAN_MF_MAP = {
     "Edelweiss Greater China Equity Offshore Fund": "0P0000SKGZ.BO",

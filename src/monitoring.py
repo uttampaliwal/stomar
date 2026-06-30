@@ -24,9 +24,7 @@ from scipy import stats
 
 logger = logging.getLogger(__name__)
 
-MONITORING_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "data", "monitoring"
-)
+from src.constants import MONITORING_DIR
 
 
 @dataclass

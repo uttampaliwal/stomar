@@ -5,6 +5,8 @@ import os
 import time
 import logging
 
+from src.constants import DATA_DIR
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -13,7 +15,7 @@ try:
 except ImportError:
     _has_streamlit = False
 
-MTF_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+MTF_CACHE_DIR = DATA_DIR
 os.makedirs(MTF_CACHE_DIR, exist_ok=True)
 
 

@@ -6,9 +6,11 @@ import time
 import logging
 import threading
 
+from src.constants import DATA_DIR
+
 logger = logging.getLogger(__name__)
 
-FLOW_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+FLOW_CACHE_DIR = DATA_DIR
 os.makedirs(FLOW_CACHE_DIR, exist_ok=True)
 _flow_lock = threading.Lock()
 HEADERS = {

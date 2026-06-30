@@ -11,6 +11,8 @@ LEDGER_DB = os.path.join(DATA_DIR, "stomar.db")
 META_CONTROLLER_PATH = os.path.join(MODELS_DIR, "meta_controller.pkl")
 PAPER_STATE_PATH = os.path.join(DATA_DIR, "paper_state.json")
 MF_STATE_PATH = os.path.join(DATA_DIR, "mf_state.json")
+MONITORING_DIR = os.path.join(DATA_DIR, "monitoring")
+FEATURE_VERSIONS_DIR = os.path.join(DATA_DIR, "feature_versions")
 
 # ─── Trading Costs (NSE India) ───
 BROKERAGE_RATE = 0.0003          # 0.03% per side (Zerodha delivery)

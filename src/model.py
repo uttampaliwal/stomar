@@ -1,13 +1,11 @@
 import warnings
-warnings.filterwarnings("ignore", message=".*unpickle.*")
-warnings.filterwarnings("ignore", message=".*pickle.*")
 
 import torch
 import torch.nn as nn
 import joblib
 import os
 
-MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
+from src.constants import MODELS_DIR
 os.makedirs(MODELS_DIR, exist_ok=True)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

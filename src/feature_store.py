@@ -17,11 +17,9 @@ import logging
 import os
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
+from src.constants import FEATURE_VERSIONS_DIR
 
-FEATURE_VERSIONS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "data", "feature_versions"
-)
+logger = logging.getLogger(__name__)
 
 
 def compute_feature_hash(feature_cols: list, transformations: dict = None) -> str:
