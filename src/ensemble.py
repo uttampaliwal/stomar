@@ -17,7 +17,6 @@ Usage:
 """
 
 import logging
-import pickle
 from pathlib import Path
 
 import numpy as np
@@ -135,18 +134,18 @@ def evaluate_metalearner(meta_X_test: np.ndarray, y_test: np.ndarray,
 def save_meta_model(meta_model: Pipeline, path: str):
     """Save meta-learner to disk."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "wb") as f:
-        pickle.dump(meta_model, f)
+    import joblib
+    joblib.dump(meta_model, path)
     logger.info("Meta-learner saved to %s", path)
 
 
 def load_meta_model(path: str) -> Pipeline:
     """Load meta-learner from disk."""
+    import joblib
     import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        with open(path, "rb") as f:
-            meta_model = pickle.load(f)
+        meta_model = joblib.load(path)
     logger.info("Meta-learner loaded from %s", path)
     return meta_model
 

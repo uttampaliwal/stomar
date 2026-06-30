@@ -929,17 +929,16 @@ def tab_consensus():
                 <div><h3 style="margin:0;font-size:1.15rem;font-weight:700;">Signal Consensus</h3>
                 <p style="margin:0;font-size:0.82rem;color:var(--text-muted);">Unified view across all modules — the only signal that matters</p></div></div>""", unsafe_allow_html=True)
 
-    import pickle as _pickle
     import warnings as _warnings
 
     # Load meta-controller
     mc = None
     mc_path = os.path.join(os.path.dirname(__file__), "models", "meta_controller.pkl")
     if os.path.exists(mc_path):
+        import joblib
         with _warnings.catch_warnings():
             _warnings.simplefilter("ignore")
-            with open(mc_path, "rb") as f:
-                mc = _pickle.load(f)
+            mc = joblib.load(mc_path)
 
     results = []
     errors = []
@@ -2461,15 +2460,14 @@ def tab_ledger():
     # --- Meta-Controller Weights ---
     st.subheader("Meta-Controller Signal Weights")
     from src.meta_controller import MetaController
-    import pickle as _pickle
     import warnings as _warnings
     mc = MetaController()
     _model_path = os.path.join(os.path.dirname(__file__), "models", "meta_controller.pkl")
     if os.path.exists(_model_path):
+        import joblib
         with _warnings.catch_warnings():
             _warnings.simplefilter("ignore")
-            with open(_model_path, "rb") as _f:
-                mc = _pickle.load(_f)
+            mc = joblib.load(_model_path)
     weights = mc.get_weights()
     if weights:
         w_df = pd.DataFrame([
@@ -2512,7 +2510,7 @@ def main():
             ⚠️ Educational purposes only — not financial advice. Past performance does not guarantee future results.
         </div>
         <div style="font-size:0.65rem;color:var(--text-muted);margin-top:0.5rem;opacity:0.5;">
-            StoMar v1.0 — 5-Model Ensemble • Walk-Forward Backtest • Black-Litterman Optimizer
+            StoMar v0.1.0 — 5-Model Ensemble • Walk-Forward Backtest • Black-Litterman Optimizer
         </div>
     </div>
     """, unsafe_allow_html=True)

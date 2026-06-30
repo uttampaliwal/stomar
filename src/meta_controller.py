@@ -18,7 +18,6 @@ Usage:
 """
 
 import logging
-import pickle
 from pathlib import Path
 
 import numpy as np
@@ -239,8 +238,8 @@ class MetaController:
             from src.constants import META_CONTROLLER_PATH
             path = META_CONTROLLER_PATH
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "wb") as f:
-            pickle.dump({"model": self.model, "weights": self.weights}, f)
+        import joblib
+        joblib.dump({"model": self.model, "weights": self.weights}, path)
         logger.info("Meta-controller saved to %s", path)
 
     def load(self, path: str = None) -> bool:
@@ -252,8 +251,8 @@ class MetaController:
         if not os.path.exists(path):
             return False
         try:
-            with open(path, "rb") as f:
-                state = pickle.load(f)
+            import joblib
+            state = joblib.load(path)
             self.model = state.get("model")
             self.weights = state.get("weights")
             logger.info("Meta-controller loaded from %s", path)

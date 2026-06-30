@@ -179,10 +179,9 @@ def main():
                 print(f"  {name}: {weight:+.4f} ({direction})")
 
             # Save trained model
-            import pickle
+            import joblib
             model_path = os.path.join(os.path.dirname(__file__), "models", "meta_controller.pkl")
-            with open(model_path, "wb") as f:
-                pickle.dump(mc, f)
+            joblib.dump(mc, model_path)
             print(f"\nMeta-controller saved to {model_path}")
         else:
             print(f"Not enough data: {result.get('n_samples', 0)} samples (need {result.get('required', 100)})")
@@ -202,7 +201,6 @@ def main():
     meta_controller = MetaController()
 
     # Try loading pre-trained meta-controller
-    import pickle
     model_path = os.path.join(os.path.dirname(__file__), "models", "meta_controller.pkl")
     if args.train_meta:
         print("Training meta-controller on ledger history...")
@@ -216,15 +214,14 @@ def main():
             for name, weight in list(weights.items())[:5]:
                 direction = "positive" if weight > 0 else "negative"
                 print(f"    {name}: {weight:+.4f} ({direction})")
-            import pickle as _pickle
-            with open(model_path, "wb") as f:
-                _pickle.dump(meta_controller, f)
+            import joblib
+            joblib.dump(meta_controller, model_path)
             print(f"  Saved to {model_path}")
     elif os.path.exists(model_path):
+        import joblib
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            with open(model_path, "rb") as f:
-                meta_controller = pickle.load(f)
+            meta_controller = joblib.load(model_path)
         print("Loaded pre-trained meta-controller.")
     print()
 
