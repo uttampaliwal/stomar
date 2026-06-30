@@ -4,10 +4,14 @@ import torch
 import torch.nn as nn
 import joblib
 import os
+import time
 
 from src.constants import MODELS_DIR
 os.makedirs(MODELS_DIR, exist_ok=True)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+_model_cache: dict[str, tuple[float, tuple]] = {}
+_MODEL_CACHE_TTL = 3600  # 1 hour
 
 
 class StockLSTM(nn.Module):
@@ -128,6 +132,13 @@ def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker, lgb_m
 
 
 def load_models(ticker: str):
+    cache_key = ticker
+    if cache_key in _model_cache:
+        ts, models = _model_cache[cache_key]
+        if time.time() - ts < _MODEL_CACHE_TTL:
+            return models
+        del _model_cache[cache_key]
+
     import warnings
     ticker_clean = ticker.replace(".", "_")
     def base(name):
@@ -159,7 +170,9 @@ def load_models(ticker: str):
         if os.path.exists(lgb_path):
             lgb_model = joblib.load(lgb_path)
 
-    return lstm, gru, transformer, xgb, scaler, features, lgb_model
+    result = lstm, gru, transformer, xgb, scaler, features, lgb_model
+    _model_cache[cache_key] = (time.time(), result)
+    return result
 
 
 def models_exist(ticker: str) -> bool:

@@ -1,12 +1,31 @@
 import yfinance as yf
 import pandas as pd
 from datetime import datetime
+from functools import lru_cache
 import os
 import logging
 
 from src.constants import DATA_DIR
 
 logger = logging.getLogger(__name__)
+
+import time
+
+_fetch_cache: dict[str, tuple[float, pd.DataFrame]] = {}
+_FETCH_CACHE_TTL = 600  # 10 minutes in-memory cache
+
+
+def _cache_get(key: str) -> pd.DataFrame | None:
+    if key in _fetch_cache:
+        ts, df = _fetch_cache[key]
+        if time.time() - ts < _FETCH_CACHE_TTL:
+            return df
+        del _fetch_cache[key]
+    return None
+
+
+def _cache_put(key: str, df: pd.DataFrame):
+    _fetch_cache[key] = (time.time(), df)
 
 NSE_STOCKS = [
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
@@ -24,6 +43,13 @@ def fetch_stock_data(
     interval: str = "1d",
     force_refresh: bool = False,
 ) -> pd.DataFrame:
+    cache_key = f"{ticker}:{period}:{interval}"
+
+    if not force_refresh:
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
+
     cache_path = os.path.join(DATA_DIR, f"{ticker.replace('.', '_')}.parquet")
 
     if not force_refresh and os.path.exists(cache_path):
@@ -37,6 +63,7 @@ def fetch_stock_data(
         expected_min_rows = {"1y": 200, "2y": 400, "3y": 600, "5y": 1000}
         min_rows = expected_min_rows.get(period, 200)
         if last_date >= now.normalize() - pd.Timedelta(days=2) and len(df) >= min_rows:
+            _cache_put(cache_key, df)
             return df
 
     stock = yf.Ticker(ticker)
@@ -50,6 +77,7 @@ def fetch_stock_data(
     df.index.name = "date"
 
     df.to_parquet(cache_path)
+    _cache_put(cache_key, df)
     return df
 
 

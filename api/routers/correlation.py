@@ -1,24 +1,25 @@
 """Correlation matrix endpoint."""
 
-import numpy as np
 from fastapi import APIRouter
 from src.data_fetcher import fetch_stock_data, NSE_STOCKS
+from api.utils import parallel_fetch
 
 router = APIRouter()
+
+
+def _fetch_close(ticker):
+    df = fetch_stock_data(ticker, period="1y")
+    if df is not None and len(df) > 30:
+        return df["close"]
+    return None
 
 
 @router.get("/")
 def correlation_matrix():
     try:
         import pandas as pd
-        prices = {}
-        for ticker in NSE_STOCKS:
-            try:
-                df = fetch_stock_data(ticker, period="1y")
-                if df is not None and len(df) > 30:
-                    prices[ticker] = df["close"]
-            except Exception:
-                continue
+        raw = parallel_fetch(_fetch_close, NSE_STOCKS, max_workers=8)
+        prices = {k: v for k, v in raw.items() if v is not None}
 
         if len(prices) < 2:
             return {"error": "Not enough stocks with data"}

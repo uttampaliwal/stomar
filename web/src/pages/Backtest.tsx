@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 export default function Backtest() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
-  const { data, loading, error } = useApi<any>(`/api/backtest/${ticker}`)
+  const debouncedTicker = useDebouncedValue(ticker, 400)
+  const { data, loading, error } = useApi<any>(`/api/backtest/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
 
   return (

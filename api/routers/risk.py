@@ -1,9 +1,11 @@
 """Risk analysis endpoint."""
 
+import numpy as np
 from fastapi import APIRouter, Query
 from src.data_fetcher import fetch_stock_data, NSE_STOCKS
 from src.risk import generate_risk_report, kelly_criterion
 from src.regime import detect_regime
+from api.utils import parallel_fetch
 
 router = APIRouter()
 
@@ -43,22 +45,22 @@ def risk_analysis(ticker: str):
         return {"error": str(e)}
 
 
+def _fetch_returns(ticker):
+    df = fetch_stock_data(ticker, period="1y")
+    if df is not None and len(df) > 30:
+        return df["close"].pct_change().dropna().values
+    return None
+
+
 @router.get("/portfolio/all")
 def portfolio_risk():
     try:
-        stock_returns = {}
-        for ticker in NSE_STOCKS:
-            try:
-                df = fetch_stock_data(ticker, period="1y")
-                if df is not None and len(df) > 30:
-                    stock_returns[ticker] = df["close"].pct_change().dropna().values
-            except Exception:
-                continue
+        raw = parallel_fetch(_fetch_returns, NSE_STOCKS, max_workers=8)
+        stock_returns = {k: v for k, v in raw.items() if v is not None}
 
         if not stock_returns:
             return {"error": "No data available"}
 
-        import numpy as np
         result = {}
         for ticker, returns in stock_returns.items():
             report = generate_risk_report(returns, (1 + np.array(returns)).cumprod() * 100000)

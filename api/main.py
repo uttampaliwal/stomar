@@ -2,10 +2,12 @@
 
 import sys
 import os
+import time
+from collections import OrderedDict
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import (
@@ -40,6 +42,46 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_response_cache: OrderedDict[str, tuple[float, bytes]] = {}
+_CACHE_TTL = 30  # seconds — short TTL for near-realtime feel
+
+# Endpoints that are expensive and safe to cache briefly
+_CACHEABLE_PREFIXES = [
+    "/api/scanner", "/api/consensus", "/api/ranking",
+    "/api/optimizer", "/api/correlation", "/api/risk/portfolio",
+    "/api/pipeline/status", "/api/monitoring",
+]
+
+
+@app.middleware("http")
+async def cache_middleware(request: Request, call_next):
+    path = request.url.path
+
+    if request.method == "GET" and any(path.startswith(p) for p in _CACHEABLE_PREFIXES):
+        cached = _response_cache.get(path)
+        if cached:
+            ts, body = cached
+            if time.time() - ts < _CACHE_TTL:
+                return Response(content=body, media_type="application/json", headers={"X-Cache": "HIT"})
+
+    response = await call_next(request)
+
+    if request.method == "GET" and any(path.startswith(p) for p in _CACHEABLE_PREFIXES):
+        body = b""
+        async for chunk in response.body_iterator:
+            body += chunk if isinstance(chunk, bytes) else chunk.encode()
+        _response_cache[path] = (time.time(), body)
+        # Evict stale entries periodically
+        if len(_response_cache) > 50:
+            now = time.time()
+            stale = [k for k, (ts, _) in _response_cache.items() if now - ts > _CACHE_TTL * 2]
+            for k in stale:
+                del _response_cache[k]
+        return Response(content=body, media_type="application/json", headers={"X-Cache": "MISS"})
+
+    return response
+
 
 app.include_router(market.router, prefix="/api/market", tags=["Market"])
 app.include_router(predictions.router, prefix="/api/predictions", tags=["Predictions"])

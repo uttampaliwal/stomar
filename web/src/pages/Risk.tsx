@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatPercent } from '@/lib/utils'
 
 export default function Risk() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
-  const { data, loading, error } = useApi<any>(`/api/risk/${ticker}`)
+  const debouncedTicker = useDebouncedValue(ticker, 400)
+  const { data, loading, error } = useApi<any>(`/api/risk/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
 
   const report = data?.report
