@@ -17,7 +17,8 @@ from src.model import (
 from src.constants import DEFAULT_SEQ_LENGTH, DEFAULT_EPOCHS, DEFAULT_BATCH_SIZE, DEFAULT_LEARNING_RATE
 from src.logging_config import get_logger
 
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=UserWarning, module="torch")
+warnings.filterwarnings("ignore", category=FutureWarning, module="torch")
 
 logger = get_logger("trainer")
 

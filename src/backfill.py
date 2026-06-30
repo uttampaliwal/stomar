@@ -141,7 +141,7 @@ class HistoricalBackfill:
 
             # Log actual outcome (next day's return)
             next_close = close.iloc[i + 1]
-            actual_return = (next_close - current_close) / current_close
+            actual_return = (next_close - current_close) / current_close if current_close != 0 else 0
             actual_direction = 1 if actual_return > 0 else 0
 
             self.ledger.log_outcome(decision_id, actual_return, actual_direction)

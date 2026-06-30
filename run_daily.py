@@ -15,9 +15,6 @@ import argparse
 import logging
 import sys
 import os
-import warnings
-warnings.filterwarnings("ignore", message=".*pickle.*")
-warnings.filterwarnings("ignore", message=".*unpickle.*")
 
 sys.path.insert(0, os.path.dirname(__file__))
 

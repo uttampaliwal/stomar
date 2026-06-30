@@ -268,14 +268,18 @@ def compute_bollinger_bands(close, window=20, num_std=2):
     std = close.rolling(window).std()
     upper = middle + num_std * std
     lower = middle - num_std * std
-    bandwidth = (upper - lower) / middle
+    middle_safe = middle.replace(0, np.nan)
+    bandwidth = (upper - lower) / middle_safe
+
+    spread = upper - lower
+    spread_safe = spread.replace(0, np.nan)
 
     return {
         "upper": upper,
         "middle": middle,
         "lower": lower,
-        "bandwidth": bandwidth,
-        "percent_b": (close - lower) / (upper - lower),
+        "bandwidth": bandwidth.fillna(0),
+        "percent_b": ((close - lower) / spread_safe).fillna(0.5),
     }
 
 
@@ -349,7 +353,7 @@ def position_size_for_vol(risk_per_trade=0.02, stop_loss_pct=0.05,
     """
     if current_vol is None or current_vol <= 0:
         return {
-            "position_size_pct": risk_per_trade / stop_loss_pct,
+            "position_size_pct": risk_per_trade / stop_loss_pct if stop_loss_pct > 0 else 0,
             "vol_scalar": 1.0,
             "reasoning": "No vol data, using default sizing",
         }
@@ -357,7 +361,7 @@ def position_size_for_vol(risk_per_trade=0.02, stop_loss_pct=0.05,
     vol_scalar = target_vol / current_vol
     vol_scalar = max(0.5, min(2.0, vol_scalar))  # Cap between 0.5x and 2x
 
-    base_size = risk_per_trade / stop_loss_pct
+    base_size = risk_per_trade / stop_loss_pct if stop_loss_pct > 0 else 0
     adjusted_size = base_size * vol_scalar
 
     if current_vol < 0.15:

@@ -33,6 +33,9 @@ def compute_metrics(equity_curve, trades, risk_free_rate=RISK_FREE_RATE):
     eq = pd.Series(equity_curve["equity"].values, index=pd.to_datetime(equity_curve["date"]))
     returns = eq.pct_change().dropna()
 
+    if eq.iloc[0] == 0:
+        return {"error": "Initial equity is zero"}
+
     total_return = (eq.iloc[-1] / eq.iloc[0]) - 1
     n_years = max((eq.index[-1] - eq.index[0]).days / 365.25, 0.01)
     ann_return = (1 + total_return) ** (1 / n_years) - 1
@@ -41,11 +44,13 @@ def compute_metrics(equity_curve, trades, risk_free_rate=RISK_FREE_RATE):
 
     daily_mar = risk_free_rate / 252
     downside_diff = np.minimum(returns.values - daily_mar, 0)
-    downside_vol = np.sqrt(np.mean(downside_diff ** 2)) * np.sqrt(252) if len(downside_diff) > 0 else 0.001
-    sortino = (ann_return - risk_free_rate) / downside_vol
+    downside_vol = np.sqrt(np.mean(downside_diff ** 2)) * np.sqrt(252)
+    sortino = (ann_return - risk_free_rate) / downside_vol if downside_vol > 0 else 0
 
     cummax = eq.cummax()
-    drawdown = (eq - cummax) / cummax
+    cummax_safe = cummax.replace(0, np.nan)
+    drawdown = (eq - cummax) / cummax_safe
+    drawdown = drawdown.fillna(0)
     max_dd = drawdown.min()
     max_dd_duration = 0
     current_dd = 0
@@ -230,7 +235,7 @@ def run_walk_forward_backtest(
             exec_price = curr_close_raw * (1 + slippage) if final_dir == 1 else curr_close_raw * (1 - slippage)
 
             if final_dir == 1 and not in_position:
-                qty = int(portfolio.cash * position_pct / exec_price)
+                qty = int(portfolio.cash * position_pct / exec_price) if exec_price > 0 else 0
                 if qty > 0:
                     portfolio.buy(ticker, exec_price, qty, date_val)
                     in_position = True
@@ -292,7 +297,7 @@ def run_simple_backtest(df_feat, signals, initial_capital=100000, brokerage=BROK
 
             if signal["direction"] == 1 and not in_position.get(ticker):
                 exec_price = price * (1 + slippage)
-                qty = int(portfolio.cash * 0.25 / exec_price)
+                qty = int(portfolio.cash * 0.25 / exec_price) if exec_price > 0 else 0
                 if qty > 0:
                     portfolio.buy(ticker, exec_price, qty, date, brokerage)
                     in_position[ticker] = {"qty": qty, "entry": exec_price, "date": date}

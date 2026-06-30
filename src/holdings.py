@@ -176,7 +176,7 @@ def fetch_mf_performance(holdings_df: pd.DataFrame, period: str = "1y") -> dict:
             data = yf.download(ticker, period=period, progress=False)
             if data is not None and len(data) > 20:
                 close = data["Close"].values
-                ret = (close[-1] / close[0] - 1) * 100
+                ret = (close[-1] / close[0] - 1) * 100 if close[0] != 0 else 0
                 performance[name] = {
                     "ticker": ticker,
                     "period_return": float(ret),

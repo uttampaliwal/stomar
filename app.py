@@ -529,7 +529,7 @@ def tab_predictions():
     curr = df["close"].iloc[-1]
     prev_c = df["close"].iloc[-2]
     chg = curr - prev_c
-    chg_pct = (chg / prev_c) * 100
+    chg_pct = (chg / prev_c) * 100 if prev_c != 0 else 0
     ticker_display = ticker.replace(".NS", "")
 
     # Train action
@@ -652,8 +652,8 @@ def tab_predictions():
                         yaxis=dict(gridcolor="rgba(51,65,85,0.2)"))
                     st.markdown('<div class="section-header" style="margin-top:1rem">Feature Importance</div>', unsafe_allow_html=True)
                     st.plotly_chart(fig_fi, width='stretch')
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Feature importance chart failed: %s", e)
 
     with c_right:
         st.markdown('<div class="section-header">Recent Price Data</div>', unsafe_allow_html=True)
@@ -729,7 +729,7 @@ def tab_portfolio():
             nifty = get_nifty_data(str(eq["date"].iloc[0])[:10], str(eq["date"].iloc[-1])[:10])
             if len(nifty) > 1:
                 nifty_close = nifty["Close"].values.flatten()
-                nifty_norm = nifty_close / nifty_close[0] * float(eq["equity"].iloc[0])
+                nifty_norm = nifty_close / nifty_close[0] * float(eq["equity"].iloc[0]) if nifty_close[0] != 0 else nifty_close
                 fig.add_trace(go.Scatter(x=nifty.index, y=nifty_norm, mode="lines",
                     name="Nifty 50", line=dict(color="#f59e0b", width=1.5, dash="dot")))
         except Exception:
@@ -817,11 +817,13 @@ def tab_backtest():
                 st.plotly_chart(fig, width='stretch')
 
                 acc_by_model = {}
-                for m in ["lstm", "gru", "transformer"]:
-                    correct = (rdf[m] == rdf["actual"]).sum()
-                    acc_by_model[m.upper()] = correct / len(rdf) * 100
-                xgb_correct = ((rdf["xgb_prob"] > 0.5).astype(int) == rdf["actual"]).sum()
-                acc_by_model["XGBoost"] = xgb_correct / len(rdf) * 100
+                rdf_len = len(rdf)
+                if rdf_len > 0:
+                    for m in ["lstm", "gru", "transformer"]:
+                        correct = (rdf[m] == rdf["actual"]).sum()
+                        acc_by_model[m.upper()] = correct / rdf_len * 100
+                    xgb_correct = ((rdf["xgb_prob"] > 0.5).astype(int) == rdf["actual"]).sum()
+                    acc_by_model["XGBoost"] = xgb_correct / rdf_len * 100
 
                 st.markdown('<div class="section-header" style="margin-top:1.5rem;">Individual Model Accuracy</div>', unsafe_allow_html=True)
                 mc = st.columns(4)
@@ -830,7 +832,7 @@ def tab_backtest():
                     mc[i].markdown(f'<div class="stat-item" style="padding:0.6rem;"><div class="metric-label">{nm}</div><div class="metric-val" style="font-size:1.1rem;color:{c}">{a:.1f}%</div></div>', unsafe_allow_html=True)
 
                 st.markdown(f'<div class="section-header" style="margin-top:1.5rem;">Per-Window Breakdown</div>', unsafe_allow_html=True)
-                window_size = len(results) // metrics.get("n_windows", 1)
+                window_size = len(results) // max(metrics.get("n_windows", 1), 1)
                 for w in range(metrics.get("n_windows", 0)):
                     start = w * window_size
                     end = min(start + window_size, len(results))
@@ -1005,8 +1007,8 @@ def tab_consensus():
                     try:
                         sent_result = get_stock_sentiment(ticker)
                         sent_score = sent_result.get("weighted_score", sent_result.get("score", 0.0))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Sentiment fetch failed for %s: %s", ticker, e)
                     try:
                         from src.flow import fetch_fii_dii
                         fii_dii = fetch_fii_dii()
@@ -1127,7 +1129,7 @@ def tab_consensus():
         st.markdown("---")
 
         display_cols = ["Stock", "Ensemble", "Meta-Ctrl", "Regime", "Confidence", "Consensus"]
-        st.dataframe(df_c[display_cols], use_container_width=True, hide_index=True)
+        st.dataframe(df_c[display_cols], width="stretch", hide_index=True)
     else:
         st.warning("No stock data available. Train models first.")
 
@@ -1507,7 +1509,8 @@ def tab_risk():
 
         st.markdown('<div class="section-header" style="margin-top:1.5rem;">Drawdown Chart</div>', unsafe_allow_html=True)
         cummax = np.maximum.accumulate(equity)
-        drawdown = (equity - cummax) / cummax * 100
+        cummax_safe = np.where(cummax == 0, 1, cummax)
+        drawdown = (equity - cummax) / cummax_safe * 100
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df.index[-len(drawdown):], y=drawdown, fill="tozeroy",
             line=dict(color="#f43f5e", width=1.5), fillcolor="rgba(244,63,94,0.1)", name="Drawdown"))
@@ -1523,7 +1526,7 @@ def tab_risk():
         lose_days = (returns < 0).sum()
         avg_win = returns[returns > 0].mean() if win_days > 0 else 0
         avg_loss = abs(returns[returns < 0].mean()) if lose_days > 0 else 0.001
-        win_rate = win_days / len(returns)
+        win_rate = win_days / max(len(returns), 1)
         kelly = kelly_criterion(win_rate, avg_win, avg_loss)
         st.markdown(f'''<div class="glass">
             <div class="metric-label">OPTIMAL POSITION SIZE (KELLY)</div>
@@ -1696,10 +1699,10 @@ def tab_ranking():
                             )
                             # Convert to -1 to +1 scale
                             ml_signals[ticker] = (conf / 100.0) if d == 1 else -(conf / 100.0)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
+                    except Exception as e:
+                        logger.debug("ML prediction failed for %s: %s", ticker, e)
+                except Exception as e:
+                    logger.debug("ML signal collection failed: %s", e)
 
             rankings = rank_stocks(stock_data, ml_signals=ml_signals if ml_signals else None)
             fa = factor_analysis(stock_data)
@@ -2155,7 +2158,7 @@ def tab_paper_trading():
     if summary["open_positions"]:
         pos_df = pd.DataFrame(summary["open_positions"]).T
         pos_df.columns = ["Qty", "Avg Cost", "Current", "Mkt Value", "Unrl P&L", "P&L %"]
-        st.dataframe(pos_df, use_container_width=True)
+        st.dataframe(pos_df, width="stretch")
     else:
         st.info("No open positions.")
 
@@ -2169,7 +2172,7 @@ def tab_paper_trading():
              "Price": o.price, "Stop": o.stop_price}
             for o in pending
         ]
-        st.dataframe(pd.DataFrame(pending_data), use_container_width=True)
+        st.dataframe(pd.DataFrame(pending_data), width="stretch")
     else:
         st.info("No pending orders.")
 
@@ -2177,7 +2180,7 @@ def tab_paper_trading():
     st.markdown("#### Trade Log")
     log = trader.get_trade_log()
     if log:
-        st.dataframe(pd.DataFrame(log), use_container_width=True)
+        st.dataframe(pd.DataFrame(log), width="stretch")
     else:
         st.info("No trades yet.")
 
@@ -2299,7 +2302,7 @@ def tab_mf_tracker():
                 "pnl": "₹{:,.0f}",
                 "return_pct": "{:.1%}",
             }),
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
 
     # --- Allocation Breakdown ---
@@ -2310,7 +2313,7 @@ def tab_mf_tracker():
             {"Category": k, "Weight": v} for k, v in alloc.items()
         ])
         fig = px.pie(alloc_df, values="Weight", names="Category", hole=0.4)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # --- Concentration Risk ---
     flagged = tracker.detect_concentration_risk(threshold=0.3)
@@ -2337,7 +2340,7 @@ def tab_mf_tracker():
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=nav.index, y=nav.values, mode="lines", name="NAV"))
                     fig.update_layout(height=250, margin=dict(t=10, b=10))
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
 
             if st.button("Remove", key=f"mf_remove_{ticker}"):
                 try:
@@ -2427,7 +2430,7 @@ def tab_ledger():
             {"Module": name, "Accuracy": f"{acc:.1%}" if acc is not None else "N/A"}
             for name, acc in sorted(accuracy.items(), key=lambda x: x[1] or 0, reverse=True)
         ])
-        st.dataframe(acc_df, use_container_width=True, hide_index=True)
+        st.dataframe(acc_df, width="stretch", hide_index=True)
     else:
         st.info("No resolved predictions yet to compute accuracy.")
 
@@ -2446,7 +2449,7 @@ def tab_ledger():
             }
             for d in decisions[:50]
         ])
-        st.dataframe(dec_df, use_container_width=True, hide_index=True)
+        st.dataframe(dec_df, width="stretch", hide_index=True)
     else:
         st.info("No decisions in ledger yet.")
 
@@ -2474,7 +2477,7 @@ def tab_ledger():
             {"Signal": name, "Weight": f"{w:+.4f}"}
             for name, w in weights.items()
         ])
-        st.dataframe(w_df, use_container_width=True, hide_index=True)
+        st.dataframe(w_df, width="stretch", hide_index=True)
     else:
         st.info("Meta-controller not yet trained. Run `python run_daily.py --train-meta` to train.")
 
