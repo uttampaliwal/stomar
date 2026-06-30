@@ -31,10 +31,10 @@ export default function Backtest() {
       {data && !data.error && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat label="Accuracy" value={`${((data.accuracy || 0) * 100).toFixed(1)}%`} trend="up" />
-            <Stat label="Annual Return" value={`${((data.annual_return || 0) * 100).toFixed(1)}%`} />
-            <Stat label="Sharpe" value={(data.sharpe || 0).toFixed(2)} />
-            <Stat label="Windows" value={data.n_windows || 0} />
+            <Stat label="Accuracy" value={`${((data.ensemble_accuracy || data.accuracy || 0) * 100).toFixed(1)}%`} trend="up" />
+            <Stat label="Total Return" value={`${((data.total_return || data.annual_return || 0) * 100).toFixed(1)}%`} />
+            <Stat label="Sharpe" value={(data.sharpe || data.sharpe_ratio || 0).toFixed(2)} />
+            <Stat label="Win Rate" value={data.win_rate ? `${data.win_rate}%` : (data.total_trades || 0)} />
           </div>
 
           {/* Monte Carlo */}

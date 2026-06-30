@@ -31,7 +31,7 @@ export default function PaperTrading() {
         <>
           {/* Account Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat label="Equity" value={formatCurrency(state.equity || 0)} trend="up" />
+            <Stat label="Equity" value={formatCurrency(state.current_equity || state.equity || 0)} trend="up" />
             <Stat label="Cash" value={formatCurrency(state.cash || 0)} />
             <Stat label="Realized P&L" value={formatCurrency(state.realized_pnl || 0)} trend={state.realized_pnl >= 0 ? 'up' : 'down'} />
             <Stat label="Unrealized P&L" value={formatCurrency(state.unrealized_pnl || 0)} trend={state.unrealized_pnl >= 0 ? 'up' : 'down'} />

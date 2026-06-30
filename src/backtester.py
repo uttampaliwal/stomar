@@ -66,13 +66,14 @@ def compute_metrics(equity_curve, trades, risk_free_rate=RISK_FREE_RATE):
     var_95 = returns.quantile(0.05) if len(returns) > 20 else 0
     cvar_95 = returns[returns <= var_95].mean() if len(returns[returns <= var_95]) > 0 else var_95
 
-    win_trades = [t for t in trades if t.get("pnl", 0) > 0]
-    lose_trades = [t for t in trades if t.get("pnl", 0) <= 0]
-    total_trades = len(trades)
+    sell_trades = [t for t in trades if t.get("pnl") is not None]
+    win_trades = [t for t in sell_trades if t.get("pnl", 0) > 0]
+    lose_trades = [t for t in sell_trades if t.get("pnl", 0) < 0]
+    total_trades = len(sell_trades)
     win_rate = len(win_trades) / max(total_trades, 1)
 
-    avg_win = np.mean([t["pnl"] for t in win_trades]) if win_trades else 0
-    avg_loss = abs(np.mean([t["pnl"] for t in lose_trades])) if lose_trades else 0.001
+    avg_win = np.mean([t.get("pnl", 0) for t in win_trades]) if win_trades else 0
+    avg_loss = abs(np.mean([t.get("pnl", 0) for t in lose_trades])) if lose_trades else 0.001
     profit_factor = (avg_win * len(win_trades)) / max(avg_loss * len(lose_trades), 0.001)
 
     return {
@@ -246,7 +247,7 @@ def run_walk_forward_backtest(
                     portfolio.sell(ticker_key, exec_price, held_qty, date_val)
                     in_position = False
 
-            equity_points.append({"date": date_val, "equity": portfolio.portfolio_value({"ticker": curr_close_raw})})
+            equity_points.append({"date": date_val, "equity": portfolio.portfolio_value({ticker: curr_close_raw})})
 
     if in_position and portfolio.holdings:
         last_price = all_test_results[-1]["price"] if all_test_results else 0
