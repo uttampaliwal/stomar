@@ -104,56 +104,60 @@ class TestPipelineStages:
             assert result.feature_hash == "abc123def456"
 
     def test_evaluate_rejects_low_accuracy(self):
-        with patch("src.backtester.run_walk_forward_backtest") as mock_bt:
-            mock_bt.return_value = {
-                "metrics": {
-                    "ensemble_accuracy": 0.48,
-                    "simulated_sharpe": -0.5,
-                    "max_drawdown": 0.15,
-                }
-            }
+        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.features.add_technical_indicators") as mock_feat, \
+             patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+            mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
+            mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
+            mock_bt.return_value = (
+                {"ensemble_accuracy": 0.48, "simulated_sharpe": -0.5, "max_drawdown": 0.15},
+                None, [],
+            )
             pipeline = RetrainingPipeline(PipelineConfig(min_oos_accuracy=0.55))
             result = pipeline._stage_evaluate("TEST.NS")
             assert result.status == "rejected"
             assert "accuracy" in result.message.lower()
 
     def test_evaluate_rejects_low_sharpe(self):
-        with patch("src.backtester.run_walk_forward_backtest") as mock_bt:
-            mock_bt.return_value = {
-                "metrics": {
-                    "ensemble_accuracy": 0.53,
-                    "simulated_sharpe": -1.0,
-                    "max_drawdown": 0.15,
-                }
-            }
+        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.features.add_technical_indicators") as mock_feat, \
+             patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+            mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
+            mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
+            mock_bt.return_value = (
+                {"ensemble_accuracy": 0.53, "simulated_sharpe": -1.0, "max_drawdown": 0.15},
+                None, [],
+            )
             pipeline = RetrainingPipeline(PipelineConfig(min_oos_sharpe=-0.5))
             result = pipeline._stage_evaluate("TEST.NS")
             assert result.status == "rejected"
             assert "sharpe" in result.message.lower()
 
     def test_evaluate_rejects_high_drawdown(self):
-        with patch("src.backtester.run_walk_forward_backtest") as mock_bt:
-            mock_bt.return_value = {
-                "metrics": {
-                    "ensemble_accuracy": 0.53,
-                    "simulated_sharpe": 0.5,
-                    "max_drawdown": 0.35,
-                }
-            }
+        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.features.add_technical_indicators") as mock_feat, \
+             patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+            mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
+            mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
+            mock_bt.return_value = (
+                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "max_drawdown": 0.35},
+                None, [],
+            )
             pipeline = RetrainingPipeline(PipelineConfig(max_drawdown_threshold=0.20))
             result = pipeline._stage_evaluate("TEST.NS")
             assert result.status == "rejected"
             assert "dd" in result.message.lower()
 
     def test_evaluate_passes_good_model(self):
-        with patch("src.backtester.run_walk_forward_backtest") as mock_bt:
-            mock_bt.return_value = {
-                "metrics": {
-                    "ensemble_accuracy": 0.53,
-                    "simulated_sharpe": 0.5,
-                    "max_drawdown": 0.15,
-                }
-            }
+        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.features.add_technical_indicators") as mock_feat, \
+             patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+            mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
+            mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
+            mock_bt.return_value = (
+                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "max_drawdown": 0.15},
+                None, [],
+            )
             pipeline = RetrainingPipeline()
             result = pipeline._stage_evaluate("TEST.NS")
             assert result.status == "success"
@@ -209,15 +213,20 @@ class TestPipelineRun:
              patch("src.feature_store.compute_feature_hash") as mock_hash, \
              patch("src.feature_store.register_feature_version"), \
              patch("src.trainer.train_for_ticker") as mock_train, \
+             patch("src.data_fetcher.fetch_stock_data") as mock_pipe_fetch, \
+             patch("src.features.add_technical_indicators") as mock_pipe_feat, \
              patch("src.backtester.run_walk_forward_backtest") as mock_bt:
             mock_fetch.return_value = _mock_df()
             mock_val.return_value = {"passed": True, "errors": [], "warnings": [], "data_points": 100}
             mock_feat.return_value = _mock_df()
             mock_hash.return_value = "h1"
             mock_train.return_value = {"metrics": {}}
-            mock_bt.return_value = {
-                "metrics": {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "max_drawdown": 0.15}
-            }
+            mock_pipe_fetch.return_value = _mock_df()
+            mock_pipe_feat.return_value = _mock_df()
+            mock_bt.return_value = (
+                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "max_drawdown": 0.15},
+                None, [],
+            )
             result = pipeline.run("TEST.NS")
             assert result.status == "rejected"
 

@@ -108,10 +108,20 @@ class HistoricalBackfill:
             date = str(df.index[i].date()) if hasattr(df.index[i], 'date') else str(df.index[i])[:10]
             current_close = close.iloc[i]
 
+            # Compute regime using only data up to current day (no look-ahead)
+            day_regime_result = None
+            try:
+                from src.regime import detect_regime
+                day_close = close.iloc[:i + 1]
+                day_df = df.iloc[:i + 1]
+                day_regime_result = detect_regime(day_close, ohlc=day_df)
+            except Exception:
+                pass
+
             # Compute signals available from historical data
             signals = self._compute_historical_signals(
                 df=df, index=i, close=close, returns=returns,
-                regime_result=regime_result, models=models, ticker=ticker,
+                regime_result=day_regime_result, models=models, ticker=ticker,
             )
 
             # Make decision using available signals

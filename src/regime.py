@@ -110,11 +110,13 @@ def detect_regime(prices: pd.Series, lookback: int = 200, ohlc: pd.DataFrame = N
 
 def _compute_rsi(prices: pd.Series, period: int = 14) -> float:
     delta = prices.diff()
-    gain = delta.where(delta > 0, 0).rolling(period).mean().iloc[-1]
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean().iloc[-1]
-    if loss == 0:
+    gain = delta.where(delta > 0, 0)
+    loss = (-delta.where(delta < 0, 0))
+    avg_gain = gain.ewm(alpha=1/period, min_periods=period).mean()
+    avg_loss = loss.ewm(alpha=1/period, min_periods=period).mean()
+    if avg_loss.iloc[-1] == 0:
         return 100.0
-    rs = gain / loss
+    rs = avg_gain.iloc[-1] / avg_loss.iloc[-1]
     return 100 - (100 / (1 + rs))
 
 
@@ -139,8 +141,8 @@ def _compute_adx(prices: pd.Series, period: int = 14, ohlc: pd.DataFrame = None)
     plus_dm = up.where((up > down) & (up > 0), 0)
     minus_dm = down.where((down > up) & (down > 0), 0)
 
-    plus_di = 100 * plus_dm.rolling(period).mean() / atr
-    minus_di = 100 * minus_dm.rolling(period).mean() / atr
+    plus_di = 100 * plus_dm.rolling(period).mean() / atr.replace(0, 1e-10)
+    minus_di = 100 * minus_dm.rolling(period).mean() / atr.replace(0, 1e-10)
 
     dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, 1)
     adx = dx.rolling(period).mean()

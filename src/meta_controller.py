@@ -101,7 +101,10 @@ class MetaController:
         if self.model is None:
             return self._rule_based_decide(signals)
 
-        prob = self.model.predict_proba(vector.reshape(1, -1))[0, 1]
+        proba = self.model.predict_proba(vector.reshape(1, -1))
+        if proba.shape[1] < 2:
+            return self._rule_based_decide(signals)
+        prob = proba[0, 1]
         confidence = round(abs(prob - 0.5) * 2, 4)
 
         if confidence < MIN_CONFIDENCE_TO_TRADE:
@@ -208,12 +211,13 @@ class MetaController:
         try:
             self.model = CalibratedClassifierCV(base_model, cv=3)
             self.model.fit(X_train, y_train)
+            # Extract weights from the calibrated model's first estimator
+            self.weights = dict(zip(SIGNAL_NAMES, self.model.calibrated_classifiers_[0].estimator.coef_[0]))
         except Exception:
             self.model = base_model
+            self.weights = dict(zip(SIGNAL_NAMES, base_model.coef_[0]))
 
         accuracy = self.model.score(X_test, y_test)
-        self.weights = dict(zip(SIGNAL_NAMES, base_model.coef_[0]))
-
         logger.info(f"Meta-controller trained: accuracy={accuracy:.3f}, n_samples={len(X)}")
         return {
             "status": "trained",

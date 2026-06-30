@@ -62,8 +62,11 @@ def calculate_sortino(returns: np.ndarray, risk_free_rate: float = RISK_FREE_RAT
     if len(returns) < 10:
         return 0.0
     ann_return = returns.mean() * 252
-    downside = returns[returns < 0]
-    downside_vol = downside.std(ddof=1) * np.sqrt(252) if len(downside) > 1 else 0.001
+    mar = risk_free_rate / 252
+    downside_diff = np.minimum(returns - mar, 0)
+    downside_vol = np.sqrt(np.mean(downside_diff ** 2)) * np.sqrt(252)
+    if downside_vol == 0:
+        return 0.0
     return float((ann_return - risk_free_rate) / downside_vol)
 
 

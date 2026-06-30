@@ -66,7 +66,7 @@ def train_meta_learner(meta_X: np.ndarray, y: np.ndarray) -> Pipeline:
     """Train a stacked meta-learner on base model outputs.
 
     Args:
-        meta_X: (N, 5) array of base model probabilities [lstm, gru, tf, xgb, lgb]
+        meta_X: (N, 5) array of base model probabilities [xgb_prob_up, lgb_prob_up, lstm_prob, gru_prob, transformer_prob]
         y: (N,) binary labels (0 or 1)
 
     Returns:
@@ -321,13 +321,18 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
                 else:
                     weights = {"lstm": 0.2, "gru": 0.2, "transformer": 0.2, "xgb": 0.2, "lgb": 0.2}
 
-                final_prob = (
-                    prob_lstm * weights.get("lstm", 0.2) +
-                    prob_gru * weights.get("gru", 0.2) +
-                    prob_tf * weights.get("transformer", 0.2) +
-                    xgb_p * weights.get("xgb", 0.2) +
-                    lgb_p * weights.get("lgb", 0.2)
-                )
+                available = [("lstm", prob_lstm), ("gru", prob_gru), ("transformer", prob_tf), ("xgb", xgb_p)]
+                if lgb_model is not None:
+                    available.append(("lgb", lgb_p))
+
+                total_w = sum(weights.get(name, 0.2) for name, _ in available)
+                if total_w > 0:
+                    final_prob = sum(
+                        prob * weights.get(name, 0.2) / total_w
+                        for name, prob in available
+                    )
+                else:
+                    final_prob = 0.5
 
             final = 1 if final_prob > 0.5 else 0
             dl_ens = (d_lstm + d_gru + d_tf) / 3

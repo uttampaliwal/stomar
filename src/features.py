@@ -174,7 +174,7 @@ def add_technical_indicators(df: pd.DataFrame, ticker: str = None) -> pd.DataFra
     df["atr"] = ta.volatility.average_true_range(high, low, close, window=14)
     df["obv"] = ta.volume.on_balance_volume(close, volume)
     df["volume_sma"] = ta.trend.sma_indicator(volume, window=20)
-    df["volume_ratio"] = volume / df["volume_sma"].replace(0, np.nan)
+    df["volume_ratio"] = (volume / df["volume_sma"].replace(0, np.nan)).clip(upper=10.0)
 
     # Stochastic Oscillator
     stoch = ta.momentum.StochasticOscillator(high, low, close, window=14, smooth_window=3)
@@ -194,9 +194,9 @@ def add_technical_indicators(df: pd.DataFrame, ticker: str = None) -> pd.DataFra
     adx = ta.trend.ADXIndicator(high, low, close, window=14)
     df["adx"] = adx.adx()
 
-    # VWAP (intraday approximation using daily data)
+    # VWAP (20-day rolling approximation for daily data)
     typical_price = (high + low + close) / 3
-    df["vwap"] = (typical_price * volume).cumsum() / volume.cumsum()
+    df["vwap"] = (typical_price * volume).rolling(20).sum() / volume.rolling(20).sum()
 
     # Price position in range
     df["high_low_pct"] = (high - low) / close * 100

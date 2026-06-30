@@ -129,7 +129,11 @@ def black_litterman(market_weights: np.ndarray, cov_matrix: np.ndarray,
         M3 = M1 @ pi + P.T @ np.linalg.inv(omega) @ Q
         posterior_return = posterior_cov @ M3
 
-        weights = posterior_return / (risk_aversion * np.diag(cov_matrix))
+        try:
+            inv_cov = np.linalg.inv(cov_matrix)
+            weights = (1.0 / risk_aversion) * inv_cov @ posterior_return
+        except np.linalg.LinAlgError:
+            weights = posterior_return / (risk_aversion * np.diag(cov_matrix))
         weights = np.maximum(weights, 0)
         if weights.sum() > 0:
             weights = weights / weights.sum()

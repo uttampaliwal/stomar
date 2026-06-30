@@ -192,9 +192,17 @@ class RetrainingPipeline:
         """Stage 5: Evaluate on OOS window with validation gates."""
         try:
             from src.backtester import run_walk_forward_backtest
+            from src.data_fetcher import fetch_stock_data
+            from src.features import add_technical_indicators
 
-            results = run_walk_forward_backtest(ticker)
-            metrics = results.get("metrics", {})
+            df = fetch_stock_data(ticker, period="5y", force_refresh=False)
+            df_feat = add_technical_indicators(df, ticker=ticker)
+            skip = {"open", "high", "low", "close", "volume", "target", "target_direction"}
+            feature_cols = sorted([c for c in df_feat.columns if c not in skip])
+
+            metrics, portfolio, test_results = run_walk_forward_backtest(
+                ticker, df_feat, feature_cols,
+            )
 
             oos_accuracy = metrics.get("ensemble_accuracy", 0)
             sharpe = metrics.get("simulated_sharpe", -999)

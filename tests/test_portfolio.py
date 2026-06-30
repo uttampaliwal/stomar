@@ -26,7 +26,10 @@ class TestPortfolioBasic:
         p = Portfolio(100000)
         p.buy("TEST.NS", 100.0, 10, datetime(2024, 1, 1))
         assert "TEST.NS" in p.holdings
-        assert p.holdings["TEST.NS"] == (10, 100.0)
+        qty, avg_price = p.holdings["TEST.NS"]
+        assert qty == 10
+        assert avg_price > 100.0  # includes buy-side costs
+        assert avg_price < 101.0
 
     def test_sell_removes_holding(self):
         from src.portfolio import Portfolio

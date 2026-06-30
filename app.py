@@ -439,10 +439,12 @@ def metric_card(label, value, delta=None, help_text=None, icon=None):
         try:
             numeric_val = float(numeric_str)
             is_up = numeric_val > 0
+            is_zero = numeric_val == 0
         except ValueError:
             is_up = "+" in d_str
-        color = "#10b981" if is_up else "#f43f5e"
-        arrow = "▲" if is_up else "▼"
+            is_zero = False
+        color = "#94a3b8" if is_zero else "#10b981" if is_up else "#f43f5e"
+        arrow = "—" if is_zero else "▲" if is_up else "▼"
         delta_html = f'<div style="font-size:0.75rem;font-weight:600;color:{color};margin-top:0.25rem;">{arrow} {d_str}</div>'
     else:
         delta_html = ""
@@ -631,7 +633,7 @@ def tab_predictions():
 
         if models_exist(ticker):
             try:
-                _, xgb_m, _, _, _, _, _ = load_models(ticker)
+                lstm_m, gru_m, tf_m, xgb_m, scaler_m, feat_m, lgb_m = load_models(ticker)
                 if hasattr(xgb_m, "feature_importances_"):
                     imp = xgb_m.feature_importances_
                     feat_used = [c for c in FEATURE_COLS if c in df_feat.columns]
@@ -947,13 +949,13 @@ def tab_consensus():
             if mc is not None and mc.model is not None:
                 try:
                     from src.meta_controller import SIGNAL_NAMES
-                    from src.risk import compute_var, compute_cvar, compute_sharpe
+                    from src.risk import calculate_var, calculate_cvar, calculate_sharpe
                     from src.volatility import forecast_volatility
 
                     returns = close.pct_change().dropna()
-                    var_val = compute_var(returns) if len(returns) > 30 else 0
-                    cvar_val = compute_cvar(returns) if len(returns) > 30 else 0
-                    sharpe_val = compute_sharpe(returns) if len(returns) > 30 else 0
+                    var_val = calculate_var(returns) if len(returns) > 30 else 0
+                    cvar_val = calculate_cvar(returns) if len(returns) > 30 else 0
+                    sharpe_val = calculate_sharpe(returns) if len(returns) > 30 else 0
                     vol_fc = forecast_volatility(returns) if len(returns) > 30 else 0
 
                     regime_result = detect_regime(close, ohlc=df)
@@ -976,11 +978,17 @@ def tab_consensus():
                     except Exception:
                         pass
                     try:
-                        flow_sent = get_flow_sentiment(fii_n, dii_n)
-                        flow_map = {"Strong Bullish": 1.0, "Bullish": 0.5, "Positive": 0.5,
-                                    "Neutral": 0.0, "Negative": -0.5, "Bearish": -0.5,
-                                    "Strong Bearish": -1.0, "Divergent": 0.0}
-                        fii_n = flow_map.get(flow_sent, 0.0)
+                        from src.flow import fetch_fii_dii
+                        fii_dii = fetch_fii_dii()
+                        if len(fii_dii) > 0:
+                            fii_n = float(fii_dii.iloc[0]["fii_net"])
+                            dii_n = float(fii_dii.iloc[0]["dii_net"])
+                            flow_sent = get_flow_sentiment(fii_n, dii_n)
+                            flow_map = {"Strong Bullish": 1.0, "Bullish": 0.5, "Positive": 0.5,
+                                        "Neutral": 0.0, "Negative": -0.5, "Bearish": -0.5,
+                                        "Strong Bearish": -1.0, "Divergent": 0.0}
+                            fii_n = flow_map.get(flow_sent, 0.0)
+                            dii_n = fii_n
                     except Exception:
                         pass
                     try:
@@ -1112,7 +1120,7 @@ def tab_sentiment():
         with st.spinner(f"Analyzing news for {td}..."):
             try:
                 result = get_stock_sentiment(ticker)
-                score = result.get("score", 0.0)
+                score = result.get("weighted_score", result.get("score", 0.0))
             except Exception as e:
                 st.markdown(f"""<div class="glass" style="text-align:center;padding:2rem;border-color:rgba(244,63,94,0.3);">
                     <div style="font-size:1.5rem;margin-bottom:0.5rem;">❌</div>
@@ -1178,7 +1186,11 @@ def tab_market_pulse():
 
     with c2:
         st.markdown('<div class="section-header">Options PCR & Max Pain</div>', unsafe_allow_html=True)
-        pcr = fetch_options_pcr()
+        try:
+            pcr = fetch_options_pcr()
+        except Exception as e:
+            st.markdown(f'<div class="glass" style="text-align:center;padding:2rem;"><div class="metric-label">OPTIONS DATA</div><div style="margin-top:0.75rem;color:var(--text-muted);">Unavailable: {e}</div></div>', unsafe_allow_html=True)
+            pcr = {}
         if pcr.get("pcr_oi", 0) > 0:
             pcr_v = pcr["pcr_oi"]
             pcr_c = "#10b981" if pcr_v > 1 else "#f43f5e" if pcr_v < 0.8 else "var(--text-secondary)"
@@ -1330,6 +1342,7 @@ def tab_holdings():
         except Exception as e:
             st.error(f"Failed to parse holdings CSV: {e}")
             holdings_df = pd.DataFrame()
+        stats = {}
         if not holdings_df.empty:
             try:
                 stats = compute_portfolio_stats(holdings_df)
@@ -1968,8 +1981,11 @@ def tab_correlation():
 
 
 def tab_paper_trading():
-    st.markdown("### 📝 Paper Trading Simulator")
-    st.caption("Simulate trades with real delayed prices. No real money at risk.")
+    st.markdown(f"""<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;padding:1rem 1.5rem;
+                background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
+        <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Paper Trading</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Simulator — No Real Money</span>
+    </div>""", unsafe_allow_html=True)
 
     if "paper_trader" not in st.session_state:
         try:
@@ -2143,8 +2159,11 @@ def tab_paper_trading():
 
 def tab_mf_tracker():
     """MF Tracker tab — mutual fund portfolio tracking."""
-    st.header("🏦 Mutual Fund Tracker")
-    st.caption("Track MF holdings, NAV history, XIRR, factor exposures, and concentration risk")
+    st.markdown(f"""<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;padding:1rem 1.5rem;
+                background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
+        <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Mutual Fund Tracker</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">NAV History, XIRR, Factor Exposures</span>
+    </div>""", unsafe_allow_html=True)
 
     from src.mf_tracker import MFTracker
     from src.holdings import INDIAN_MF_MAP
@@ -2293,8 +2312,11 @@ def tab_mf_tracker():
 
 def tab_ledger():
     """Ledger tab — decision history, signal accuracy, P&L from persistent log."""
-    st.header("📒 Trading Ledger")
-    st.caption("Historical decisions, signal accuracy, and P&L from the autonomous daily loop")
+    st.markdown(f"""<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;padding:1rem 1.5rem;
+                background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
+        <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Trading Ledger</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Decision History & Signal Accuracy</span>
+    </div>""", unsafe_allow_html=True)
 
     from src.ledger import Ledger
 

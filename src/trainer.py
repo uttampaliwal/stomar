@@ -84,7 +84,7 @@ def _collect_meta_features(lstm, gru, transformer, xgb, scaler, feature_cols,
         prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
         prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
 
-        xgb_inp = data.iloc[[i - seq_length]]
+        xgb_inp = data.iloc[[i - 1]]
         xgb_p = xgb.predict_proba(xgb_inp)[0][1]
 
         lgb_p = 0.5
@@ -103,6 +103,7 @@ def _train_one_model(model, train_loader, X_val, y_val, model_name, epochs=EPOCH
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3)
     best_loss = float("inf")
     patience = 0
+    best_state = None
 
     for epoch in range(epochs):
         model.train()
@@ -126,12 +127,16 @@ def _train_one_model(model, train_loader, X_val, y_val, model_name, epochs=EPOCH
         if val_loss < best_loss:
             best_loss = val_loss
             patience = 0
+            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
         else:
             patience += 1
             if patience >= 8:
                 logger.info("%s early_stop epoch=%d", model_name, epoch + 1)
                 break
 
+    if best_state is not None:
+        model.load_state_dict(best_state)
+        model.to(DEVICE)
     return model
 
 

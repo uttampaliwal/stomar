@@ -87,9 +87,9 @@ def garman_klass_volatility(open_, high, low, close, window=20, annualize=True):
     """
     log_hl = np.log(high / low)
     log_co = np.log(close / open_)
-    vol = np.sqrt(
-        (0.5 * log_hl ** 2 - (2 * np.log(2) - 1) * log_co ** 2).rolling(window).mean()
-    )
+    gk_raw = 0.5 * log_hl ** 2 - (2 * np.log(2) - 1) * log_co ** 2
+    gk_raw = gk_raw.clip(lower=0)  # Prevent negative variance
+    vol = np.sqrt(gk_raw.rolling(window).mean())
     if annualize:
         vol = vol * np.sqrt(252)
     return vol

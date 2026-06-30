@@ -26,13 +26,15 @@ class Portfolio:
             total_cost = cost + costs["total"]
 
         self.cash -= total_cost
+        # Store cost-inclusive average price for accurate P&L calculation
+        cost_incl_per_share = (price * quantity + costs["total"]) / quantity
         if ticker in self.holdings:
             old_qty, old_price = self.holdings[ticker]
             total_qty = old_qty + quantity
-            avg_price = ((old_price * old_qty) + (price * quantity)) / total_qty
+            avg_price = ((old_price * old_qty) + (cost_incl_per_share * quantity)) / total_qty
             self.holdings[ticker] = (total_qty, avg_price)
         else:
-            self.holdings[ticker] = (quantity, price)
+            self.holdings[ticker] = (quantity, cost_incl_per_share)
 
         self.trades.append({
             "date": date, "ticker": ticker, "action": "BUY",
@@ -50,6 +52,7 @@ class Portfolio:
         costs = calculate_nse_costs(price, quantity, "sell")
         proceeds = price * quantity
         net_proceeds = proceeds - costs["total"]
+        # P&L accounts for buy-side costs embedded in avg_price + sell-side costs
         pnl = (price - avg_price) * quantity - costs["total"]
 
         self.cash += net_proceeds
