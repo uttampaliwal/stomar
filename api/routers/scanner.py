@@ -10,6 +10,12 @@ from src.trainer import FEATURE_COLS
 router = APIRouter()
 
 
+def _load(ticker):
+    result = load_models(ticker)
+    lstm, gru, transformer, xgb, scaler, features, lgb = result
+    return {"lstm": lstm, "gru": gru, "transformer": transformer, "xgb": xgb, "scaler": scaler, "features": features, "lgb": lgb}
+
+
 @router.get("/")
 def scan_stocks():
     try:
@@ -24,24 +30,23 @@ def scan_stocks():
 
                 if not models_exist(ticker):
                     continue
-                models = load_models(ticker)
-                if not models:
-                    continue
+                m = _load(ticker)
 
                 direction, confidence, _ = predict_ensemble(
-                    models["lstm"], models["gru"], models["transformer"],
-                    models["xgb"], models["scaler"], FEATURE_COLS, df_feat,
-                    lgb_model=models.get("lgb"),
+                    m["lstm"], m["gru"], m["transformer"],
+                    m["xgb"], m["scaler"], FEATURE_COLS, df_feat,
+                    lgb_model=m["lgb"],
                 )
+                direction_label = "BUY" if direction == 1 else "SELL"
 
-                day_return = round(float((last["Close"] - last["Open"]) / last["Open"] * 100), 2) if last["Open"] > 0 else 0
+                day_return = round(float((last["close"] - last["open"]) / last["open"] * 100), 2) if last["open"] > 0 else 0
                 results.append({
                     "ticker": ticker,
-                    "signal": direction,
+                    "signal": direction_label,
                     "confidence": round(float(confidence), 4),
-                    "price": round(float(last["Close"]), 2),
+                    "price": round(float(last["close"]), 2),
                     "day_return": day_return,
-                    "rsi": round(float(last.get("RSI", 50)), 2),
+                    "rsi": round(float(last.get("rsi", 50)), 2),
                 })
             except Exception:
                 continue

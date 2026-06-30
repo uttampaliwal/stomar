@@ -16,7 +16,7 @@ def correlation_matrix():
             try:
                 df = fetch_stock_data(ticker, period="1y")
                 if df is not None and len(df) > 30:
-                    prices[ticker] = df["Close"]
+                    prices[ticker] = df["close"]
             except Exception:
                 continue
 

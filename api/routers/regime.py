@@ -1,6 +1,6 @@
-"""Regime detection and strategy endpoint."""
+"""Regime detection endpoint."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from src.data_fetcher import fetch_stock_data
 from src.regime import detect_regime
 
@@ -14,7 +14,7 @@ def get_regime(ticker: str):
         if df is None or df.empty:
             return {"error": f"No data for {ticker}"}
 
-        regime = detect_regime(df["Close"])
+        regime = detect_regime(df["close"])
         return {"ticker": ticker, **regime}
     except Exception as e:
         return {"error": str(e)}

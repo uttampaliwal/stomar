@@ -15,11 +15,11 @@ def risk_analysis(ticker: str):
         if df is None or df.empty:
             return {"error": f"No data for {ticker}"}
 
-        returns = df["Close"].pct_change().dropna().values
-        equity_curve = (1 + df["Close"].pct_change().fillna(0)).cumprod().values * 100000
+        returns = df["close"].pct_change().dropna().values
+        equity_curve = (1 + df["close"].pct_change().fillna(0)).cumprod().values * 100000
 
         report = generate_risk_report(returns, equity_curve)
-        regime = detect_regime(df["Close"])
+        regime = detect_regime(df["close"])
 
         wins = returns[returns > 0]
         losses = returns[returns < 0]
@@ -51,7 +51,7 @@ def portfolio_risk():
             try:
                 df = fetch_stock_data(ticker, period="1y")
                 if df is not None and len(df) > 30:
-                    stock_returns[ticker] = df["Close"].pct_change().dropna().values
+                    stock_returns[ticker] = df["close"].pct_change().dropna().values
             except Exception:
                 continue
 

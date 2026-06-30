@@ -12,6 +12,13 @@ from src.ensemble import predict_ensemble
 router = APIRouter()
 
 
+def _load(ticker):
+    """Load models and return as a dict."""
+    result = load_models(ticker)
+    lstm, gru, transformer, xgb, scaler, features, lgb = result
+    return {"lstm": lstm, "gru": gru, "transformer": transformer, "xgb": xgb, "scaler": scaler, "features": features, "lgb": lgb}
+
+
 @router.get("/{ticker}")
 def get_prediction(ticker: str):
     try:
@@ -23,52 +30,52 @@ def get_prediction(ticker: str):
         last = df_feat.iloc[-1]
 
         metrics = {
-            "price": round(float(last["Close"]), 2),
-            "day_change": round(float(last["Close"] - last["Open"]), 2),
-            "day_change_pct": round(float((last["Close"] - last["Open"]) / last["Open"] * 100), 2),
-            "volume": int(last["Volume"]),
-            "atr": round(float(last.get("ATR", 0)), 2),
-            "rsi": round(float(last.get("RSI", 50)), 2),
-            "macd": round(float(last.get("MACD", 0)), 4),
+            "price": round(float(last["close"]), 2),
+            "day_change": round(float(last["close"] - last["open"]), 2),
+            "day_change_pct": round(float((last["close"] - last["open"]) / last["open"] * 100), 2),
+            "volume": int(last["volume"]),
+            "atr": round(float(last.get("atr", 0)), 2),
+            "rsi": round(float(last.get("rsi", 50)), 2),
+            "macd": round(float(last.get("macd", 0)), 4),
         }
 
         prediction = None
         if models_exist(ticker):
-            models = load_models(ticker)
-            if models:
-                direction, confidence, details = predict_ensemble(
-                    models["lstm"], models["gru"], models["transformer"],
-                    models["xgb"], models["scaler"], FEATURE_COLS, df_feat,
-                    lgb_model=models.get("lgb"),
-                )
-                prediction = {
-                    "direction": direction,
-                    "confidence": round(float(confidence), 4),
-                    "details": {k: round(float(v), 4) for k, v in details.items()} if details else {},
-                }
+            m = _load(ticker)
+            direction, confidence, details = predict_ensemble(
+                m["lstm"], m["gru"], m["transformer"],
+                m["xgb"], m["scaler"], FEATURE_COLS, df_feat,
+                lgb_model=m["lgb"],
+            )
+            direction_label = "BUY" if direction == 1 else "SELL"
+            prediction = {
+                "direction": direction_label,
+                "confidence": round(float(confidence), 4),
+                "details": {k: (round(float(v), 4) if isinstance(v, (int, float)) else str(v)) for k, v in details.items()} if details else {},
+            }
 
-        recent = df_feat.tail(7)[["Open", "High", "Low", "Close", "Volume"]].reset_index(drop=False)
+        recent = df_feat.tail(7)[["open", "high", "low", "close", "volume"]].reset_index(drop=False)
         recent_data = []
         for _, row in recent.iterrows():
             recent_data.append({
-                "date": str(row.get("Date", row.index[0])),
-                "open": round(float(row["Open"]), 2),
-                "high": round(float(row["High"]), 2),
-                "low": round(float(row["Low"]), 2),
-                "close": round(float(row["Close"]), 2),
-                "volume": int(row["Volume"]),
+                "date": str(row.get("date", row.index[0])),
+                "open": round(float(row["open"]), 2),
+                "high": round(float(row["high"]), 2),
+                "low": round(float(row["low"]), 2),
+                "close": round(float(row["close"]), 2),
+                "volume": int(row["volume"]),
             })
 
-        ohlcv = df_feat[["Open", "High", "Low", "Close", "Volume"]].tail(120).reset_index(drop=False)
+        ohlcv = df_feat[["open", "high", "low", "close", "volume"]].tail(120).reset_index(drop=False)
         chart_data = []
         for _, row in ohlcv.iterrows():
             chart_data.append({
-                "date": str(row.get("Date", row.index[0])),
-                "open": round(float(row["Open"]), 2),
-                "high": round(float(row["High"]), 2),
-                "low": round(float(row["Low"]), 2),
-                "close": round(float(row["Close"]), 2),
-                "volume": int(row["Volume"]),
+                "date": str(row.get("date", row.index[0])),
+                "open": round(float(row["open"]), 2),
+                "high": round(float(row["high"]), 2),
+                "low": round(float(row["low"]), 2),
+                "close": round(float(row["close"]), 2),
+                "volume": int(row["volume"]),
             })
 
         return {
@@ -87,10 +94,8 @@ def get_feature_importance(ticker: str):
     try:
         if not models_exist(ticker):
             return {"error": "Models not trained"}
-        models = load_models(ticker)
-        if not models or "xgb" not in models:
-            return {"error": "XGBoost model not available"}
-        xgb = models["xgb"]
+        m = _load(ticker)
+        xgb = m["xgb"]
         importances = xgb.feature_importances_
         features = FEATURE_COLS[:len(importances)]
         pairs = sorted(zip(features, importances.tolist()), key=lambda x: -x[1])[:10]

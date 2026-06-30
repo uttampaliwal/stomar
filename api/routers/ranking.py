@@ -11,6 +11,12 @@ from src.ranking import rank_stocks
 router = APIRouter()
 
 
+def _load(ticker):
+    result = load_models(ticker)
+    lstm, gru, transformer, xgb, scaler, features, lgb = result
+    return {"lstm": lstm, "gru": gru, "transformer": transformer, "xgb": xgb, "scaler": scaler, "features": features, "lgb": lgb}
+
+
 @router.get("/")
 def get_rankings():
     try:
@@ -25,14 +31,13 @@ def get_rankings():
                 stock_data[ticker] = df_feat
 
                 if models_exist(ticker):
-                    models = load_models(ticker)
-                    if models:
-                        direction, confidence, _ = predict_ensemble(
-                            models["lstm"], models["gru"], models["transformer"],
-                            models["xgb"], models["scaler"], FEATURE_COLS, df_feat,
-                            lgb_model=models.get("lgb"),
-                        )
-                        ml_signals[ticker] = {"direction": direction, "confidence": float(confidence)}
+                    m = _load(ticker)
+                    direction, confidence, _ = predict_ensemble(
+                        m["lstm"], m["gru"], m["transformer"],
+                        m["xgb"], m["scaler"], FEATURE_COLS, df_feat,
+                        lgb_model=m["lgb"],
+                    )
+                    ml_signals[ticker] = {"direction": "BUY" if direction == 1 else "SELL", "confidence": float(confidence)}
             except Exception:
                 continue
 

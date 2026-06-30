@@ -8,10 +8,14 @@ from src.ensemble import predict_ensemble
 from src.trainer import FEATURE_COLS
 from src.regime import detect_regime
 from src.sentiment import get_stock_sentiment
-from src.flow import get_flow_sentiment, fetch_options_pcr
-from src.multitimeframe import fetch_mtf_data, get_combined_signal
 
 router = APIRouter()
+
+
+def _load(ticker):
+    result = load_models(ticker)
+    lstm, gru, transformer, xgb, scaler, features, lgb = result
+    return {"lstm": lstm, "gru": gru, "transformer": transformer, "xgb": xgb, "scaler": scaler, "features": features, "lgb": lgb}
 
 
 @router.get("/")
@@ -28,17 +32,16 @@ def get_consensus():
                 ensemble_signal = "HOLD"
                 ensemble_conf = 0.0
                 if models_exist(ticker):
-                    models = load_models(ticker)
-                    if models:
-                        direction, confidence, _ = predict_ensemble(
-                            models["lstm"], models["gru"], models["transformer"],
-                            models["xgb"], models["scaler"], FEATURE_COLS, df_feat,
-                            lgb_model=models.get("lgb"),
-                        )
-                        ensemble_signal = direction
-                        ensemble_conf = round(float(confidence), 4)
+                    m = _load(ticker)
+                    direction, confidence, _ = predict_ensemble(
+                        m["lstm"], m["gru"], m["transformer"],
+                        m["xgb"], m["scaler"], FEATURE_COLS, df_feat,
+                        lgb_model=m["lgb"],
+                    )
+                    ensemble_signal = "BUY" if direction == 1 else "SELL"
+                    ensemble_conf = round(float(confidence), 4)
 
-                regime = detect_regime(df["Close"])
+                regime = detect_regime(df["close"])
                 regime_name = regime.get("regime", "Unknown")
 
                 sentiment = get_stock_sentiment(ticker)
