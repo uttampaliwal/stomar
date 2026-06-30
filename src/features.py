@@ -60,7 +60,8 @@ def add_flow_features(df: pd.DataFrame) -> pd.DataFrame:
         if len(flow_df) == 0:
             return df
 
-        flow_df["date"] = pd.to_datetime(flow_df["date"])
+        flow_df["date"] = pd.to_datetime(flow_df["date"], utc=True).dt.tz_localize(None)
+        flow_df["date"] = flow_df["date"].dt.floor("D")
         flow_df = flow_df.set_index("date").sort_index()
 
         # Keep only the columns we need
@@ -69,7 +70,10 @@ def add_flow_features(df: pd.DataFrame) -> pd.DataFrame:
         # Shift by 1 day: FII/DII data for day T joins to day T+1
         flow_df = flow_df.shift(1)
 
-        # Join on date index (left join preserves all price dates)
+        # Ensure both indices are tz-naive date-only before join
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        df.index = df.index.floor("D")
         df = df.join(flow_df, how="left")
 
         # Fill missing dates with 0

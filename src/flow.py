@@ -62,7 +62,7 @@ def fetch_fii_dii() -> pd.DataFrame:
                 return pd.read_parquet(cache_file)
             return pd.DataFrame()
 
-        date = pd.Timestamp(fii_row.get("date", ""))
+        date = pd.Timestamp(fii_row.get("date", "")).tz_localize(None).floor("D")
         fii_buy = _parse_val(fii_row.get("buyValue", 0))
         fii_sell = _parse_val(fii_row.get("sellValue", 0))
         fii_net = _parse_val(fii_row.get("netValue", 0))
