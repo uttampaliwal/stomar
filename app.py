@@ -422,6 +422,8 @@ if "portfolio" not in st.session_state:
     st.session_state.portfolio = Portfolio(initial_capital=100000)
 if "last_ticker" not in st.session_state:
     st.session_state.last_ticker = NSE_STOCKS[0]
+if "shared_ticker" not in st.session_state:
+    st.session_state.shared_ticker = NSE_STOCKS[0]
 
 
 @st.cache_data(ttl=3600)
@@ -495,8 +497,9 @@ def tab_predictions():
     # ─── Controls ───
     c1, c2, c3, c4 = st.columns([3, 1.2, 1, 1])
     with c1:
-        ticker = st.selectbox("Stock", NSE_STOCKS, index=NSE_STOCKS.index(st.session_state.last_ticker), label_visibility="collapsed")
+        ticker = st.selectbox("Stock", NSE_STOCKS, index=NSE_STOCKS.index(st.session_state.shared_ticker), label_visibility="collapsed")
         st.session_state.last_ticker = ticker
+        st.session_state.shared_ticker = ticker
     with c2:
         period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=3, label_visibility="collapsed")
     with c3:
@@ -712,12 +715,23 @@ def tab_portfolio():
         eq["date"] = pd.to_datetime(eq["date"])
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=eq["date"], y=eq["equity"], mode="lines",
-            fill="tozeroy", line=dict(color="#10b981", width=2),
-            fillcolor="rgba(16,185,129,0.08)"))
+            name="Portfolio", line=dict(color="#10b981", width=2),
+            fill="tozeroy", fillcolor="rgba(16,185,129,0.08)"))
+        try:
+            import yfinance as yf
+            nifty = yf.download("^NSEI", start=eq["date"].iloc[0], end=eq["date"].iloc[-1], progress=False)
+            if len(nifty) > 1:
+                nifty_close = nifty["Close"].values.flatten()
+                nifty_norm = nifty_close / nifty_close[0] * float(eq["equity"].iloc[0])
+                fig.add_trace(go.Scatter(x=nifty.index, y=nifty_norm, mode="lines",
+                    name="Nifty 50", line=dict(color="#f59e0b", width=1.5, dash="dot")))
+        except Exception:
+            pass
         fig.update_layout(template="plotly_dark", height=320,
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             font=dict(family="Inter, sans-serif"),
             margin=dict(l=0,r=0,t=10,b=0), yaxis_title="Value (₹)",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             xaxis=dict(gridcolor="rgba(51,65,85,0.2)"), yaxis=dict(gridcolor="rgba(51,65,85,0.2)"))
         st.plotly_chart(fig, width='stretch')
 
@@ -739,7 +753,8 @@ def tab_backtest():
         <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Walk-Forward Backtest</span>
     </div>""", unsafe_allow_html=True)
     st.markdown('<div style="font-size:0.8rem;color:var(--text-muted);margin-top:-1rem;margin-bottom:1.5rem;">Out-of-sample testing: trains on 3 years, tests on 1 year, rolls forward — zero data leakage</div>', unsafe_allow_html=True)
-    ticker = st.selectbox("Stock", NSE_STOCKS, key="bt_ticker", label_visibility="collapsed")
+    ticker = st.selectbox("Stock", NSE_STOCKS, index=NSE_STOCKS.index(st.session_state.shared_ticker), key="bt_ticker", label_visibility="collapsed")
+    st.session_state.shared_ticker = ticker
     c1, c2, c3 = st.columns(3)
     with c1:
         capital = st.number_input("Capital (₹)", 10000, 10_000_000, 100000, step=50000)
@@ -1390,7 +1405,8 @@ def tab_risk():
         Shows market-wide conditions that affect ALL stocks. For per-stock signals, see <b>Scanner</b> or <b>Consensus</b>.
     </div>""", unsafe_allow_html=True)
 
-    ticker = st.selectbox("Stock", NSE_STOCKS, key="risk_ticker", label_visibility="collapsed")
+    ticker = st.selectbox("Stock", NSE_STOCKS, index=NSE_STOCKS.index(st.session_state.shared_ticker), key="risk_ticker", label_visibility="collapsed")
+    st.session_state.shared_ticker = ticker
     period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=2, key="risk_period")
 
     if st.button("⚡ Analyze Risk", type="primary", width='stretch', key="risk_btn"):
@@ -1486,7 +1502,8 @@ def tab_volatility():
 
     from src.volatility import full_volatility_analysis
 
-    ticker = st.selectbox("Stock", NSE_STOCKS, key="vol_ticker", label_visibility="collapsed")
+    ticker = st.selectbox("Stock", NSE_STOCKS, index=NSE_STOCKS.index(st.session_state.shared_ticker), key="vol_ticker", label_visibility="collapsed")
+    st.session_state.shared_ticker = ticker
     period = st.selectbox("Period", ["6mo", "1y", "2y", "5y"], index=2, key="vol_period")
 
     if st.button("⚡ Analyze Volatility", type="primary", width='stretch', key="vol_btn"):
@@ -1904,6 +1921,50 @@ def tab_pipeline():
             sc4.metric("Rejected", summary["rejected"])
         except Exception as e:
             st.error(f"Pipeline failed: {e}")
+
+
+def tab_correlation():
+    st.markdown(f"""<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;padding:1rem 1.5rem;
+                background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-lg);">
+        <span class="gradient-text" style="font-size:1.8rem;font-weight:800;">Correlation Matrix</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;">Cross-Asset Analysis</span>
+    </div>""", unsafe_allow_html=True)
+    try:
+        from src.data_fetcher import fetch_stock_data, NSE_STOCKS
+        selected = st.multiselect("Select stocks for correlation analysis",
+                                  NSE_STOCKS[:30], default=NSE_STOCKS[:5], key="corr_stocks")
+        if len(selected) < 2:
+            st.info("Select at least 2 stocks to compute correlation matrix.")
+            return
+        prices = {}
+        for ticker in selected:
+            try:
+                df = fetch_stock_data(ticker, period="1y", force_refresh=False)
+                if len(df) > 20:
+                    prices[ticker] = df["close"]
+            except Exception:
+                continue
+        if len(prices) < 2:
+            st.warning("Insufficient data for correlation analysis.")
+            return
+        price_df = pd.DataFrame(prices)
+        returns = price_df.pct_change().dropna()
+        corr = returns.corr()
+        fig = go.Figure(data=go.Heatmap(
+            z=corr.values, x=corr.columns, y=corr.index,
+            colorscale="RdYlGn", zmin=-1, zmax=1,
+            text=np.round(corr.values, 2), texttemplate="%{text}",
+            textfont=dict(size=11)))
+        fig.update_layout(template="plotly_dark", height=450,
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="Inter, sans-serif"),
+            margin=dict(l=0, r=0, t=30, b=0),
+            xaxis=dict(gridcolor="rgba(51,65,85,0.2)"), yaxis=dict(gridcolor="rgba(51,65,85,0.2)"))
+        st.plotly_chart(fig, width='stretch')
+        with st.expander("Raw Correlation Matrix"):
+            st.dataframe(corr.round(3), width='stretch')
+    except Exception as e:
+        st.error(f"Correlation analysis failed: {e}")
 
 
 def tab_paper_trading():
@@ -2339,7 +2400,7 @@ def tab_ledger():
 
 def main():
     # (header is now rendered inside tab_predictions)
-    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "🎯 Consensus", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime", "📡 Monitoring", "🔄 Pipeline", "📝 Paper Trading", "🏦 MF Tracker", "📒 Ledger"])
+    tabs = st.tabs(["📈 Predictions", "💰 Portfolio", "🔬 Backtest", "🔍 Scanner", "🎯 Consensus", "📰 Sentiment", "🏛️ Market Pulse", "📊 Optimizer", "💼 Holdings", "⚡ Risk", "📉 Volatility", "🏆 Ranking", "🎯 Scenarios", "🌡️ Regime", "🔗 Correlation", "📡 Monitoring", "🔄 Pipeline", "📝 Paper Trading", "🏦 MF Tracker", "📒 Ledger"])
     with tabs[0]: tab_predictions()
     with tabs[1]: tab_portfolio()
     with tabs[2]: tab_backtest()
@@ -2354,11 +2415,12 @@ def main():
     with tabs[11]: tab_ranking()
     with tabs[12]: tab_scenarios()
     with tabs[13]: tab_regime_strategy()
-    with tabs[14]: tab_monitoring()
-    with tabs[15]: tab_pipeline()
-    with tabs[16]: tab_paper_trading()
-    with tabs[17]: tab_mf_tracker()
-    with tabs[18]: tab_ledger()
+    with tabs[14]: tab_correlation()
+    with tabs[15]: tab_monitoring()
+    with tabs[16]: tab_pipeline()
+    with tabs[17]: tab_paper_trading()
+    with tabs[18]: tab_mf_tracker()
+    with tabs[19]: tab_ledger()
     st.markdown("""
     <div style="text-align:center;padding:2rem 0 1rem;margin-top:2rem;border-top:1px solid var(--border-primary);">
         <div style="font-size:0.7rem;color:var(--text-muted);letter-spacing:0.05em;">

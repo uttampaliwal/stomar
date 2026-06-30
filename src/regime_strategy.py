@@ -7,6 +7,7 @@ Provides rules-based trading that adapts to market conditions:
 """
 import numpy as np
 from src.regime import detect_regime
+from src.constants import RISK_FREE_RATE
 
 
 def get_regime_allocation(regime, confidence=0.5):
