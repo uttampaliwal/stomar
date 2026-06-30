@@ -1,0 +1,6 @@
+{
+  "name": "stomar",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Autonomous quantitative trading system for NSE"
+}

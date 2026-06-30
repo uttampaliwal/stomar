@@ -13,3 +13,6 @@ python-dotenv>=1.0
 transformers>=4.30
 scipy>=1.11
 requests>=2.31
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.0

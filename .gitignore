@@ -72,3 +72,8 @@ temp/
 # ─── Secrets ───
 .env
 .env.local
+
+# ─── React / Node ───
+web/node_modules/
+web/dist/
+web/.vite/
