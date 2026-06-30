@@ -74,6 +74,9 @@ def add_flow_features(df: pd.DataFrame) -> pd.DataFrame:
         if df.index.tz is not None:
             df.index = df.index.tz_localize(None)
         df.index = df.index.floor("D")
+
+        # Drop default zero columns to avoid overlap on join
+        df = df.drop(columns=["fii_net", "dii_net"])
         df = df.join(flow_df, how="left")
 
         # Fill missing dates with 0
