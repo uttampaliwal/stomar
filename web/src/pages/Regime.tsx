@@ -9,12 +9,20 @@ export default function Regime() {
   const { data, loading, error } = useApi<any>(`/api/regime/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
 
+  const regime = data?.regime
+  const indicators = data?.indicators || {}
+  const recommendation = data?.recommendation
+  const performance = data?.performance
+
+  const regimeColor = regime === 'Bull' ? 'text-emerald' : regime === 'Bear' ? 'text-rose' : 'text-muted-foreground'
+  const regimeBadge = regime === 'Bull' ? 'success' : regime === 'Bear' ? 'danger' : 'warning'
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Regime Detection</h1>
-          <p className="text-sm text-muted-foreground">Bull / Bear / Sideways market regime</p>
+          <h1 className="text-2xl font-bold tracking-tight">Market Regime</h1>
+          <p className="text-sm text-muted-foreground">Current market environment detection</p>
         </div>
         <select
           value={ticker}
@@ -32,30 +40,104 @@ export default function Regime() {
 
       {data && !data.error && (
         <>
-          <Card className="text-center py-6">
-            <Badge variant={data.regime === 'Bull' ? 'success' : data.regime === 'Bear' ? 'danger' : 'warning'} className="text-xl px-6 py-1.5">
-              {data.regime || 'Unknown'}
-            </Badge>
-            <p className="text-sm text-muted-foreground mt-3">Confidence: {data.confidence > 1 ? (data.confidence || 0).toFixed(1) : ((data.confidence || 0) * 100).toFixed(1)}%</p>
-          </Card>
+          {regime && (
+            <Card className="text-center py-6">
+              <Badge variant={regimeBadge} className="text-3xl px-6 py-2 font-mono">
+                {regime === 'Bull' ? '▲ BULL' : regime === 'Bear' ? '▼ BEAR' : '● NEUTRAL'}
+              </Badge>
+              {data.confidence !== undefined && (
+                <p className="text-sm text-muted-foreground mt-3">
+                  Confidence: {data.confidence > 1 ? `${data.confidence.toFixed(0)}%` : `${(data.confidence * 100).toFixed(0)}%`}
+                </p>
+              )}
+            </Card>
+          )}
 
-          {data.recommendation && (
-            <>
-              <SectionHeader title="Recommendation" />
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <Card>
-                  <p className="text-xs text-muted-foreground uppercase">Action</p>
-                  <p className="font-mono text-lg font-bold mt-1">{data.recommendation.action}</p>
-                </Card>
-                <Card>
+          {recommendation && (
+            <Card>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase">Recommended Action</p>
+                  <p className="font-mono text-xl font-bold text-cyan">{recommendation.action}</p>
+                </div>
+                <div>
                   <p className="text-xs text-muted-foreground uppercase">Allocation</p>
-                  <p className="font-mono text-lg font-bold mt-1">{data.recommendation.allocation}</p>
-                </Card>
-                <Card>
+                  <p className="font-mono text-sm font-bold">{recommendation.allocation}</p>
+                </div>
+                <div>
                   <p className="text-xs text-muted-foreground uppercase">Risk Level</p>
-                  <p className="font-mono text-lg font-bold mt-1">{data.recommendation.risk_level}</p>
-                </Card>
+                  <Badge variant={recommendation.risk_level === 'LOW' ? 'success' : recommendation.risk_level === 'HIGH' ? 'danger' : 'warning'}>
+                    {recommendation.risk_level}
+                  </Badge>
+                </div>
               </div>
+            </Card>
+          )}
+
+          {data.bull_signals !== undefined && (
+            <Card>
+              <div className="flex items-center justify-center gap-6">
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground uppercase">Bull Signals</p>
+                  <p className="font-mono text-2xl font-bold text-emerald">{data.bull_signals || 0}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground uppercase">Bear Signals</p>
+                  <p className="font-mono text-2xl font-bold text-rose">{data.bear_signals || 0}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground uppercase">Total Signals</p>
+                  <p className="font-mono text-2xl font-bold text-muted-foreground">{data.total_signals || 0}</p>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {Object.keys(indicators).length > 0 && (
+            <>
+              <SectionHeader title="Technical Indicators" />
+              <Card>
+                <div className="space-y-2">
+                  {Object.entries(indicators).map(([key, value]) => (
+                    <div key={key} className="flex justify-between items-center py-1 border-b border-border/50">
+                      <span className="text-sm text-muted-foreground">{key}</span>
+                      <Badge variant={
+                        (value as string)?.toLowerCase().includes('bullish') || (value as string)?.toLowerCase().includes('strong') ? 'success' :
+                        (value as string)?.toLowerCase().includes('bearish') || (value as string)?.toLowerCase().includes('weak') ? 'danger' :
+                        'default'
+                      }>
+                        {value as string}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </>
+          )}
+
+          {performance && (
+            <>
+              <SectionHeader title="Regime Performance" />
+              <Card>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {performance.returns && typeof performance.returns === 'object' && Object.entries(performance.returns).map(([key, value]) => (
+                    <div key={key}>
+                      <p className="text-xs text-muted-foreground uppercase">{key}</p>
+                      <p className={`font-mono text-lg font-bold ${(value as number) >= 0 ? 'text-emerald' : 'text-rose'}`}>
+                        {((value as number) * 100).toFixed(2)}%
+                      </p>
+                    </div>
+                  ))}
+                  {performance.volatility && typeof performance.volatility === 'object' && Object.entries(performance.volatility).map(([key, value]) => (
+                    <div key={`vol-${key}`}>
+                      <p className="text-xs text-muted-foreground uppercase">Vol {key}</p>
+                      <p className="font-mono text-lg font-bold text-muted-foreground">
+                        {((value as number) * 100).toFixed(2)}%
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
             </>
           )}
         </>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -10,12 +11,19 @@ export default function Volatility() {
   const { data, loading, error } = useApi<any>(`/api/volatility/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
 
+  const forecastData = data?.forecast?.forecast_vols?.map((v: number, i: number) => ({
+    day: `Day ${i + 1}`,
+    vol: Math.round(v * 10000) / 100,
+    current: data.forecast.current_vol ? Math.round(data.forecast.current_vol * 10000) / 100 : null,
+    longTerm: data.forecast.long_term_vol ? Math.round(data.forecast.long_term_vol * 10000) / 100 : null,
+  })) || []
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Volatility</h1>
-          <p className="text-sm text-muted-foreground">GARCH, Parkinson, Garman-Klass, Yang-Zhang</p>
+          <h1 className="text-2xl font-bold tracking-tight">Volatility Analysis</h1>
+          <p className="text-sm text-muted-foreground">Multiple volatility estimators, regime detection, forecasting</p>
         </div>
         <select
           value={ticker}
@@ -38,20 +46,45 @@ export default function Volatility() {
               <Badge variant={data.regime === 'High' ? 'danger' : data.regime === 'Low' ? 'success' : 'warning'} className="text-lg px-4 py-1">
                 {data.regime} Volatility
               </Badge>
+              {data.percentile !== undefined && (
+                <p className="text-sm text-muted-foreground mt-2">Percentile: {data.percentile.toFixed(0)}%</p>
+              )}
             </Card>
           )}
 
           <SectionHeader title="Volatility Metrics" />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {data.historical_vol !== undefined && <Stat label="Historical" value={formatPercent(data.historical_vol * 100)} />}
-            {data.ewma_vol !== undefined && <Stat label="EWMA" value={formatPercent(data.ewma_vol * 100)} />}
-            {data.parkinson_vol !== undefined && <Stat label="Parkinson" value={formatPercent(data.parkinson_vol * 100)} />}
-            {data.garman_klass_vol !== undefined && <Stat label="Garman-Klass" value={formatPercent(data.garman_klass_vol * 100)} />}
-            {data.yang_zhang_vol !== undefined && <Stat label="Yang-Zhang" value={formatPercent(data.yang_zhang_vol * 100)} />}
-            {data.current_vol !== undefined && <Stat label="Current Vol" value={formatPercent(data.current_vol * 100)} />}
-            {data.percentile !== undefined && <Stat label="Percentile" value={`${data.percentile.toFixed(0)}%`} />}
-            {data.atr_pct !== undefined && <Stat label="ATR %" value={formatPercent(data.atr_pct * 100)} />}
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            <Stat label="Historical" value={formatPercent(data.historical_vol * 100)} />
+            <Stat label="EWMA" value={formatPercent(data.ewma_vol * 100)} />
+            <Stat label="Parkinson" value={formatPercent(data.parkinson_vol * 100)} />
+            <Stat label="Garman-Klass" value={formatPercent(data.garman_klass_vol * 100)} />
+            <Stat label="Yang-Zhang" value={formatPercent(data.yang_zhang_vol * 100)} />
+            <Stat label="Current Vol" value={formatPercent(data.current_vol * 100)} />
+            <Stat label="ATR %" value={formatPercent(data.atr_pct * 100)} />
+            <Stat label="BB Width" value={(data.bb_width || 0).toFixed(4)} />
+            <Stat label="BB %B" value={(data.bb_pct_b || 0).toFixed(4)} />
+            <Stat label="Percentile" value={`${(data.percentile || 0).toFixed(0)}%`} />
           </div>
+
+          {/* Forecast Chart */}
+          {forecastData.length > 0 && (
+            <>
+              <SectionHeader title="5-Day Volatility Forecast" />
+              <Card className="overflow-hidden">
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={forecastData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                    <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} width={40} />
+                    <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '11px' }} formatter={(v: number) => [`${v.toFixed(2)}%`]} />
+                    <ReferenceLine y={data.forecast?.current_vol ? data.forecast.current_vol * 100 : 0} stroke="#06b6d4" strokeDasharray="4 4" label={{ value: 'Current', position: 'right', fontSize: 9 }} />
+                    <ReferenceLine y={data.forecast?.long_term_vol ? data.forecast.long_term_vol * 100 : 0} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: 'Long-term', position: 'right', fontSize: 9 }} />
+                    <Line type="monotone" dataKey="vol" stroke="#06b6d4" dot={{ r: 3 }} strokeWidth={2} name="Forecast Vol %" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </Card>
+            </>
+          )}
 
           {data.position_sizing && (
             <>
@@ -68,7 +101,7 @@ export default function Volatility() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground uppercase">Reasoning</p>
-                    <p className="text-sm text-muted-foreground">{data.position_sizing.reasoning || '—'}</p>
+                    <p className="text-sm text-muted-foreground">{data.position_sizing.reasoning}</p>
                   </div>
                 </div>
               </Card>

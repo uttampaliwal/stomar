@@ -9,6 +9,22 @@ from src.backtester import run_walk_forward_backtest
 router = APIRouter()
 
 
+def _sanitize(obj):
+    """Convert numpy types to Python native types for JSON serialization."""
+    import numpy as np
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
+
+
 @router.get("/{ticker}")
 def run_backtest(ticker: str):
     try:
@@ -16,16 +32,15 @@ def run_backtest(ticker: str):
         if df is None or df.empty:
             return {"error": f"No data for {ticker}"}
         df_feat = add_technical_indicators(df.copy(), ticker)
-        result = run_walk_forward_backtest(ticker, df_feat, FEATURE_COLS)
+        stats, portfolio, test_results = run_walk_forward_backtest(ticker, df_feat, FEATURE_COLS)
 
-        if result is None:
+        if stats is None:
             return {"error": "Backtest failed — not enough data"}
 
-        stats, portfolio, test_results = run_walk_forward_backtest(ticker, df_feat, FEATURE_COLS)
         if not stats or stats.get("total_trades", 0) == 0:
             return {"error": "Backtest produced no trades"}
 
-        return {
+        response = {
             "ticker": ticker,
             "ensemble_accuracy": stats.get("ensemble_accuracy", 0),
             "annual_return": stats.get("annual_return", 0),
@@ -36,5 +51,24 @@ def run_backtest(ticker: str):
             "total_trades": stats.get("total_trades", 0),
             "win_rate": stats.get("win_rate", 0),
         }
+
+        if test_results:
+            response["test_results"] = [
+                _sanitize({
+                    "window": t.get("window", f"W{i+1}") if isinstance(t, dict) else f"W{i+1}",
+                    "ensemble_accuracy": t.get("ensemble_accuracy", 0),
+                    "total_return": t.get("total_return", 0),
+                    "sharpe": t.get("sharpe", 0),
+                    "total_trades": t.get("total_trades", 0),
+                })
+                for i, t in enumerate(test_results)
+            ]
+
+        if portfolio and isinstance(portfolio, dict):
+            mc = portfolio.get("monte_carlo")
+            if mc:
+                response["monte_carlo"] = _sanitize(mc)
+
+        return _sanitize(response)
     except Exception as e:
         return {"error": str(e)}

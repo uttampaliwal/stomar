@@ -15,6 +15,22 @@ def _fetch_close(ticker):
     return None
 
 
+def _sanitize(obj):
+    """Convert numpy types to Python native types for JSON serialization."""
+    import numpy as np
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
+
+
 @router.get("/")
 def optimize():
     try:
@@ -31,6 +47,6 @@ def optimize():
         if result is None:
             return {"error": "Optimization failed"}
 
-        return result
+        return _sanitize(result)
     except Exception as e:
         return {"error": str(e)}
