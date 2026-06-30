@@ -1,4 +1,4 @@
-"""FastAPI backend for StoMar React UI."""
+"""FastAPI backend for StoMar React UI. v2"""
 
 import sys
 import os
