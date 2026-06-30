@@ -7,8 +7,7 @@ Allows users to test different strategies:
 - Different risk parameters
 """
 import numpy as np
-
-RISK_FREE_RATE = 0.065
+from src.constants import RISK_FREE_RATE
 
 
 def _max_drawdown(returns):

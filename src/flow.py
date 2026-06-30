@@ -4,11 +4,13 @@ import json
 import os
 import time
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
 FLOW_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 os.makedirs(FLOW_CACHE_DIR, exist_ok=True)
+_flow_lock = threading.Lock()
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json, text/html",
@@ -30,12 +32,13 @@ def _get_session():
 
 def fetch_fii_dii() -> pd.DataFrame:
     cache_file = os.path.join(FLOW_CACHE_DIR, "fii_dii.parquet")
-    if os.path.exists(cache_file):
-        cached = pd.read_parquet(cache_file)
-        if len(cached) > 0:
-            last_date = pd.to_datetime(cached.iloc[0]["date"])
-            if pd.Timestamp.now().normalize() - last_date <= pd.Timedelta(days=1):
-                return cached
+    with _flow_lock:
+        if os.path.exists(cache_file):
+            cached = pd.read_parquet(cache_file)
+            if len(cached) > 0:
+                last_date = pd.to_datetime(cached.iloc[0]["date"])
+                if pd.Timestamp.now().normalize() - last_date <= pd.Timedelta(days=1):
+                    return cached
 
     try:
         session = _get_session()
@@ -81,7 +84,8 @@ def fetch_fii_dii() -> pd.DataFrame:
         else:
             combined = new_row
 
-        combined.to_parquet(cache_file)
+        with _flow_lock:
+            combined.to_parquet(cache_file)
         return combined
     except Exception:
         if os.path.exists(cache_file):
@@ -91,14 +95,15 @@ def fetch_fii_dii() -> pd.DataFrame:
 
 def fetch_options_pcr() -> dict:
     cache_file = os.path.join(FLOW_CACHE_DIR, "options_pcr.json")
-    if os.path.exists(cache_file):
-        mtime = os.path.getmtime(cache_file)
-        if time.time() - mtime < 3600:
-            try:
-                with open(cache_file) as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError) as e:
-                logger.warning("Failed to read PCR cache: %s", e)
+    with _flow_lock:
+        if os.path.exists(cache_file):
+            mtime = os.path.getmtime(cache_file)
+            if time.time() - mtime < 3600:
+                try:
+                    with open(cache_file) as f:
+                        return json.load(f)
+                except (json.JSONDecodeError, OSError) as e:
+                    logger.warning("Failed to read PCR cache: %s", e)
 
     for symbol in ["NIFTY", "BANKNIFTY"]:
         try:
@@ -110,13 +115,13 @@ def fetch_options_pcr() -> dict:
             data = resp.json()
             pcr = _compute_pcr(data)
             pcr["symbol"] = symbol
-            # Write to temp file first, then rename for atomicity
             import tempfile
             fd, tmp_path = tempfile.mkstemp(dir=FLOW_CACHE_DIR, suffix=".tmp")
             try:
                 with os.fdopen(fd, "w") as f:
                     json.dump(pcr, f)
-                os.replace(tmp_path, cache_file)
+                with _flow_lock:
+                    os.replace(tmp_path, cache_file)
             except Exception:
                 try:
                     os.unlink(tmp_path)

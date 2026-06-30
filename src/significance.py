@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from itertools import combinations
+from src.constants import RISK_FREE_RATE
 
 
 def purged_kfold_cv(df, feature_cols, target_col, n_splits=6,
@@ -269,7 +270,7 @@ def bootstrap_confidence_interval(data, metric_fn, n_bootstrap=1000,
 
 
 def backtest_predictions_to_sharpe(predictions, actuals, returns,
-                                    risk_free_rate=0.065):
+                                    risk_free_rate=None):
     """Compute Sharpe ratio from prediction signals and returns.
 
     Args:
@@ -281,6 +282,8 @@ def backtest_predictions_to_sharpe(predictions, actuals, returns,
     Returns:
         Sharpe ratio
     """
+    if risk_free_rate is None:
+        risk_free_rate = RISK_FREE_RATE
     predictions = np.asarray(predictions)
     returns = np.asarray(returns)
 

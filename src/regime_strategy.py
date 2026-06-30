@@ -166,7 +166,7 @@ def backtest_regime_strategy(df, regime_result=None):
     n_years = max(len(returns) / 252, 0.01)
     ann_return = float((1 + total_return) ** (1 / n_years) - 1)
     ann_vol = float(np.std(strategy_returns) * np.sqrt(252))
-    sharpe = (ann_return - 0.065) / ann_vol if ann_vol > 0 else 0
+    sharpe = (ann_return - RISK_FREE_RATE) / ann_vol if ann_vol > 0 else 0
 
     # Buy and hold comparison
     bh_return = float(close.iloc[-1] / close.iloc[0] - 1) if len(close) > 1 else 0

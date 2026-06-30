@@ -50,11 +50,11 @@ def _collect_meta_features(lstm, gru, transformer, xgb, scaler, feature_cols,
     and y_meta is binary direction labels.
     """
     feature_cols_valid = [c for c in feature_cols if c in df_feat.columns]
-    data = df_feat[feature_cols_valid].dropna().values
+    data = df_feat[feature_cols_valid].dropna()
     if len(data) < seq_length + split_idx + 10:
         return None
 
-    scaled = scaler.transform(data)
+    scaled = scaler.transform(data.values)
     n_samples = len(scaled) - seq_length - split_idx
     if n_samples < 50:
         return None
@@ -84,7 +84,7 @@ def _collect_meta_features(lstm, gru, transformer, xgb, scaler, feature_cols,
         prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
         prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
 
-        xgb_inp = df_feat[feature_cols_valid].iloc[[i - seq_length]]
+        xgb_inp = data.iloc[[i - seq_length]]
         xgb_p = xgb.predict_proba(xgb_inp)[0][1]
 
         lgb_p = 0.5

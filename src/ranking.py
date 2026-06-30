@@ -8,6 +8,7 @@ Ranks stocks relative to each other using multiple factors:
 - Volume (relative volume as liquidity proxy)
 """
 import logging
+import threading
 
 import numpy as np
 import pandas as pd
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Fundamental data cache (in-memory, per-session)
 _fundamental_cache: dict[str, dict] = {}
+_fundamental_lock = threading.Lock()
 
 
 def fetch_fundamentals(ticker: str) -> dict:
@@ -26,8 +28,9 @@ def fetch_fundamentals(ticker: str) -> dict:
 
     Falls back to 0.0 for unavailable fields.
     """
-    if ticker in _fundamental_cache:
-        return _fundamental_cache[ticker]
+    with _fundamental_lock:
+        if ticker in _fundamental_cache:
+            return _fundamental_cache[ticker]
 
     defaults = {
         "pe_ratio": 0.0, "pb_ratio": 0.0, "roce": 0.0, "roe": 0.0,
@@ -51,18 +54,21 @@ def fetch_fundamentals(ticker: str) -> dict:
             "profit_margin": float(info.get("profitMargins", 0.0) or 0.0),
         }
 
-        _fundamental_cache[ticker] = result
+        with _fundamental_lock:
+            _fundamental_cache[ticker] = result
         return result
 
     except Exception as e:
         logger.warning("Failed to fetch fundamentals for %s: %s", ticker, e)
-        _fundamental_cache[ticker] = defaults
+        with _fundamental_lock:
+            _fundamental_cache[ticker] = defaults
         return defaults
 
 
 def clear_fundamental_cache():
     """Clear the in-memory fundamental cache."""
-    _fundamental_cache.clear()
+    with _fundamental_lock:
+        _fundamental_cache.clear()
 
 
 def fundamental_score(fundamentals: dict) -> float:

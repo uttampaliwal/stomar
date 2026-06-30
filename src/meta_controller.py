@@ -23,6 +23,7 @@ from pathlib import Path
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
+from sklearn.calibration import CalibratedClassifierCV
 
 logger = logging.getLogger(__name__)
 
@@ -201,11 +202,17 @@ class MetaController:
         X_train, X_test = X[:split], X[split:]
         y_train, y_test = y[:split], y[split:]
 
-        self.model = LogisticRegression(C=1.0, max_iter=1000)
-        self.model.fit(X_train, y_train)
+        base_model = LogisticRegression(C=1.0, max_iter=1000, class_weight="balanced")
+        base_model.fit(X_train, y_train)
+
+        try:
+            self.model = CalibratedClassifierCV(base_model, cv=3)
+            self.model.fit(X_train, y_train)
+        except Exception:
+            self.model = base_model
 
         accuracy = self.model.score(X_test, y_test)
-        self.weights = dict(zip(SIGNAL_NAMES, self.model.coef_[0]))
+        self.weights = dict(zip(SIGNAL_NAMES, base_model.coef_[0]))
 
         logger.info(f"Meta-controller trained: accuracy={accuracy:.3f}, n_samples={len(X)}")
         return {

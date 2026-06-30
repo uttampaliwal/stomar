@@ -11,6 +11,7 @@ Usage:
 
 import logging
 import os
+import threading
 import time
 import warnings
 
@@ -26,6 +27,7 @@ warnings.filterwarnings("ignore", message=".*tokenizer.*")
 logger = logging.getLogger(__name__)
 
 _finbert_pipeline = None
+_finbert_lock = threading.Lock()
 _sentiment_cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
 # Source weights: more authoritative sources get higher weight
@@ -46,24 +48,27 @@ def get_finbert():
     if _finbert_pipeline is not None:
         return _finbert_pipeline if _finbert_pipeline != "fallback" else None
 
-    try:
-        import concurrent.futures
+    with _finbert_lock:
+        if _finbert_pipeline is not None:
+            return _finbert_pipeline if _finbert_pipeline != "fallback" else None
+        try:
+            import concurrent.futures
 
-        def _load():
-            from transformers import pipeline
-            return pipeline(
-                "sentiment-analysis",
-                model="ProsusAI/finbert",
-                max_length=512,
-                truncation=True,
-            )
+            def _load():
+                from transformers import pipeline
+                return pipeline(
+                    "sentiment-analysis",
+                    model="ProsusAI/finbert",
+                    max_length=512,
+                    truncation=True,
+                )
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_load)
-            _finbert_pipeline = future.result(timeout=30)
-    except Exception as e:
-        logger.warning("FinBERT load failed (%s), using keyword fallback", e)
-        _finbert_pipeline = "fallback"
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_load)
+                _finbert_pipeline = future.result(timeout=30)
+        except Exception as e:
+            logger.warning("FinBERT load failed (%s), using keyword fallback", e)
+            _finbert_pipeline = "fallback"
 
     return _finbert_pipeline if _finbert_pipeline != "fallback" else None
 

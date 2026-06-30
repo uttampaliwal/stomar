@@ -74,7 +74,7 @@ def train_meta_learner(meta_X: np.ndarray, y: np.ndarray) -> Pipeline:
     """
     pipe = Pipeline([
         ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(C=1.0, max_iter=1000, random_state=42)),
+        ("clf", LogisticRegression(C=1.0, max_iter=1000, random_state=42, class_weight="balanced")),
     ])
     pipe.fit(meta_X, y)
 
@@ -270,72 +270,78 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
         regime: Optional regime string for regime-conditional routing.
     """
     feature_cols = [c for c in feature_cols if c in df_feat.columns]
-    data = df_feat[feature_cols].dropna().values
-    scaled = scaler.transform(data)
+    data = df_feat[feature_cols].dropna()
+    if len(data) < seq_length + 10:
+        return []
+    scaled = scaler.transform(data.values)
 
     results = []
     for i in range(seq_length, len(scaled)):
-        inp = torch.tensor(scaled[i - seq_length:i], dtype=torch.float32).unsqueeze(0).to(DEVICE)
-        prev_close = scaled[i - 1, 0]
-        actual_close = scaled[i, 0]
-        actual_dir = 1 if actual_close > prev_close else 0
+        try:
+            inp = torch.tensor(scaled[i - seq_length:i], dtype=torch.float32).unsqueeze(0).to(DEVICE)
+            prev_close = scaled[i - 1, 0]
+            actual_close = scaled[i, 0]
+            actual_dir = 1 if actual_close > prev_close else 0
 
-        lstm.eval()
-        gru.eval()
-        transformer.eval()
-        with torch.no_grad():
-            p_lstm = lstm(inp).item()
-            p_gru = gru(inp).item()
-            p_tf = transformer(inp).item()
+            lstm.eval()
+            gru.eval()
+            transformer.eval()
+            with torch.no_grad():
+                p_lstm = lstm(inp).item()
+                p_gru = gru(inp).item()
+                p_tf = transformer(inp).item()
 
-        xgb_inp = df_feat[feature_cols].iloc[[i - 1]]
-        xgb_p = xgb.predict_proba(xgb_inp)[0][1]
+            xgb_inp = data.iloc[[i - 1]]
+            xgb_p = xgb.predict_proba(xgb_inp)[0][1]
 
-        lgb_p = 0.5
-        if lgb_model is not None:
-            lgb_p = lgb_model.predict_proba(xgb_inp)[0][1]
+            lgb_p = 0.5
+            if lgb_model is not None:
+                lgb_p = lgb_model.predict_proba(xgb_inp)[0][1]
 
-        # Convert DL regression to probabilities
-        diff_lstm = p_lstm - prev_close
-        diff_gru = p_gru - prev_close
-        diff_tf = p_tf - prev_close
-        prob_lstm = 1.0 / (1.0 + np.exp(-diff_lstm * 10))
-        prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
-        prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
+            # Convert DL regression to probabilities
+            diff_lstm = p_lstm - prev_close
+            diff_gru = p_gru - prev_close
+            diff_tf = p_tf - prev_close
+            prob_lstm = 1.0 / (1.0 + np.exp(-diff_lstm * 10))
+            prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
+            prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
 
-        d_lstm = 1 if p_lstm > prev_close else 0
-        d_gru = 1 if p_gru > prev_close else 0
-        d_tf = 1 if p_tf > prev_close else 0
+            d_lstm = 1 if p_lstm > prev_close else 0
+            d_gru = 1 if p_gru > prev_close else 0
+            d_tf = 1 if p_tf > prev_close else 0
 
-        # Build meta features (continuous probabilities)
-        meta_X = np.array([[xgb_p, lgb_p, prob_lstm, prob_gru, prob_tf]])
+            # Build meta features (continuous probabilities)
+            meta_X = np.array([[xgb_p, lgb_p, prob_lstm, prob_gru, prob_tf]])
 
-        if meta_model is not None:
-            final_prob = float(predict_with_metalearner(meta_model, meta_X)[0])
-        else:
-            if regime is not None:
-                weights = get_regime_weights(regime)
+            if meta_model is not None:
+                final_prob = float(predict_with_metalearner(meta_model, meta_X)[0])
             else:
-                weights = {"lstm": 0.2, "gru": 0.2, "transformer": 0.2, "xgb": 0.2, "lgb": 0.2}
+                if regime is not None:
+                    weights = get_regime_weights(regime)
+                else:
+                    weights = {"lstm": 0.2, "gru": 0.2, "transformer": 0.2, "xgb": 0.2, "lgb": 0.2}
 
-            final_prob = (
-                prob_lstm * weights.get("lstm", 0.2) +
-                prob_gru * weights.get("gru", 0.2) +
-                prob_tf * weights.get("transformer", 0.2) +
-                xgb_p * weights.get("xgb", 0.2) +
-                lgb_p * weights.get("lgb", 0.2)
-            )
+                final_prob = (
+                    prob_lstm * weights.get("lstm", 0.2) +
+                    prob_gru * weights.get("gru", 0.2) +
+                    prob_tf * weights.get("transformer", 0.2) +
+                    xgb_p * weights.get("xgb", 0.2) +
+                    lgb_p * weights.get("lgb", 0.2)
+                )
 
-        final = 1 if final_prob > 0.5 else 0
-        dl_ens = (d_lstm + d_gru + d_tf) / 3
-        dl_dir = 1 if dl_ens > 0.5 else 0
-        xgb_dir = int(xgb.predict(xgb_inp)[0])
+            final = 1 if final_prob > 0.5 else 0
+            dl_ens = (d_lstm + d_gru + d_tf) / 3
+            dl_dir = 1 if dl_ens > 0.5 else 0
+            xgb_dir = int(xgb.predict(xgb_inp)[0])
 
-        results.append({
-            "actual": actual_dir,
-            "lstm": d_lstm, "gru": d_gru, "transformer": d_tf,
-            "dl_ensemble": dl_dir, "xgb": xgb_dir, "lgb": 1 if lgb_p > 0.5 else 0,
-            "final_ensemble": final,
-        })
+            results.append({
+                "actual": actual_dir,
+                "lstm": d_lstm, "gru": d_gru, "transformer": d_tf,
+                "dl_ensemble": dl_dir, "xgb": xgb_dir, "lgb": 1 if lgb_p > 0.5 else 0,
+                "final_ensemble": final,
+            })
+        except Exception as e:
+            logger.debug("backtest_ensemble iteration %d failed: %s", i, e)
+            continue
 
     return results
