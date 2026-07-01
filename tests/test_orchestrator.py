@@ -194,3 +194,105 @@ def test_run_catches_errors(ledger):
     assert len(summary["decisions"]) == 1
     assert len(summary["errors"]) == 1
     assert summary["errors"][0]["ticker"] == "BAD.NS"
+
+
+# --- stop-loss attachment ---
+
+class TestExecutePaperTradeStopLoss:
+    """Stop-loss order is placed on the engine after every filled entry."""
+
+    def _make_orch(self, ledger):
+        from src.trading.paper_trader import PaperTrader
+        trader = PaperTrader(initial_capital=200_000)
+        return DailyOrchestrator(tickers=[], ledger=ledger, paper_trader=trader)
+
+    def _fill_pending(self, orch, ticker: str, price: float):
+        """Feed a bar so pending market orders fill."""
+        from src.trading.engine import Bar
+        bar = Bar(ticker, "2025-01-01", price, price * 1.01, price * 0.99, price, 1_000_000)
+        orch.paper_trader.on_bar(ticker, bar.open, bar.high, bar.low, bar.close)
+
+    def test_buy_attaches_sell_stop(self, ledger):
+        orch = self._make_orch(ledger)
+        result = {
+            "action": "BUY",
+            "position_size": 0.05,
+            "confidence": 0.70,
+            "reasoning": "test",
+            "decision_id": None,
+        }
+        with patch("src.data.data_fetcher.get_live_price", return_value=1000.0):
+            # Feed bar so market order fills immediately inside place_order → on_bar flow
+            # The orchestrator calls place_order then checks status.value == "FILLED"
+            # We need to simulate the fill by patching place_order to auto-fill
+            original_place = orch.paper_trader.place_order
+
+            def auto_fill_place(ticker, side, order_type, quantity, price=0, stop_price=0):
+                order = original_place(ticker, side, order_type, quantity,
+                                       price=price, stop_price=stop_price)
+                if order_type.value == "MARKET" and order.status.value == "PENDING":
+                    from src.trading.engine import Bar
+                    bar = Bar(ticker, "t", price, price * 1.01,
+                              price * 0.99, price, 1_000_000)
+                    orch.paper_trader.engine.on_bar(bar)
+                    # re-check status from filled_orders
+                    for filled in orch.paper_trader.engine.filled_orders:
+                        if filled.order_id == order.order_id:
+                            order.status = filled.status
+                            order.filled_price = filled.filled_price
+                            order.filled_quantity = filled.filled_quantity
+                            order.fill_cost = filled.fill_cost
+                            break
+                return order
+
+            orch.paper_trader.place_order = auto_fill_place
+            trade = orch._execute_paper_trade("TEST.NS", result)
+
+        assert trade is not None, "Trade should have been executed"
+        assert trade["side"] == "BUY"
+        # Stop price should be ~5% below fill price
+        assert trade["stop_price"] == pytest.approx(1000.0 * 0.95, rel=0.02)
+
+        # Engine should have one pending STOP_MARKET order (the stop-loss)
+        from src.trading.engine import OrderType
+        pending = orch.paper_trader.engine.get_pending("TEST.NS")
+        stop_orders = [o for o in pending if o.order_type == OrderType.STOP_MARKET]
+        assert len(stop_orders) == 1
+        assert stop_orders[0].stop_price == pytest.approx(1000.0 * 0.95, rel=0.02)
+
+    def test_stop_info_in_trade_result(self, ledger):
+        """trade dict returned by _execute_paper_trade includes stop_price key."""
+        orch = self._make_orch(ledger)
+        result = {
+            "action": "BUY",
+            "position_size": 0.05,
+            "confidence": 0.70,
+            "reasoning": "test",
+            "decision_id": None,
+        }
+        original_place = orch.paper_trader.place_order
+
+        def auto_fill_place(ticker, side, order_type, quantity, price=0, stop_price=0):
+            order = original_place(ticker, side, order_type, quantity,
+                                   price=price, stop_price=stop_price)
+            if order_type.value == "MARKET" and order.status.value == "PENDING":
+                from src.trading.engine import Bar
+                bar = Bar(ticker, "t", price, price * 1.01,
+                          price * 0.99, price, 1_000_000)
+                orch.paper_trader.engine.on_bar(bar)
+                for filled in orch.paper_trader.engine.filled_orders:
+                    if filled.order_id == order.order_id:
+                        order.status = filled.status
+                        order.filled_price = filled.filled_price
+                        order.filled_quantity = filled.filled_quantity
+                        order.fill_cost = filled.fill_cost
+                        break
+            return order
+
+        orch.paper_trader.place_order = auto_fill_place
+        with patch("src.data.data_fetcher.get_live_price", return_value=500.0):
+            trade = orch._execute_paper_trade("TEST.NS", result)
+
+        assert trade is not None
+        assert "stop_price" in trade
+        assert trade["stop_price"] > 0

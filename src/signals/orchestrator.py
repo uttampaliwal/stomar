@@ -125,8 +125,17 @@ class DailyOrchestrator:
         logger.info(f"{ticker}: {decision['action']} (size={decision['position_size']:.2%})")
         return result
 
+    # Stop-loss percentage applied to every new position (5% from entry)
+    STOP_LOSS_PCT: float = 0.05
+
     def _execute_paper_trade(self, ticker: str, result: dict) -> dict | None:
-        """Execute a paper trade and log to ledger. Returns trade info or None."""
+        """Execute a paper trade and log to ledger. Returns trade info or None.
+
+        After every entry order is filled, a protective stop-loss order is
+        submitted automatically:
+          BUY  → SELL STOP_MARKET at fill_price * (1 - STOP_LOSS_PCT)
+          SELL → BUY  STOP_MARKET at fill_price * (1 + STOP_LOSS_PCT)
+        """
         try:
             from src.trading.paper_trader import PaperTrader
             from src.trading.engine import OrderSide, OrderType
@@ -155,7 +164,6 @@ class DailyOrchestrator:
                 return None
 
             quantity = int(position_value / price) if price > 0 else 0
-
             if quantity <= 0:
                 return None
 
@@ -166,27 +174,51 @@ class DailyOrchestrator:
                 logger.warning(f"Order not filled for {ticker}: {order}")
                 return None
 
-            # Get the decision_id from the result
-            decision_id = result.get("decision_id")
+            fill_price = order.filled_price if order.filled_price > 0 else price
 
-            # Log trade to ledger
+            # ── Attach protective stop-loss ──────────────────────────────────
+            if side == OrderSide.BUY:
+                stop_price = round(fill_price * (1 - self.STOP_LOSS_PCT), 2)
+                stop_side = OrderSide.SELL
+            else:
+                stop_price = round(fill_price * (1 + self.STOP_LOSS_PCT), 2)
+                stop_side = OrderSide.BUY
+
+            stop_order = trader.place_order(
+                ticker, stop_side, OrderType.STOP_MARKET,
+                quantity, stop_price=stop_price,
+            )
+            if stop_order is not None:
+                logger.info(
+                    f"Stop-loss placed: {stop_side.value} {quantity} {ticker} "
+                    f"@ stop ₹{stop_price:.2f} (entry ₹{fill_price:.2f}, "
+                    f"{self.STOP_LOSS_PCT:.0%} risk)"
+                )
+            # ────────────────────────────────────────────────────────────────
+
+            # Log entry trade to ledger
+            decision_id = result.get("decision_id")
             if decision_id:
                 self.ledger.log_trade(
                     decision_id=decision_id,
                     ticker=ticker,
                     side=result["action"],
                     quantity=quantity,
-                    price=price,
+                    price=fill_price,
                 )
 
             trade_info = {
                 "ticker": ticker,
                 "side": result["action"],
                 "quantity": quantity,
-                "price": round(price, 2),
+                "price": round(fill_price, 2),
                 "position_size": result["position_size"],
+                "stop_price": stop_price,
             }
-            logger.info(f"Executed paper trade: {result['action']} {quantity} {ticker} @ ₹{price:.2f}")
+            logger.info(
+                f"Executed paper trade: {result['action']} {quantity} {ticker} "
+                f"@ ₹{fill_price:.2f} | stop ₹{stop_price:.2f}"
+            )
             return trade_info
 
         except Exception as e:
