@@ -247,7 +247,9 @@ stomar/
 ├── docs/                   # Documentation
 ├── data/                   # Data cache (gitignored)
 ├── models/                 # Trained models (gitignored)
-├── app.py                  # Streamlit web app
+├── api/                    # FastAPI backend
+├── web/                    # React frontend
+├── start_dev.bat           # One-click startup
 ├── run_pipeline.py         # CLI pipeline
 └── requirements.txt        # Dependencies
 ```

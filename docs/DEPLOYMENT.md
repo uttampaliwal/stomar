@@ -9,6 +9,7 @@ Setup, configuration, and troubleshooting for StoMar.
 | Requirement | Version | Notes |
 |-------------|---------|-------|
 | Python | 3.14 | 3.13+ should work, but 3.14 is tested |
+| Node.js | 20+ | For React frontend build |
 | pip | Latest | Comes with Python |
 | Git | Latest | For cloning the repo |
 | CUDA (optional) | 12.x | For GPU acceleration (PyTorch auto-detects) |
@@ -32,11 +33,14 @@ python -m venv venv
 # 3. Activate
 venv\Scripts\activate
 
-# 4. Install dependencies
+# 4. Install Python dependencies
 pip install -r requirements.txt
 
-# 5. Run
-python -m streamlit run app.py
+# 5. Install frontend dependencies
+cd web && npm install && cd ..
+
+# 6. Start both servers
+start_dev.bat
 ```
 
 ### Linux / macOS
@@ -47,20 +51,21 @@ cd stomar
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-python -m streamlit run app.py
+cd web && npm install && cd ..
+# Start FastAPI
+uvicorn api.main:app --reload --port 8000 &
+# Start React
+cd web && npm run dev
 ```
-
-### Windows Batch Launcher
-
-Double-click `run.bat` (after activating venv manually, or edit the bat file).
 
 ---
 
 ## Dependencies
 
+### Python (`requirements.txt`)
+
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `streamlit` | ≥1.38 | Web UI framework |
 | `yfinance` | ≥0.2.44 | Yahoo Finance data (NSE stocks) |
 | `pandas` | ≥2.2 | Data manipulation |
 | `numpy` | ≥1.26 | Numerical operations |
@@ -68,11 +73,23 @@ Double-click `run.bat` (after activating venv manually, or edit the bat file).
 | `xgboost` | ≥2.0 | XGBoost gradient boosting |
 | `lightgbm` | ≥4.0 | LightGBM gradient boosting |
 | `torch` | ≥2.0 | Deep learning (LSTM, GRU, Transformer) |
-| `plotly` | ≥5.25 | Interactive charts |
 | `ta` | ≥0.11 | Technical analysis indicators |
 | `joblib` | ≥1.4 | Model serialization |
 | `python-dotenv` | ≥1.0 | Environment variable loading |
 | `transformers` | ≥4.30 | HuggingFace FinBERT for sentiment |
+| `fastapi` | ≥0.111.0 | API backend framework |
+| `uvicorn` | ≥0.30.0 | ASGI server |
+| `pydantic` | ≥2.0 | Request/response validation |
+
+### Frontend (`web/package.json`)
+
+| Package | Purpose |
+|---------|---------|
+| `react` + `react-dom` | UI framework |
+| `react-router-dom` | Client-side routing |
+| `recharts` | Charts (candlestick, line, bar) |
+| `lucide-react` | Icons |
+| `tailwindcss` | Utility-first CSS |
 
 ### Optional GPU Support
 
@@ -101,15 +118,22 @@ HF_HOME=/path/to/huggingface/cache   # Override HuggingFace model cache
 
 ```
 stomar/
-├── app.py                     # Main Streamlit app (19 tabs)
+├── start_dev.bat              # Start FastAPI + React dev servers
 ├── run_daily.py               # Autonomous daily loop
 ├── run_pipeline.py            # Retraining pipeline
+├── auto_pipeline.py           # Startup automation
 ├── schedule_pipeline.py       # Windows Task Scheduler
 ├── verify_system.py           # System verification
-├── run.bat                    # Windows launcher
 ├── requirements.txt
 ├── pyproject.toml
+├── Dockerfile
 ├── .env                       # Optional
+├── api/                       # FastAPI backend
+│   ├── main.py                # App + CORS + caching
+│   └── routers/               # 20 API routers
+├── web/                       # React frontend
+│   ├── src/pages/             # 19 page components
+│   └── vite.config.ts         # Vite config + /api proxy
 ├── src/                       # Source code (40 modules)
 ├── models/                    # Trained weights (gitignored)
 │   ├── *.pt, *.pkl            # Per-ticker models
@@ -127,31 +151,32 @@ stomar/
 
 ## Running the App
 
-### Standard Launch
+### Standard Launch (Windows)
 ```powershell
-python -m streamlit run app.py
+start_dev.bat
 ```
-Opens at: `http://localhost:8501`
+- React UI: `http://localhost:5173`
+- FastAPI backend: `http://localhost:8000`
+- API docs: `http://localhost:8000/docs`
 
-### Custom Port
+### Manual Launch
 ```powershell
-python -m streamlit run app.py --server.port 8080
-```
+# Terminal 1: FastAPI
+python -m uvicorn api.main:app --reload --port 8000
 
-### Headless Mode (no browser auto-open)
-```powershell
-python -m streamlit run app.py --server.headless true
+# Terminal 2: React
+cd web && npm run dev
 ```
 
 ---
 
 ## First-Time Setup
 
-1. **Launch the app** — `python -m streamlit run app.py`
-2. **Go to Predictions tab** — Select a stock (e.g., RELIANCE.NS)
+1. **Start the app** — `start_dev.bat`
+2. **Go to Predictions page** — Select a stock (e.g., RELIANCE.NS)
 3. **Click "Train Model"** — Trains all 5 models (~30-90 seconds)
 4. **View prediction** — Ensemble signal appears with confidence
-5. **Try other tabs** — Backtest, Scanner, Sentiment, Consensus, etc.
+5. **Try other pages** — Backtest, Scanner, Sentiment, Consensus, etc.
 
 ### Training Times (approximate)
 | Stock | Time | Notes |
@@ -236,9 +261,9 @@ python verify_system.py
 
 ## Troubleshooting
 
-### "ModuleNotFoundError: No module named 'streamlit'"
+### "ModuleNotFoundError: No module named 'fastapi'"
 ```powershell
-pip install streamlit
+pip install fastapi uvicorn
 # Or ensure venv is activated
 ```
 
@@ -247,17 +272,10 @@ pip install streamlit
 - App works fine on CPU, just slower training
 - To install CUDA version: `pip install torch --index-url https://download.pytorch.org/whl/cu130`
 
-### "ImportError: cannot import name 'run_simple_backtest'"
+### "Module not found" errors in React
 ```powershell
-# Clear cached .pyc files
-rd /s /q __pycache__
-rd /s /q src\__pycache__
-python -m streamlit run app.py
-```
-
-### "AttributeError: 'DataFrame' object has no attribute 'iteritems'"
-```powershell
-pip install --upgrade pandas
+cd web
+npm install
 ```
 
 ### NSE API returns 404 (FII/DII data)
@@ -269,15 +287,11 @@ pip install --upgrade pandas
 - Subsequent runs use cache (30-min TTL)
 - If slow, check internet connection
 
-### "use_container_width is deprecated"
-- This is a Streamlit version issue
-- StoMar uses `width='stretch'` (Streamlit 1.38+)
-
 ### App crashes on startup
 1. Check Python version: `python --version`
-2. Check all packages installed: `pip list`
-3. Clear all caches: `rd /s /q __pycache__`
-4. Check for syntax errors: `python -c "import ast; ast.parse(open('app.py').read())"`
+2. Check Node.js version: `node --version`
+3. Check all packages installed: `pip list`
+4. Clear all caches: `rd /s /q __pycache__`
 
 ---
 
@@ -300,7 +314,7 @@ Each trained stock creates 8 files in `models/`:
 
 ### To Retrain a Stock
 1. Delete the model files: `del models\RELIANCE.NS_*.pkl models\RELIANCE.NS_*.pt`
-2. Go to Predictions tab
+2. Go to Predictions page
 3. Select the stock
 4. Click "Train Model"
 
@@ -316,14 +330,14 @@ Or just click "Train Model" — it retrains automatically when models exist (wit
 - Reduce `SEQ_LENGTH` in `trainer.py` (default 60) — faster but less context
 
 ### Speed Up UI
-- Reduce `@st.cache_data(ttl=3600)` TTL — more frequent data refresh
-- Train fewer stocks — less data to scan
-- Use `--server.headless true` — skips browser auto-open
+- Response cache (30s TTL) on expensive API endpoints
+- In-memory cache (10min) on data fetcher, (1hr) on model loading
+- Stale-while-revalidate in React `useApi` hook (30s)
+- Debounced ticker selectors (400ms)
 
 ### Reduce Memory
 - Train one stock at a time — models stay in memory
-- Close other tabs — Streamlit reruns entire script on each interaction
-- Use `--server.maxUploadSize 10` — limit file uploads
+- React code-splits: recharts lazy-loaded (~407KB chunk)
 
 ---
 
@@ -336,21 +350,24 @@ __pycache__/     # Python bytecode cache
 .env             # Environment secrets
 data/*.parquet   # Cached stock data (regenerable)
 models/*.pkl     # Saved models (regenerable)
-models/*.keras   # Legacy TF models (not used)
+models/*.pt      # Saved PyTorch models
 .venv/           # Virtual environment
 venv/            # Virtual environment
 *.egg-info/      # Python package metadata
 .DS_Store        # macOS metadata
+web/node_modules/ # Frontend dependencies
+web/dist/        # Frontend build output
 ```
 
 ### What's Tracked vs Not Tracked
 | Tracked | Not Tracked |
 |---------|-------------|
 | All `src/*.py` files | `data/*.parquet` (cache) |
-| `app.py` | `models/*.pt, *.pkl` (trained models) |
+| `api/*.py` | `models/*.pt, *.pkl` (trained models) |
+| `web/src/**` | `web/node_modules/` |
 | `requirements.txt` | `__pycache__/` |
 | `docs/*.md` | `.env` |
-| `run.bat` | `venv/` |
+| `start_dev.bat` | `venv/` |
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Status: ✅ STAGE 6 COMPLETE (Orchestrator, Ledger, Meta-Controller, 601 tests)
 
-Stage 6 answers the question: **Can the system run itself — pulling data, making decisions, logging outcomes — without a human clicking buttons in Streamlit?**
+Stage 6 answers the question: **Can the system run itself — pulling data, making decisions, logging outcomes — without a human clicking buttons in the UI?**
 
 This stage builds the orchestrator, persistent ledger, and meta-controller that turn 14 independent signal modules into one autonomous daily loop.
 
@@ -12,11 +12,11 @@ This stage builds the orchestrator, persistent ledger, and meta-controller that 
 
 | # | Criterion | Status | Priority |
 |---|-----------|--------|----------|
-| 1 | `run_daily.py` runs independently of Streamlit (scheduled) | ✅ DONE | CRITICAL |
+| 1 | `run_daily.py` runs independently of the UI (scheduled) | ✅ DONE | CRITICAL |
 | 2 | SQLite ledger with decisions, trades, and portfolio snapshots (3 tables) | ✅ DONE | CRITICAL |
 | 3 | Meta-controller v1 (bandit/stacking) combining all 14 signal modules | ✅ DONE | HIGH |
 | 4 | 2-3+ months of logged paper trading episodes | ⬜ TIME-GATED | HIGH |
-| 5 | Streamlit Ledger tab reads from ledger | ✅ DONE | MEDIUM |
+| 5 | Dashboard Ledger page reads from ledger | ✅ DONE | MEDIUM |
 | 6 | (Optional) RL upgrade with differential Sharpe reward | ⬜ DEFERRED | LOW |
 
 ---
@@ -63,7 +63,7 @@ This stage builds the orchestrator, persistent ledger, and meta-controller that 
                       │ reads from
 ┌─────────────────────▼───────────────────────────────────┐
 │              Dashboard (MODIFIED — Task 4)               │
-│  Streamlit reads from ledger, not session state          │
+│  Dashboard reads from ledger, not session state             │
 │  Shows: historical decisions, P&L, signal accuracy       │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -108,16 +108,16 @@ The 14 signal modules are leaf nodes — they take data and return a result. The
 ## Execution Plan: 5 Tasks
 
 ### Task 1: Orchestrator (run_daily.py)
-**Impact:** Critical — system must live outside Streamlit
+**Impact:** Critical — system must live outside UI
 **Effort:** 3-4 hours
 **Files:** New `src/orchestrator.py`, New `run_daily.py`
 
-**Why:** Everything today runs inside `streamlit run app.py`. Close the tab, the system stops. The orchestrator gives the system a life outside the UI.
+**Why:** The orchestrator gives the system a life outside the React/FastAPI UI.
 
 **Current state:**
 ```python
 # Everything requires manual trigger:
-# - Streamlit tab clicks
+# - Manual UI triggers
 # - python run_pipeline.py (manual)
 # - schedule_pipeline.py (exists but only runs pipeline, not full signal suite)
 ```
@@ -376,7 +376,7 @@ The 14 signal modules are leaf nodes — they take data and return a result. The
 ```python
 # Each module produces an output, but:
 # - No layer combines them into one decision
-# - User manually interprets signals in Streamlit
+# - User manually interprets signals in the UI
 # - No learning from historical signal → outcome pairs
 ```
 
@@ -522,23 +522,22 @@ The 14 signal modules are leaf nodes — they take data and return a result. The
 ---
 
 ### Task 4: Dashboard Reads from Ledger
-**Impact:** Medium — Streamlit shows historical decisions, not just live state
+**Impact:** Medium — Dashboard shows historical decisions, not just live state
 **Effort:** 2-3 hours
-**Files:** `app.py` (update existing tabs), `src/ledger.py` (query helpers)
+**Files:** `api/routers/` (new endpoints), `web/src/pages/` (new pages), `src/ledger.py` (query helpers)
 
-**Why:** Currently, Streamlit reads from `st.session_state` and live yfinance calls. It shows only the current moment. The ledger has historical decisions and outcomes — the dashboard should visualize them.
+**Why:** Currently, the frontend reads from live yfinance calls and shows only the current moment. The ledger has historical decisions and outcomes — the dashboard should visualize them.
 
 **Current state:**
 ```python
-# app.py reads:
-# - st.session_state.portfolio (ephemeral)
+# Frontend reads:
 # - Live yfinance calls (slow, rate-limited)
 # - No historical decision visualization
 ```
 
 **Target:**
 ```python
-# app.py reads from ledger:
+# API reads from ledger:
 # - Historical decisions table
 # - Per-module signal accuracy
 # - P&L over time
@@ -547,7 +546,7 @@ The 14 signal modules are leaf nodes — they take data and return a result. The
 
 **Implementation steps:**
 
-1. Add new tab `tab_ledger()` to app.py (18th tab):
+1. Add new Ledger page to `web/src/pages/` and API endpoint to `api/routers/`:
    - **Decision History** — table of all logged decisions (date, ticker, action, confidence, outcome)
    - **Signal Accuracy** — bar chart of per-module accuracy (which signals are predictive?)
    - **P&L Curve** — equity curve from portfolio snapshots
@@ -674,7 +673,7 @@ The 14 signal modules are leaf nodes — they take data and return a result. The
 
 | File | Change |
 |------|--------|
-| `app.py` | Add 18th tab (Ledger dashboard), update Paper Trading + Monitoring tabs |
+| `api/routers/` + `web/src/pages/` | Add Ledger dashboard page, update Paper Trading + Monitoring pages |
 | `schedule_pipeline.py` | Point to `run_daily.py` instead of `run_pipeline.py` |
 
 ---
@@ -683,7 +682,7 @@ The 14 signal modules are leaf nodes — they take data and return a result. The
 
 After all 5 tasks:
 
-- [x] `run_daily.py` runs end-to-end without Streamlit
+- [x] `run_daily.py` runs end-to-end without the UI
 - [x] SQLite ledger has 3 tables with correct schema (decisions, paper_trades, portfolio_snapshots)
 - [x] Ledger logs decisions, trades, outcomes, and portfolio snapshots
 - [x] Meta-controller v1 trained on ledger history (requires 100+ resolved decisions)
@@ -742,5 +741,5 @@ Stage 4 built the execution layer. 89 new tests added, 424 total (at the time).
 | Execution quality | `src/execution_quality.py` | ✅ |
 | Fill probability | `src/engine.py` | ✅ |
 | State persistence | `src/paper_trader.py` | ✅ |
-| Paper trading tab | `app.py` | ✅ |
+| Paper trading page | `web/src/pages/` + `api/routers/` | ✅ |
 | Pipeline --paper flag | `run_pipeline.py` | ✅ |

@@ -1,6 +1,6 @@
 # StoMar — Autonomous Quant Trading System
 
-An autonomous quantitative trading system for the Indian NSE market. 5-model ML ensemble, meta-controller combining 14 signal modules, persistent SQLite ledger, paper trading with short selling, and a 19-tab Streamlit terminal.
+An autonomous quantitative trading system for the Indian NSE market. 5-model ML ensemble, meta-controller combining 14 signal modules, persistent SQLite ledger, paper trading with short selling, and a React dashboard with FastAPI backend.
 
 [![CI](https://github.com/uttamkumar66/stomar/actions/workflows/ci.yml/badge.svg)](https://github.com/uttamkumar66/stomar/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -19,19 +19,22 @@ python -m venv venv
 venv\Scripts\activate          # Windows
 # source venv/bin/activate    # Linux/Mac
 
-# 3. Install dependencies
+# 3. Install Python dependencies
 pip install -r requirements.txt
 
-# 4. Run the dashboard
-python -m streamlit run app.py
+# 4. Install frontend dependencies
+cd web && npm install && cd ..
 
-# 5. Train all models
+# 5. Start both servers (FastAPI + React)
+start_dev.bat
+
+# 6. Train all models
 python run_pipeline.py --train-all
 
-# 6. Backfill history + train meta-controller
+# 7. Backfill history + train meta-controller
 python run_daily.py --backfill
 
-# 7. Start paper trading
+# 8. Start paper trading
 python run_daily.py --paper-trade --capital 200000
 ```
 
@@ -41,11 +44,15 @@ python run_daily.py --paper-trade --capital 200000
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                  STREAMLIT DASHBOARD (19 tabs)                   │
+│                REACT DASHBOARD (19 pages, :5173)                  │
 │  Scanner | Consensus | Ranking | Portfolio | Backtest | Risk     │
 │  Sentiment | Market Pulse | Optimizer | Paper Trading | Ledger   │
+│                      ↕ Vite proxy (/api)                         │
+├─────────────────────────────────────────────────────────────────┤
+│                  FASTAPI BACKEND (:8000)                          │
+│  20 API routers | CORS | Response caching | Parallel fetch       │
 └───────────────────────────┬─────────────────────────────────────┘
-                            │ reads from
+                            │ calls
 ┌───────────────────────────▼─────────────────────────────────────┐
 │                    META-CONTROLLER                               │
 │  14 signal modules → 1 decision (contextual bandit)              │
@@ -120,37 +127,29 @@ python run_daily.py --dry-run                # Signals only, no ledger writes
 - **State persistence** — `data/paper_state.json` survives restarts
 - **NSE costs** — Brokerage, STT, stamp duty, exchange charges, GST
 
-### Dashboard (19 tabs)
+### Dashboard (19 pages)
 
-| # | Tab | Purpose |
-|---|-----|---------|
-| 1 | Predictions | ML model predictions + confidence |
+| # | Page | Purpose |
+|---|------|---------|
+| 1 | Predictions | ML model predictions + candlestick + RSI + volume |
 | 2 | Portfolio | Current holdings + allocation |
-| 3 | Backtest | Walk-forward backtest results |
+| 3 | Backtest | Walk-forward backtest with per-window breakdown |
 | 4 | Scanner | Multi-stock screening (absolute direction) |
-| 5 | **Consensus** | **Unified signal across all modules** |
+| 5 | **Consensus** | **Unified signal: Meta-Controller + Ensemble + Regime voting** |
 | 6 | Sentiment | News sentiment analysis |
 | 7 | Market Pulse | FII/DII flow, PCR, market health |
-| 8 | Optimizer | Portfolio optimization (MVO, Black-Litterman) |
-| 9 | Holdings | Zerodha CSV import + stats |
-| 10 | Risk | VaR, CVaR, drawdown, Kelly |
-| 11 | Volatility | Volatility forecasting |
-| 12 | Ranking | Cross-sectional stock ranking (relative quality) |
-| 13 | Scenarios | What-if scenario analysis |
-| 14 | Regime Strategy | Regime-conditional trading signals |
+| 8 | Optimizer | Portfolio optimization + efficient frontier |
+| 9 | Risk | VaR, CVaR, drawdown, Kelly criterion |
+| 10 | Volatility | Multi-estimator volatility + forecast chart |
+| 11 | Ranking | Cross-sectional stock ranking (relative quality) |
+| 12 | Scenarios | What-if scenario comparison |
+| 13 | Regime | Bull/Bear/Sideways detection + indicators |
+| 14 | Correlation | Cross-asset correlation heatmap |
 | 15 | Monitoring | System health + model drift |
 | 16 | Pipeline | Retraining pipeline status |
 | 17 | Paper Trading | Simulated trading engine |
 | 18 | MF Tracker | Mutual fund NAV, XIRR, allocation |
 | 19 | Ledger | Historical decisions, signal accuracy, P&L |
-
-### Signal Type Labels
-
-Each module now has a clear label explaining what its signal measures:
-- **Scanner** → Absolute direction ("price goes up or down")
-- **Ranking** → Relative quality ("better/worse than peers")
-- **Risk/Regime** → Portfolio-level market conditions
-- **Consensus** → Meta-Controller + Ensemble agreement (authoritative signal)
 
 ---
 
@@ -158,56 +157,74 @@ Each module now has a clear label explaining what its signal measures:
 
 ```
 stomar/
-├── app.py                     # Main Streamlit app (19 tabs)
+├── start_dev.bat              # Start FastAPI + React dev servers
 ├── run_daily.py               # Autonomous daily loop
 ├── run_pipeline.py            # Retraining pipeline
+├── auto_pipeline.py           # Startup automation
 ├── schedule_pipeline.py       # Windows Task Scheduler
 ├── verify_system.py           # System verification
-├── run.bat                    # Windows launcher
 ├── requirements.txt
 ├── pyproject.toml
 ├── Dockerfile
-├── LICENSE                    # Apache 2.0
-├── CONTRIBUTING.md
-├── src/
-│   ├── __init__.py
+├── api/                       # FastAPI backend
+│   ├── main.py                # App + CORS + response caching
+│   ├── utils.py               # Parallel fetch utility
+│   └── routers/               # 20 API routers
+│       ├── predictions.py     # ML predictions + training
+│       ├── scanner.py         # Multi-stock screening
+│       ├── consensus.py       # Meta-Controller integration
+│       ├── ranking.py         # Cross-sectional ranking
+│       ├── backtest.py        # Walk-forward backtest
+│       ├── risk.py            # VaR, CVaR, Sharpe, Kelly
+│       ├── volatility.py      # Volatility analysis
+│       ├── scenarios.py       # Scenario comparison
+│       ├── regime.py          # Market regime detection
+│       ├── correlation.py     # Correlation matrix
+│       ├── optimizer.py       # Portfolio optimization
+│       ├── sentiment.py       # News sentiment
+│       ├── market.py          # Market health data
+│       ├── portfolio.py       # Paper trading portfolio
+│       ├── holdings.py        # Zerodha CSV import
+│       ├── monitoring.py      # System health
+│       ├── pipeline.py        # Retraining pipeline
+│       ├── paper_trading.py   # Paper trading engine
+│       ├── mf_tracker.py      # Mutual fund tracker
+│       └── ledger.py          # Trading journal
+├── web/                       # React frontend
+│   ├── src/
+│   │   ├── App.tsx            # Router with 19 routes
+│   │   ├── components/        # Sidebar, ThemeProvider, UI components
+│   │   ├── hooks/             # useApi, useDebouncedValue
+│   │   ├── pages/             # 19 page components
+│   │   └── lib/               # Utilities
+│   ├── vite.config.ts         # Vite + proxy /api → :8000
+│   └── package.json
+├── src/                       # Python ML/trading logic
 │   ├── constants.py           # Paths + global constants
 │   ├── data_fetcher.py        # yfinance + NSE stock list
 │   ├── data_sources.py        # Multi-source data with fallback
-│   ├── data_validation.py     # Data quality checks
 │   ├── features.py            # 48-feature engineering pipeline
-│   ├── feature_store.py       # Feature versioning
 │   ├── model.py               # 5 model architectures
-│   ├── model_registry.py      # Model versioning
 │   ├── trainer.py             # Training + walk-forward validation
 │   ├── ensemble.py            # Meta-learner + DL probability scaling
 │   ├── backtester.py          # Walk-forward backtesting
-│   ├── backfill.py            # Historical decision reconstruction
-│   ├── engine.py              # Event-driven backtesting engine
 │   ├── orchestrator.py        # Daily signal pipeline
 │   ├── meta_controller.py     # Contextual bandit (14 → 1 decision)
 │   ├── ledger.py              # SQLite trading journal
 │   ├── paper_trader.py        # Paper trading + short selling
-│   ├── portfolio.py           # Portfolio class
 │   ├── sentiment.py           # 5-source sentiment + FinBERT
 │   ├── flow.py                # FII/DII flow + options PCR
 │   ├── multitimeframe.py      # 4-timeframe analysis
 │   ├── risk.py                # VaR, CVaR, Sharpe, Kelly
-│   ├── risk_controls.py       # Slippage models, risk limits
 │   ├── optimizer.py           # MVO, Black-Litterman
 │   ├── holdings.py            # Zerodha CSV parser
 │   ├── regime.py              # Bull/Bear/Sideways + ADX
 │   ├── regime_strategy.py     # Regime-conditional signals
 │   ├── mf_tracker.py          # Mutual fund NAV, XIRR
-│   ├── execution_quality.py   # Execution quality analysis
 │   ├── monitoring.py          # System health monitoring
-│   ├── benchmarks.py          # Benchmark comparison
-│   ├── alpha_research.py      # Alpha factor research
 │   ├── volatility.py          # Volatility forecasting
 │   ├── ranking.py             # Cross-sectional ranking
 │   ├── scenarios.py           # Scenario analysis
-│   ├── significance.py        # Statistical significance tests
-│   ├── logging_config.py      # Logging setup
 │   └── pipeline.py            # Retraining pipeline
 ├── tests/                     # 601 tests
 ├── models/                    # Trained weights (gitignored)
@@ -273,12 +290,12 @@ ruff check src/ tests/ --output-format=concise
 
 | Layer | Technology |
 |-------|-----------|
-| **Frontend** | Streamlit 1.58+ with custom CSS (glassmorphism, dark-first) |
+| **Frontend** | React 18 + TypeScript + Tailwind CSS + Recharts (dark/light theme) |
+| **Backend** | FastAPI + Uvicorn + Pydantic (CORS, response caching, parallel fetch) |
 | **ML/DL** | PyTorch 2.0+, XGBoost 2.0+, LightGBM 4.0+ |
 | **NLP** | HuggingFace Transformers (ProsusAI/finbert) |
 | **Data** | yfinance, NSE India, Google News RSS, MoneyControl, ET, Screener.in |
 | **Optimization** | SciPy, scikit-learn (Ledoit-Wolf) |
-| **Visualization** | Plotly (interactive charts) |
 | **Technical Analysis** | `ta` library (30+ indicators) |
 | **Storage** | SQLite (ledger), Parquet (data cache) |
 

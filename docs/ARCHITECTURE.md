@@ -8,7 +8,7 @@ System design, data flow, and module dependencies for StoMar.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                STREAMLIT DASHBOARD (19 tabs, app.py)             │
+│           REACT FRONTEND + FASTAPI BACKEND                   │
 │  ┌──────────┬──────────┬──────────┬──────────┬──────────┐      │
 │  │ Predict  │Portfolio │ Backtest │ Scanner  │Consensus │      │
 │  ├──────────┼──────────┼──────────┼──────────┼──────────┤      │
@@ -50,7 +50,7 @@ System design, data flow, and module dependencies for StoMar.
 ## Module Dependency Map
 
 ```
-app.py
+web/src/ + api/
 ├── src/data_fetcher.py     (no internal deps)
 ├── src/features.py
 │   └── uses: sentiment.py, flow.py, multitimeframe.py
@@ -361,7 +361,7 @@ Output: probability ∈ [0, 1]
 | MF tracker holdings | `data/mf_state.json` | mf_tracker.py |
 | Meta-controller weights | `models/meta_controller.pkl` | meta_controller.py |
 
-### Session State (Streamlit only)
+### Session State
 | Variable | Type | Default | Purpose |
 |----------|------|---------|---------|
 | `portfolio` | `Portfolio` | `Portfolio(100000)` | Shared portfolio across tabs |

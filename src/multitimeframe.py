@@ -9,23 +9,12 @@ from src.constants import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-try:
-    import streamlit as st
-    _has_streamlit = True
-except ImportError:
-    _has_streamlit = False
-
 MTF_CACHE_DIR = DATA_DIR
 os.makedirs(MTF_CACHE_DIR, exist_ok=True)
 
 
-if _has_streamlit:
-    @st.cache_data
-    def fetch_mtf_data(ticker: str) -> dict:
-        return _fetch_mtf_data_impl(ticker)
-else:
-    def fetch_mtf_data(ticker: str) -> dict:
-        return _fetch_mtf_data_impl(ticker)
+def fetch_mtf_data(ticker: str) -> dict:
+    return _fetch_mtf_data_impl(ticker)
 
 
 def _fetch_mtf_data_impl(ticker: str) -> dict:

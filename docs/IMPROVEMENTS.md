@@ -10,7 +10,7 @@ Honest assessment of current state, what matters most, and concrete steps to get
 
 | Metric | Value | What It Means |
 |--------|-------|---------------|
-| Codebase | ~40 src/ modules, 2260-line app.py | Modular architecture, 19-tab Streamlit terminal |
+| Codebase | ~40 src/ modules | Modular architecture, React + FastAPI stack |
 | Tests | 601 passing (36 test files) | Full coverage across all modules |
 | CI/CD | GitHub Actions (lint + test) | Automated quality gate on every push |
 | Stocks trained | 20 of 20 | All NSE stocks trained with walk-forward validation |
@@ -25,7 +25,7 @@ Honest assessment of current state, what matters most, and concrete steps to get
 | Mutual fund tracker | NAV history, XIRR, factor exposures, allocation | Full MF analysis |
 | Paper trading | Event-driven engine with short selling + NSE costs | Realistic execution simulation |
 | Execution quality | Fill rates, latency, cost decomposition | Order analysis |
-| Autonomous loop | Daily orchestrator + SQLite ledger + paper trading | Runs independently of Streamlit |
+| Autonomous loop | Daily orchestrator + SQLite ledger + paper trading | Runs independently of the UI |
 | Signal consensus | Unified signal across Scanner/Ranking/Risk modules | Resolves signal contradictions |
 | License | Apache 2.0 + CONTRIBUTING.md | Open-source ready |
 
@@ -131,7 +131,7 @@ Stage 7: Live Paper Trading (2-3 months of real data) → NEXT
 - `src/logging_config.py` — structured logging with configurable levels
 
 ### 1.6 Docker ✅
-- `Dockerfile` — python:3.12-slim, health check, Streamlit config
+- `Dockerfile` — python:3.12-slim, health check, FastAPI config
 
 ### Stage 1 Exit Criteria
 - [x] All leakage points in `features.py` and `flow.py` identified and fixed
@@ -208,7 +208,7 @@ Stage 7: Live Paper Trading (2-3 months of real data) → NEXT
 
 ### 4.2 Paper Trading Mode ✅
 - `src/paper_trader.py` — full paper trading with state persistence
-- `app.py` — Paper Trading tab (16th)
+- `web/src/pages/` + `api/routers/` — Paper Trading page
 
 ### 4.3 Risk Controls ✅
 - `src/risk_controls.py` — position limits, daily/weekly loss limits, drawdown halt, Kelly sizing
@@ -216,7 +216,7 @@ Stage 7: Live Paper Trading (2-3 months of real data) → NEXT
 
 ### 4.4 Execution Quality ✅
 - `src/execution_quality.py` — fill rates, slippage analysis, cost decomposition
-- `app.py` — Execution quality tab integrated
+- `web/src/pages/` + `api/routers/` — Execution quality page
 
 ### Stage 4 Exit Criteria
 - [x] Event-driven engine with backtest-live parity
@@ -235,7 +235,7 @@ Stage 7: Live Paper Trading (2-3 months of real data) → NEXT
 
 ### 5.2 Mutual Fund Integration ✅
 - `src/mf_tracker.py` — MF NAV history, XIRR, factor exposures, allocation breakdown, concentration risk, benchmark comparison
-- `app.py` — MF Tracker tab (17th)
+- `web/src/pages/` + `api/routers/` — MF Tracker page
 
 ### 5.3 Sentiment Upgrades ✅
 - `src/sentiment.py` — 5-source sentiment (Yahoo, Google, MoneyControl, ET, Screener.in), source-weighted aggregation, deduplication
@@ -258,7 +258,7 @@ Stage 7: Live Paper Trading (2-3 months of real data) → NEXT
 
 > Source: `check/check.txt` — architecture analysis for autonomous paper-trading loop.
 
-**The problem:** Everything today is click-triggered inside a Streamlit session. There's no background process, no scheduler, no persistent ledger. `st.session_state.portfolio` lives only as long as the browser tab does. You cannot bolt "auto everything" onto that without first giving the system a life outside the UI.
+**The problem:** Everything today is click-triggered inside a UI session. There's no background process, no scheduler, no persistent ledger. State lives only as long as the browser tab does. You cannot bolt "auto everything" onto that without first giving the system a life outside the UI.
 
 ### Architecture Diagram
 
@@ -282,17 +282,15 @@ Stage 7: Live Paper Trading (2-3 months of real data) → NEXT
 ```
 
 ### 6.1 Orchestrator (Background Process)
-**Impact:** Critical (system must live outside Streamlit)
+**Impact:** Critical (system must live outside UI)
 **Effort:** Medium (3-5 days)
 **Files:** New `src/orchestrator.py`, `run_daily.py`
 
-**Current problem:** Everything runs inside `streamlit run app.py`. Close the tab, the system stops. No background processing, no scheduling.
-
-**What to build:**
-- A standalone Python script (`run_daily.py`) that runs independently of Streamlit
-- Uses APScheduler or Windows Task Scheduler (via existing `schedule_pipeline.py`)
+**What was built:**
+- A standalone Python script (`run_daily.py`) that runs independently of the React UI
+- Uses Windows Task Scheduler (via `schedule_pipeline.py`)
 - After market close (e.g., 3:30 PM IST): pull fresh data → run all 14 signal modules → get meta-controller's decision → simulate paper trade → write everything to ledger
-- Streamlit becomes a *viewer* of this process's output, not the thing running it
+- Dashboard becomes a *viewer* of this process's output, not the thing running it
 
 **Concrete flow:**
 ```
@@ -316,7 +314,7 @@ run_daily.py (scheduled)
 5. Meta-controller: combine 14 signals → 1 decision
 6. Simulate paper trade (if decision is actionable)
 7. Log everything to ledger (SQLite)
-8. Update Streamlit dashboard state (if running)
+8. Update dashboard state (if running)
 ```
 
 ### 6.2 Persistent Ledger (SQLite/Postgres)
@@ -426,7 +424,7 @@ The meta-controller's learned weights are a live scorecard:
 - Run the full autonomous loop for 2-3+ months
 - Log every decision, every signal, every outcome to the ledger
 - This log is what any future RL agent would train on
-- Streamlit dashboard reads from the ledger for visualization
+- Dashboard reads from the ledger for visualization
 
 ### 6.5 RL Upgrade (Optional, After Step 6.4)
 **Impact:** Research only (not needed for production)
@@ -439,11 +437,11 @@ The meta-controller's learned weights are a live scorecard:
 - This becomes a reasonable experiment rather than a guaranteed overfit
 
 ### Stage 6 Exit Criteria
-- [x] `run_daily.py` runs independently of Streamlit (scheduled)
+- [x] `run_daily.py` runs independently of the UI (scheduled)
 - [x] SQLite ledger with decisions, trades, and portfolio snapshots (3 tables)
 - [x] Meta-controller v1 (bandit/stacking) combining all 14 signal modules
 - [ ] 2-3+ months of logged paper trading episodes (time-gated — starts when deployed)
-- [x] Streamlit Ledger tab reads from ledger (other tabs migrate over time)
+- [x] Dashboard Ledger page reads from ledger (other pages migrate over time)
 - [ ] (Optional) RL upgrade with differential Sharpe reward (deferred — needs months of data)
 
 ---
@@ -500,7 +498,7 @@ It's a stack, not one app:
                       │
 ┌─────────────────────▼───────────────────────────────────┐
 │                   RESEARCH LAYER                         │
-│  Streamlit/Panel dashboards                              │
+│  React/FastAPI dashboard                                        │
 │  VectorBT/NautilusTrader backtests                       │
 │  Strict OOS validation (purged CV, benchmarks)          │
 └─────────────────────┬───────────────────────────────────┘
@@ -537,7 +535,7 @@ Stomar can evolve into the **research/dashboarding layer** of this stack. It's n
 | Ledger | New `src/ledger.py` |
 | Meta-controller | New `src/meta_controller.py` |
 | Daily scheduler | Update `schedule_pipeline.py` |
-| Dashboard from ledger | Update `app.py` (read from SQLite instead of session state) |
+| Dashboard from ledger | Update `api/routers/` + `web/src/pages/` (read from SQLite) |
 
 ---
 

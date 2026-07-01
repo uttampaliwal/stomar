@@ -4,9 +4,8 @@ Detects missed trading days, backfills them, trains models,
 runs the daily orchestrator, and auto-executes paper trades.
 
 Designed to run:
-  1. On Streamlit app startup (background thread)
-  2. As a standalone script: python auto_pipeline.py
-  3. Via Windows Task Scheduler (auto-installed on first run)
+  1. As a standalone script: python auto_pipeline.py
+  2. Via Windows Task Scheduler (auto-installed on first run)
 
 Usage:
     from auto_pipeline import AutoPipeline
@@ -17,7 +16,6 @@ Usage:
 import logging
 import os
 import sys
-import threading
 import time
 from datetime import datetime, timedelta
 
@@ -344,18 +342,6 @@ class AutoPipeline:
                 errors += 1
         self._log(f"Sentiment warm-up: {warmed} cached, {errors} errors")
         return {"warmed": warmed, "errors": errors}
-
-
-def run_startup_pipeline():
-    """Run auto-pipeline in a background thread (for Streamlit startup)."""
-    pipeline = AutoPipeline()
-
-    def _run():
-        pipeline.run()
-
-    thread = threading.Thread(target=_run, daemon=True, name="auto-pipeline")
-    thread.start()
-    return pipeline
 
 
 def main():

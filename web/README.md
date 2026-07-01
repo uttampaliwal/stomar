@@ -70,8 +70,8 @@ stomar/
 │   ├── tailwind.config.js
 │   └── vite.config.ts     # Proxy /api to :8000
 │
-├── src/                    # Python source (unchanged)
-├── app.py                  # Streamlit UI (unchanged, runs on :8501)
+├── src/                    # Python source
+├── api/                    # FastAPI backend
 └── start_dev.bat           # One-click startup
 ```
 

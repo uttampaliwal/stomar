@@ -235,7 +235,7 @@ animation: pulse 2s ease-in-out infinite;
 
 ---
 
-## Streamlit Component Overrides
+## Component Overrides
 
 ### Buttons
 ```css
@@ -287,13 +287,10 @@ animation: pulse 2s ease-in-out infinite;
 
 ## Chart Styling
 
-All Plotly charts use:
-```python
-template="plotly_dark"
-paper_bgcolor="rgba(0,0,0,0)"
-plot_bgcolor="rgba(0,0,0,0)"
-font=dict(family="Inter, sans-serif")
-margin=dict(l=0, r=0, t=10, b=0)
+All Recharts charts use:
+```tsx
+<Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '11px' }} />
+<CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
 ```
 
 ### Chart Colors
@@ -323,10 +320,10 @@ margin=dict(l=0, r=0, t=10, b=0)
 
 ## Hidden Defaults
 
-The following Streamlit defaults are hidden via CSS:
+The following defaults were hidden via CSS (legacy Streamlit overrides — kept for reference):
 ```css
 #MainMenu { visibility: hidden; }     /* Hamburger menu */
-footer { visibility: hidden; }        /* "Made with Streamlit" */
+footer { visibility: hidden; }        /* "Made with Streamlit" (legacy) */
 header { visibility: hidden; }        /* Default header */
 .stDeployButton { display: none; }    /* Deploy button */
 ```
@@ -335,10 +332,10 @@ header { visibility: hidden; }        /* Default header */
 
 ## File Reference
 
-All CSS is defined in `app.py` lines 29-415 (injected via `st.markdown` with `unsafe_allow_html=True`).
+All CSS is defined in `web/src/styles/` (React component stylesheets and Tailwind config).
 
 To modify the design system:
-1. Edit the CSS variables in `:root` block (line 32-45) for global color changes
+1. Edit the CSS variables in the global stylesheet for color changes
 2. Edit component classes for specific component styling
-3. Edit Streamlit overrides for Streamlit widget styling
-4. All changes take effect on next page load (no rebuild needed)
+3. Edit Tailwind config for utility class customization
+4. Changes take effect on hot reload (dev) or next build (prod)
