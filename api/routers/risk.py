@@ -1,7 +1,7 @@
 """Risk analysis endpoint."""
 
 import numpy as np
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from src.data.data_fetcher import fetch_stock_data, NSE_STOCKS
 from src.trading.risk import generate_risk_report, kelly_criterion
 from src.signals.regime import detect_regime

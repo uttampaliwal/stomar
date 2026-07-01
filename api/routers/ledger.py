@@ -1,6 +1,5 @@
 """Ledger / trading journal endpoint."""
 
-import os
 from fastapi import APIRouter, Query
 from src.trading.ledger import Ledger
 from src.core.constants import LEDGER_DB
@@ -18,35 +17,36 @@ def get_decisions(
     start_date: str = Query(None),
     end_date: str = Query(None),
 ):
+    ledger = get_ledger()
     try:
-        ledger = get_ledger()
         decisions = ledger.get_decisions(ticker=ticker, start_date=start_date, end_date=end_date)
-        ledger.close()
         return {"decisions": decisions}
     except Exception as e:
         return {"error": str(e)}
+    finally:
+        ledger.close()
 
 
 @router.get("/trades")
 def get_trades(ticker: str = Query(None)):
+    ledger = get_ledger()
     try:
-        ledger = get_ledger()
         trades = ledger.get_trades(ticker=ticker)
-        ledger.close()
         return {"trades": trades}
     except Exception as e:
         return {"error": str(e)}
+    finally:
+        ledger.close()
 
 
 @router.get("/performance")
 def get_performance():
+    ledger = get_ledger()
     try:
-        ledger = get_ledger()
         perf = ledger.get_performance()
         signal_acc = ledger.get_signal_accuracy()
         daily_pnl = ledger.get_daily_pnl()
         snapshots = ledger.get_snapshots()
-        ledger.close()
         return {
             "performance": perf,
             "signal_accuracy": signal_acc,
@@ -55,18 +55,19 @@ def get_performance():
         }
     except Exception as e:
         return {"error": str(e)}
+    finally:
+        ledger.close()
 
 
 @router.get("/summary")
 def ledger_summary():
+    ledger = get_ledger()
     try:
-        ledger = get_ledger()
         decisions = ledger.get_decisions()
         trades = ledger.get_trades()
         snapshots = ledger.get_snapshots()
         perf = ledger.get_performance()
         signal_acc = ledger.get_signal_accuracy()
-        ledger.close()
 
         total_decisions = len(decisions)
         correct = sum(1 for d in decisions if d.get("correct"))
@@ -81,3 +82,5 @@ def ledger_summary():
         }
     except Exception as e:
         return {"error": str(e)}
+    finally:
+        ledger.close()

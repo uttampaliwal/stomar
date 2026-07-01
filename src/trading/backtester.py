@@ -34,7 +34,7 @@ def compute_metrics(equity_curve, trades, risk_free_rate=RISK_FREE_RATE):
     returns = eq.pct_change().dropna()
 
     if eq.iloc[0] == 0:
-        return {"error": "Initial equity is zero"}
+        return {}
 
     total_return = (eq.iloc[-1] / eq.iloc[0]) - 1
     n_years = max((eq.index[-1] - eq.index[0]).days / 365.25, 0.01)
@@ -73,8 +73,10 @@ def compute_metrics(equity_curve, trades, risk_free_rate=RISK_FREE_RATE):
     win_rate = len(win_trades) / max(total_trades, 1)
 
     avg_win = np.mean([t.get("pnl", 0) for t in win_trades]) if win_trades else 0
-    avg_loss = abs(np.mean([t.get("pnl", 0) for t in lose_trades])) if lose_trades else 0.001
-    profit_factor = (avg_win * len(win_trades)) / max(avg_loss * len(lose_trades), 0.001)
+    avg_loss = abs(np.mean([t.get("pnl", 0) for t in lose_trades])) if lose_trades else 0
+    total_win_pnl = avg_win * len(win_trades) if win_trades else 0
+    total_loss_pnl = avg_loss * len(lose_trades) if lose_trades else 0
+    profit_factor = total_win_pnl / max(total_loss_pnl, 0.001)
 
     return {
         "total_return": total_return,

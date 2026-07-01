@@ -1,6 +1,6 @@
 """Scenario analysis endpoint."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from src.data.data_fetcher import fetch_stock_data
 from src.signals.scenarios import run_all_scenarios
 

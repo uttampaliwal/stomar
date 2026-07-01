@@ -99,6 +99,14 @@ class ExecutionEngine:
 
     def on_bar(self, bar: Bar) -> list[Order]:
         """Process a new bar. Returns list of filled orders."""
+        # Validate bar prices
+        if bar.high < bar.low:
+            logger.warning(f"Invalid bar for {bar.ticker}: high ({bar.high}) < low ({bar.low})")
+            return []
+        if bar.close <= 0 or bar.open <= 0:
+            logger.warning(f"Invalid bar for {bar.ticker}: non-positive price")
+            return []
+
         filled = []
         remaining = []
 

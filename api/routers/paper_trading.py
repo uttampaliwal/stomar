@@ -1,29 +1,30 @@
 """Paper trading endpoint."""
 
 import os
-import json
+import threading
 from fastapi import APIRouter, Body
 from src.trading.paper_trader import PaperTrader
 from src.trading.engine import OrderSide, OrderType
-from src.trading.risk_controls import RiskLimits
 from src.data.data_fetcher import NSE_STOCKS
 
 router = APIRouter()
 
 _trader = None
+_trader_lock = threading.Lock()
 
 
 def get_trader():
     global _trader
-    if _trader is None:
-        state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "paper_state.json")
-        _trader = PaperTrader(initial_capital=200000)
-        if os.path.exists(state_path):
-            try:
-                _trader.load_state(state_path)
-            except Exception:
-                pass
-    return _trader
+    with _trader_lock:
+        if _trader is None:
+            state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "paper_state.json")
+            _trader = PaperTrader(initial_capital=200000)
+            if os.path.exists(state_path):
+                try:
+                    _trader.load_state(state_path)
+                except Exception:
+                    pass
+        return _trader
 
 
 @router.get("/state")

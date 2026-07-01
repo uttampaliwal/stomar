@@ -4,7 +4,7 @@ import os
 import json
 from fastapi import APIRouter
 from src.signals.monitoring import ModelMonitor, MONITORING_DIR
-from src.data.data_fetcher import NSE_STOCKS, fetch_stock_data
+from src.data.data_fetcher import NSE_STOCKS
 from src.models.model import models_exist
 
 router = APIRouter()
@@ -39,8 +39,11 @@ def get_monitoring():
         alert_history = []
         history_path = os.path.join(MONITORING_DIR, "alert_history.json")
         if os.path.exists(history_path):
-            with open(history_path) as f:
-                alert_history = json.load(f)[-10:]
+            try:
+                with open(history_path) as f:
+                    alert_history = json.load(f)[-10:]
+            except (json.JSONDecodeError, OSError):
+                alert_history = []
 
         return {
             "models_trained": models_trained,

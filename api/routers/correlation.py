@@ -25,6 +25,10 @@ def correlation_matrix():
             return {"error": "Not enough stocks with data"}
 
         prices_df = pd.DataFrame(prices)
+        # Drop columns with all NaN, then drop rows with any NaN
+        prices_df = prices_df.dropna(axis=1, how="all").dropna()
+        if len(prices_df) < 30:
+            return {"error": "Insufficient overlapping data"}
         returns = prices_df.pct_change().dropna()
         corr = returns.corr()
 

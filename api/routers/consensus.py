@@ -4,7 +4,6 @@ import os
 import logging
 import warnings as _warnings
 import joblib
-import numpy as np
 from fastapi import APIRouter
 from src.data.data_fetcher import fetch_stock_data, NSE_STOCKS
 from src.data.features import add_technical_indicators
@@ -13,7 +12,6 @@ from src.models.ensemble import predict_ensemble
 from src.models.trainer import FEATURE_COLS
 from src.signals.regime import detect_regime
 from src.signals.sentiment import get_stock_sentiment
-from src.models.meta_controller import MetaController
 from api.utils import parallel_fetch
 
 logger = logging.getLogger(__name__)

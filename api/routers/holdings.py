@@ -1,7 +1,7 @@
 """Holdings and MF tracker endpoint."""
 
 import os
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter
 from src.trading.holdings import parse_holdings_csv, compute_portfolio_stats
 
 router = APIRouter()

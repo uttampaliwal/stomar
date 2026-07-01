@@ -1,8 +1,6 @@
 """Stock predictions endpoint."""
 
-import os
-import numpy as np
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from src.data.data_fetcher import fetch_stock_data
 from src.data.features import add_technical_indicators
 from src.models.model import load_models, models_exist
