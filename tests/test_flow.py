@@ -1,8 +1,5 @@
 """Tests for src/flow.py — FII/DII flow analysis."""
 
-import numpy as np
-import pandas as pd
-import pytest
 
 from src.signals.flow import get_flow_sentiment, _compute_pcr
 

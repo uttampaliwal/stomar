@@ -662,7 +662,7 @@ MF_STATE_PATH: str       # data/mf_state.json path
 ```python
 BROKERAGE_RATE = 0.0003          # 0.03% per side (Zerodha delivery)
 SLIPPAGE_RATE = 0.001            # 0.1% slippage estimate
-STT_SELL_RATE = 0.001            # 0.1% STT (sell side)
+STT_RATE = 0.001                 # 0.1% STT (both buy & sell for delivery)
 EXCHANGE_CHARGE_RATE = 0.0000345 # NSE exchange charges
 SEBI_FEES_RATE = 0.000001        # SEBI turnover fees
 STAMP_DUTY_BUY_RATE = 0.00015   # Stamp duty (buy side)

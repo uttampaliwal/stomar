@@ -1,9 +1,6 @@
 """Tests for src/holdings.py — holdings parsing and portfolio stats."""
 
-import os
-import tempfile
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -11,8 +8,6 @@ from src.trading.holdings import (
     parse_holdings_csv,
     compute_xirr,
     compute_portfolio_stats,
-    save_holdings,
-    load_holdings,
     INDIAN_MF_MAP,
 )
 

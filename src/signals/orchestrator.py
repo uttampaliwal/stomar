@@ -369,7 +369,7 @@ class DailyOrchestrator:
             if len(returns) < 20:
                 return {}
             result = forecast_volatility(returns.values.astype(float))
-            return {"volatility_forecast": result.get("forecast", 0) if isinstance(result, dict) else 0}
+            return {"volatility_forecast": result.get("current_vol", 0) if isinstance(result, dict) else 0}
         except Exception as e:
             logger.debug(f"Volatility failed: {e}")
             return {}

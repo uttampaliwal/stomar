@@ -30,9 +30,6 @@ from src.core.logging_config import get_logger
 
 logger = get_logger("auto_pipeline")
 
-# Business days only (NSE market days)
-_BUSINESS_DAYS_CACHE: set | None = None
-
 
 def _is_business_day(dt) -> bool:
     """Check if a date is a business day (Mon-Fri)."""

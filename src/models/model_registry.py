@@ -22,13 +22,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+from src.core.constants import MODELS_DIR
+
 logger = logging.getLogger(__name__)
 
-REGISTRY_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "models", "registry"
-)
-
-MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
+REGISTRY_DIR = os.path.join(MODELS_DIR, "registry")
 
 
 @dataclass

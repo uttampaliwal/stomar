@@ -77,7 +77,7 @@ def compute_xirr(cashflows: list) -> float:
             low = mid
         else:
             high = mid
-    return mid * 100
+    return mid
 
 
 def compute_portfolio_stats(holdings_df: pd.DataFrame) -> dict:

@@ -2,8 +2,6 @@
 
 import json
 import logging
-import os
-import tempfile
 
 from src.core.logging_config import setup_logging, get_logger, JSONFormatter, HumanFormatter
 

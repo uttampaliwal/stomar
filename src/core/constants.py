@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 # ─── Paths ───
-PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+PROJECT_ROOT = str(Path(__file__).resolve().parent.parent.parent)
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
 LEDGER_DB = os.path.join(DATA_DIR, "stomar.db")
@@ -17,7 +17,7 @@ FEATURE_VERSIONS_DIR = os.path.join(DATA_DIR, "feature_versions")
 # ─── Trading Costs (NSE India) ───
 BROKERAGE_RATE = 0.0003          # 0.03% per side (Zerodha delivery)
 SLIPPAGE_RATE = 0.001            # 0.1% slippage estimate
-STT_SELL_RATE = 0.001            # 0.1% Securities Transaction Tax (sell side)
+STT_RATE = 0.001                 # 0.1% Securities Transaction Tax (both buy & sell for delivery)
 EXCHANGE_CHARGE_RATE = 0.0000345 # NSE exchange transaction charges
 SEBI_FEES_RATE = 0.000001        # SEBI turnover fees
 STAMP_DUTY_BUY_RATE = 0.00015   # Stamp duty (buy side)
@@ -48,7 +48,7 @@ DEFAULT_ENSEMBLE_WEIGHTS = {
 # ─── NSE Transaction Cost Dictionary ───
 NSE_TRANSACTION_COSTS = {
     "brokerage_pct": BROKERAGE_RATE,
-    "stt_sell_pct": STT_SELL_RATE,
+    "stt_pct": STT_RATE,
     "exchange_charge_pct": EXCHANGE_CHARGE_RATE,
     "sebi_fees_pct": SEBI_FEES_RATE,
     "stamp_duty_buy_pct": STAMP_DUTY_BUY_RATE,
@@ -76,7 +76,7 @@ def calculate_nse_costs(price: float, quantity: int, side: str) -> dict:
     gst = (brokerage + exchange_charge) * GST_RATE
 
     # STT is charged on both buy and sell sides for delivery at 0.1%
-    stt = trade_value * STT_SELL_RATE
+    stt = trade_value * STT_RATE
 
     if side == "buy":
         stamp_duty = trade_value * STAMP_DUTY_BUY_RATE

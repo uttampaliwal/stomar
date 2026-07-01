@@ -20,6 +20,8 @@ import pandas as pd
 import requests
 import yfinance as yf
 
+from src.core.constants import DATA_DIR
+
 # Only suppress specific known noisy warnings, not all warnings
 warnings.filterwarnings("ignore", message=".*token.*")
 warnings.filterwarnings("ignore", message=".*tokenizer.*")
@@ -29,7 +31,7 @@ logger = logging.getLogger(__name__)
 _finbert_pipeline = None
 _finbert_lock = threading.Lock()
 _sentiment_cache_lock = threading.Lock()
-_sentiment_cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+_sentiment_cache_dir = DATA_DIR
 
 # Source weights: more authoritative sources get higher weight
 SOURCE_WEIGHTS = {

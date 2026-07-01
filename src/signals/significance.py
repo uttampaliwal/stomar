@@ -97,14 +97,14 @@ def run_cpcv(df, feature_cols, target_col, backtest_fn,
 
     outcomes = []
     for test_group_idx in all_combos:
-        test_idx = test_group_idx[0]
-        train_dfs = [groups[i] for i in range(n_test_groups) if i != test_idx]
+        test_indices = list(test_group_idx)
+        train_dfs = [groups[i] for i in range(n_test_groups) if i not in test_indices]
 
         if len(train_dfs) == 0:
             continue
 
         train_df = pd.concat(train_dfs)
-        test_df = groups[test_idx]
+        test_df = pd.concat([groups[i] for i in test_indices])
 
         X_train = train_df[feature_cols].values
         y_train = train_df[target_col].values
