@@ -27,6 +27,8 @@ from api.routers import (
     regime,
     monitoring,
     pipeline,
+    insights,
+    automation,
     correlation,
     paper_trading,
     mf_tracker,
@@ -99,6 +101,8 @@ app.include_router(scenarios.router, prefix="/api/scenarios", tags=["Scenarios"]
 app.include_router(regime.router, prefix="/api/regime", tags=["Regime"])
 app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
 app.include_router(pipeline.router, prefix="/api/pipeline", tags=["Pipeline"])
+app.include_router(insights.router, prefix="/api/insights", tags=["Insights"])
+app.include_router(automation.router, prefix="/api/automation", tags=["Automation"])
 app.include_router(correlation.router, prefix="/api/correlation", tags=["Correlation"])
 app.include_router(paper_trading.router, prefix="/api/paper-trading", tags=["Paper Trading"])
 app.include_router(mf_tracker.router, prefix="/api/mf-tracker", tags=["MF Tracker"])

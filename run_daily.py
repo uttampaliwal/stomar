@@ -15,6 +15,7 @@ import argparse
 import logging
 import sys
 import os
+import time
 import warnings
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -136,6 +137,8 @@ def main():
                         help="Auto-execute paper trades based on signals")
     parser.add_argument("--capital", type=float, default=200_000,
                         help="Paper trading capital (default: 200000)")
+    parser.add_argument("--schedule-hours", type=float, default=0,
+                        help="Run the loop repeatedly every N hours (0 = disabled)")
     args = parser.parse_args()
 
     tickers = args.ticker if args.ticker else NSE_STOCKS
@@ -228,6 +231,27 @@ def main():
         ledger=ledger,
         meta_controller=meta_controller,
     )
+
+    if args.schedule_hours > 0:
+        while True:
+            summary = orchestrator.run(dry_run=args.dry_run)
+            print(f"\n=== Summary ===")
+            print(f"Decisions: {len(summary['decisions'])}")
+            print(f"Errors:    {len(summary['errors'])}")
+
+            for d in summary["decisions"]:
+                print(f"  [{d['action']:4s}] {d['ticker']:15s} "
+                      f"size={d['position_size']:.2%} conf={d['confidence']:.2f}")
+
+            for e in summary["errors"]:
+                print(f"  [ERR]  {e['ticker']:15s} {e['error']}")
+
+            if args.paper_trade and summary["decisions"]:
+                run_paper_trades(summary["decisions"], ledger, capital=args.capital)
+
+            ledger.close()
+            print(f"\nSleeping for {args.schedule_hours:.2f} hours...")
+            time.sleep(args.schedule_hours * 3600)
 
     summary = orchestrator.run(dry_run=args.dry_run)
 

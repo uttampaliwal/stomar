@@ -5,6 +5,8 @@ import os
 import time
 import logging
 
+from src.data.free_data import fetch_free_historical_data
+
 from src.core.constants import DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -64,15 +66,22 @@ def fetch_stock_data(
             _cache_put(cache_key, df)
             return df
 
-    stock = yf.Ticker(ticker)
-    df = stock.history(period=period, interval=interval)
-
-    if df.empty:
-        raise ValueError(f"No data found for ticker: {ticker}")
-
-    df.columns = [c.lower() for c in df.columns]
-    df.index = pd.to_datetime(df.index)
-    df.index.name = "date"
+    try:
+        df = fetch_free_historical_data(ticker, period=period, interval=interval)
+        if df is None or df.empty:
+            raise ValueError("No data returned")
+        df = df.set_index("date")
+        df.index = pd.to_datetime(df.index)
+        df.index.name = "date"
+        df = df[[c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]]
+    except Exception:
+        stock = yf.Ticker(ticker)
+        df = stock.history(period=period, interval=interval)
+        if df.empty:
+            raise ValueError(f"No data found for ticker: {ticker}")
+        df.columns = [c.lower() for c in df.columns]
+        df.index = pd.to_datetime(df.index)
+        df.index.name = "date"
 
     df.to_parquet(cache_path)
     _cache_put(cache_key, df)

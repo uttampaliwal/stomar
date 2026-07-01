@@ -142,7 +142,18 @@ class DailyOrchestrator:
                 return None
 
             equity = trader.get_equity()
-            position_value = equity * result["position_size"]
+            max_position_value = equity * trader.risk_controller.limits.max_position_pct
+            position_value = min(equity * result["position_size"], max_position_value)
+            risk_result = trader.risk_controller.check_order(
+                order_value=position_value,
+                current_holdings_value=sum(p.market_value for p in trader.positions.values()),
+                ticker=ticker,
+                holdings=trader.positions,
+            )
+            if not risk_result["approved"]:
+                logger.info(f"Risk blocked {ticker}: {risk_result.get('reason', 'risk check failed')}")
+                return None
+
             quantity = int(position_value / price) if price > 0 else 0
 
             if quantity <= 0:
