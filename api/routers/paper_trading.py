@@ -90,10 +90,10 @@ def trade_log():
         for t in trader.trade_log[-50:]:
             trades.append({
                 "ticker": t.ticker,
-                "side": t.side.name if hasattr(t.side, "name") else str(t.side),
+                "side": t.side,
                 "quantity": t.quantity,
-                "price": round(t.price, 2),
-                "date": str(t.date),
+                "price": round(t.fill_price, 2),
+                "date": str(t.timestamp),
             })
         return {"trades": trades}
     except Exception as e:

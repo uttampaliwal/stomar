@@ -26,10 +26,12 @@ class DailyOrchestrator:
     MAX_DAILY_TRADES = 5
     MAX_PORTFOLIO_EXPOSURE = 0.50
 
-    def __init__(self, tickers: list[str], ledger, meta_controller=None):
+    def __init__(self, tickers: list[str], ledger, meta_controller=None,
+                 paper_trader=None):
         self.tickers = tickers
         self.ledger = ledger
         self.meta_controller = meta_controller
+        self.paper_trader = paper_trader
 
     def run(self, date: str = None, dry_run: bool = False) -> dict:
         """Execute one full daily cycle.
@@ -73,6 +75,13 @@ class DailyOrchestrator:
                         total_exposure += result["position_size"]
 
                 summary["decisions"].append(result)
+
+                # Execute paper trade if action is BUY or SELL
+                if not dry_run and result["action"] in ("BUY", "SELL") and result["position_size"] > 0:
+                    trade = self._execute_paper_trade(ticker, result)
+                    if trade:
+                        summary["trades"].append(trade)
+
             except Exception as e:
                 logger.error(f"Failed to process {ticker}: {e}")
                 summary["errors"].append({"ticker": ticker, "error": str(e)})
@@ -115,6 +124,63 @@ class DailyOrchestrator:
 
         logger.info(f"{ticker}: {decision['action']} (size={decision['position_size']:.2%})")
         return result
+
+    def _execute_paper_trade(self, ticker: str, result: dict) -> dict | None:
+        """Execute a paper trade and log to ledger. Returns trade info or None."""
+        try:
+            from src.trading.paper_trader import PaperTrader
+            from src.trading.engine import OrderSide, OrderType
+            from src.data.data_fetcher import get_live_price
+
+            trader = self.paper_trader
+            if trader is None:
+                trader = PaperTrader(initial_capital=200000)
+
+            price = get_live_price(ticker)
+            if price is None or price <= 0:
+                logger.warning(f"Cannot get price for {ticker}, skipping trade")
+                return None
+
+            equity = trader.get_equity()
+            position_value = equity * result["position_size"]
+            quantity = int(position_value / price) if price > 0 else 0
+
+            if quantity <= 0:
+                return None
+
+            side = OrderSide.BUY if result["action"] == "BUY" else OrderSide.SELL
+            order = trader.place_order(ticker, side, OrderType.MARKET, quantity, price=price)
+
+            if order is None or order.status.value != "FILLED":
+                logger.warning(f"Order not filled for {ticker}: {order}")
+                return None
+
+            # Get the decision_id from the result
+            decision_id = result.get("decision_id")
+
+            # Log trade to ledger
+            if decision_id:
+                self.ledger.log_trade(
+                    decision_id=decision_id,
+                    ticker=ticker,
+                    side=result["action"],
+                    quantity=quantity,
+                    price=price,
+                )
+
+            trade_info = {
+                "ticker": ticker,
+                "side": result["action"],
+                "quantity": quantity,
+                "price": round(price, 2),
+                "position_size": result["position_size"],
+            }
+            logger.info(f"Executed paper trade: {result['action']} {quantity} {ticker} @ ₹{price:.2f}")
+            return trade_info
+
+        except Exception as e:
+            logger.error(f"Paper trade execution failed for {ticker}: {e}")
+            return None
 
     def _collect_signals(self, ticker: str) -> dict:
         """Run all signal modules and collect their outputs."""
@@ -160,6 +226,7 @@ class DailyOrchestrator:
             from src.data.features import add_technical_indicators
             from src.models.model import load_models, models_exist
             from src.models.ensemble import predict_ensemble
+            from src.models.trainer import FEATURE_COLS
 
             if not models_exist(ticker):
                 return {}
@@ -180,29 +247,29 @@ class DailyOrchestrator:
                 "mtf_signal": "mtf_signal",
             }
             for feat_name, sig_name in signal_map.items():
-                if feat_name in models["features"] and feat_name not in df_feat.columns:
+                if feat_name in FEATURE_COLS and feat_name not in df_feat.columns:
                     val = (signals or {}).get(sig_name, 0) or 0
                     df_feat[feat_name] = val
 
             # Fill any remaining missing model features with 0
-            for col in models["features"]:
+            for col in FEATURE_COLS:
                 if col not in df_feat.columns:
                     df_feat[col] = 0
 
             # Only dropna on columns that exist in the data
-            existing_feats = [c for c in models["features"] if c in df_feat.columns]
+            existing_feats = [c for c in FEATURE_COLS if c in df_feat.columns]
             df_feat = df_feat.dropna(subset=[c for c in existing_feats if c in df_feat.columns] + ["target"])
 
             if len(df_feat) < 2:
                 return {}
 
-            prob, direction, confidence = predict_ensemble(
+            ensemble_dir, confidence, details = predict_ensemble(
                 models["lstm"], models["gru"], models["transformer"],
-                models["xgb"], models["scaler"], models["features"], df_feat,
+                models["xgb"], models["scaler"], FEATURE_COLS, df_feat,
                 lgb_model=models["lgb"],
             )
             return {
-                "ensemble_direction": direction,
+                "ensemble_direction": ensemble_dir,
                 "ensemble_confidence": confidence / 100.0 if confidence else None,
             }
         except Exception as e:
