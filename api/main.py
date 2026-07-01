@@ -33,7 +33,7 @@ from api.routers import (
     ledger,
 )
 
-app = FastAPI(title="StoMar API", version="0.1.0")
+app = FastAPI(title="StoMar API", version="0.0.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -107,4 +107,4 @@ app.include_router(ledger.router, prefix="/api/ledger", tags=["Ledger"])
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "0.0.1"}

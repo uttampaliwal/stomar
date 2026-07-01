@@ -1,6 +1,6 @@
 [project]
 name = "stomar"
-version = "0.1.0"
+version = "0.0.1"
 description = "State-of-the-art stock market prediction and trading suite for Indian NSE market"
 requires-python = ">=3.11"
 dependencies = [
