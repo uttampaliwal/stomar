@@ -56,15 +56,10 @@ mf_state.json
 meta_controller.pkl
 meta_*_NS.pkl
 
-# ─── Results (generated reports) ───
-results/
-
 # ─── Logs ───
 *.log
 
 # ─── Debug / Scratch ───
-check/
-stitch_the_command_center_prd/
 debug/
 tmp/
 temp/
