@@ -59,12 +59,16 @@
 ## Phase 1 — Persistent State Machine for the Pipeline
 *The pipeline currently has no memory of where it failed. A crash at step 3 restarts from step 0.*
 
-- [ ] 🔴 **P1.1** Add pipeline state machine with resume-from-checkpoint
+- [x] 🔴 **P1.1** Add pipeline state machine with resume-from-checkpoint
   - New file: `src/core/pipeline_state.py`
   - States: `IDLE → FETCH → VALIDATE → FEATURES → TRAIN → EVALUATE → PROMOTE → DAILY → PAPER → ARCHIVE → DONE`
   - Store current state in `data/pipeline_checkpoint.json` with ticker + stage + timestamp
   - On startup, read checkpoint and resume from last incomplete stage
   - Each stage marks itself complete before starting the next
+  - Per-ticker checkpoints for `RetrainingPipeline` (`pipeline_checkpoint_{TICKER}.json`)
+  - Auto-pipeline uses shared checkpoint (`pipeline_checkpoint.json`)
+  - GET `/api/monitoring/checkpoint` endpoint exposes checkpoint status
+  - Atomic writes, corrupt-file handling, 54 tests
   - Effort: 4–6 hours
 
 - [ ] 🟠 **P1.2** Add per-stage retry logic
@@ -399,7 +403,7 @@
 | Phase | Status | Started | Completed | Notes |
 |-------|--------|---------|-----------|-------|
 | Phase 0 — Operational Wiring | ✅ Complete | 2026-07-01 | 2026-07-01 | All 5 items done |
-| Phase 1 — State Machine | 🔲 Not started | — | — | |
+| Phase 1 — State Machine | 🟡 In progress | 2026-07-01 | — | P1.1 done |
 | Phase 2 — Data Quality | 🔲 Not started | — | — | |
 | Phase 3 — Paper Trading | 🔲 Not started | — | — | Time-gated: 3 months |
 | Phase 4 — Explainability | 🔲 Not started | — | — | |

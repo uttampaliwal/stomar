@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+from src.core.pipeline_state import PipelineCheckpoint
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,37 +58,111 @@ class RetrainingPipeline:
         self.results: list[PipelineResult] = []
 
     def run(self, ticker: str) -> PipelineResult:
-        """Run the full pipeline for a single ticker."""
-        logger.info(f"Starting retraining pipeline for {ticker}")
+        """Run the full pipeline for a single ticker with checkpoint resume.
 
-        result = self._stage_fetch(ticker)
-        if result.status != "success":
-            self.results.append(result)
-            return result
+        On startup, reads the per-ticker checkpoint file. If a valid
+        checkpoint exists from a previous interrupted run, resumes from
+        the last incomplete stage.
+        """
+        logger.info("Starting retraining pipeline for %s", ticker)
 
-        result = self._stage_validate(ticker)
-        if result.status != "success":
-            self.results.append(result)
-            return result
+        # ── Load or create checkpoint ──────────────────────────────────────
+        ckpt = PipelineCheckpoint.load(pipeline="retrain", ticker=ticker)
+        if ckpt and ckpt.can_resume():
+            resume_stage = ckpt.resume_from()
+            logger.info("Resuming %s from stage %s (created %s)",
+                        ticker, resume_stage, ckpt.created_at)
+        else:
+            ckpt = PipelineCheckpoint(pipeline="retrain", ticker=ticker)
 
-        result = self._stage_features(ticker)
-        if result.status != "success":
-            self.results.append(result)
-            return result
+        # Stage definitions in order
+        stage_map = [
+            ("FETCH", "_stage_fetch", False),
+            ("VALIDATE", "_stage_validate", False),
+            ("FEATURES", "_stage_features", False),
+            ("TRAIN", "_stage_train", True),    # needs previous result
+            ("EVALUATE", "_stage_evaluate", False),
+            ("PROMOTE", "_stage_promote", True),  # needs previous result
+        ]
 
-        result = self._stage_train(ticker, result)
-        if result.status != "success":
-            self.results.append(result)
-            return result
+        # Track completed results for stages that need predecessors
+        completed_results: dict[str, PipelineResult] = {}
 
-        result = self._stage_evaluate(ticker)
-        if result.status != "success":
-            self.results.append(result)
-            return result
+        # Restore completed results from checkpoint
+        for stage_name, _, _ in stage_map:
+            if ckpt.stage_status(stage_name) in ("completed", "skipped"):
+                stage_info = ckpt.stage_info(stage_name)
+                if stage_info and stage_info.result:
+                    completed_results[stage_name] = PipelineResult(
+                        ticker=ticker, stage=stage_name.lower(), status="success",
+                        message=stage_info.result.get("message", ""),
+                        metrics=stage_info.result.get("metrics", {}),
+                        feature_hash=stage_info.result.get("feature_hash"),
+                    )
 
-        result = self._stage_promote(ticker, result)
-        self.results.append(result)
-        return result
+        # Run stages sequentially, stopping on failure
+        for stage_name, method_name, needs_prev in stage_map:
+            if ckpt.stage_status(stage_name) in ("completed", "skipped"):
+                continue
+
+            ckpt.advance(stage_name)
+            ckpt.save()
+
+            try:
+                method = getattr(self, method_name)
+                if needs_prev:
+                    prev = self._find_prev_result(completed_results, stage_name)
+                    result = method(ticker, prev)
+                else:
+                    result = method(ticker)
+
+                if result.status == "success":
+                    ckpt.complete(stage_name, {
+                        "status": "success",
+                        "message": result.message,
+                        "metrics": result.metrics,
+                        "feature_hash": result.feature_hash,
+                    })
+                    ckpt.save()
+                    completed_results[stage_name] = result
+                    self.results.append(result)
+                else:
+                    # "failed" or "rejected"
+                    ckpt.fail(stage_name, result.message)
+                    ckpt.save()
+                    self.results.append(result)
+                    return result
+
+            except Exception as e:
+                ckpt.fail(stage_name, str(e))
+                ckpt.save()
+                result = PipelineResult(
+                    ticker=ticker, stage=stage_name.lower(), status="failed",
+                    message=f"Stage failed: {e}",
+                )
+                self.results.append(result)
+                return result
+
+        # Mark done and clear checkpoint
+        ckpt.advance("DONE")
+        ckpt.complete("DONE")
+        ckpt.save()
+        PipelineCheckpoint.clear(pipeline="retrain", ticker=ticker)
+
+        logger.info("Retraining pipeline complete for %s", ticker)
+        return self.results[-1] if self.results else PipelineResult(
+            ticker=ticker, stage="done", status="success", message="All stages completed"
+        )
+
+    def _find_prev_result(self, completed_results: dict, current_stage: str) -> Optional[PipelineResult]:
+        """Find the most recent successful result before the current stage."""
+        stage_order = ["FETCH", "VALIDATE", "FEATURES", "TRAIN", "EVALUATE", "PROMOTE"]
+        current_idx = stage_order.index(current_stage) if current_stage in stage_order else -1
+        for i in range(current_idx - 1, -1, -1):
+            stage = stage_order[i]
+            if stage in completed_results:
+                return completed_results[stage]
+        return None
 
     def _stage_fetch(self, ticker: str) -> PipelineResult:
         """Stage 1: Fetch latest price data."""

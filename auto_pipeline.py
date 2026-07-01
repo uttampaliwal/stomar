@@ -29,6 +29,7 @@ from src.core.constants import (
 from src.data.data_fetcher import NSE_STOCKS
 from src.trading.ledger import Ledger
 from src.core.logging_config import get_logger
+from src.core.pipeline_state import PipelineCheckpoint, StageInfo
 
 logger = get_logger("auto_pipeline")
 
@@ -127,7 +128,11 @@ class AutoPipeline:
         logger.critical("Pipeline failure recorded | stage=%s | error=%s", stage, error)
 
     def run(self, force: bool = False) -> dict:
-        """Run the full auto-pipeline.
+        """Run the full auto-pipeline with checkpoint-based resume.
+
+        On startup, reads data/pipeline_checkpoint.json. If a valid
+        checkpoint exists from a previous interrupted run, resumes from
+        the last incomplete stage. Otherwise starts fresh.
 
         Args:
             force: If True, skip "already ran today" check
@@ -148,8 +153,21 @@ class AutoPipeline:
             "paper_trade": None,
             "meta_controller": None,
             "scheduler": None,
+            "checkpoint": None,
             "errors": [],
         }
+
+        # ── Load or create checkpoint ──────────────────────────────────────
+        ckpt = PipelineCheckpoint.load()
+        if ckpt and ckpt.can_resume():
+            self._log(
+                f"Resuming from checkpoint | pipeline={ckpt.pipeline} "
+                f"| stage={ckpt.resume_from()} | created={ckpt.created_at}"
+            )
+            result["checkpoint"] = {"resumed_from": ckpt.resume_from(), "created_at": ckpt.created_at}
+        else:
+            ckpt = PipelineCheckpoint(pipeline="auto")
+            PipelineCheckpoint.clear()
 
         try:
             self.ledger = Ledger()
@@ -162,8 +180,8 @@ class AutoPipeline:
             scheduler_result = self._auto_install_scheduler()
             result["scheduler"] = scheduler_result
 
-            # Check if we already ran today
-            if not force and last_date == today:
+            # Check if we already ran today (skip if resuming from checkpoint)
+            if not force and last_date == today and not ckpt.can_resume():
                 existing = self.ledger.get_dates_with_decisions()
                 if today in existing:
                     self._log("Already ran today, skipping (use force=True to override)")
@@ -172,24 +190,87 @@ class AutoPipeline:
                     return result
 
             # Step 1: Detect and backfill missed days
-            backfill_result = self._backfill_missed_days(today, last_date)
-            result["backfill"] = backfill_result
+            if ckpt.stage_status("FETCH") not in ("completed", "skipped"):
+                ckpt.advance("FETCH")
+                backfill_result = self._backfill_missed_days(today, last_date)
+                result["backfill"] = backfill_result
+                if backfill_result.get("error"):
+                    ckpt.fail("FETCH", backfill_result["error"])
+                    ckpt.save()
+                    raise RuntimeError(f"Backfill failed: {backfill_result['error']}")
+                elif backfill_result.get("days_backfilled", 0) == 0:
+                    ckpt.skip("FETCH", "no missed days")
+                else:
+                    ckpt.complete("FETCH", backfill_result)
+                ckpt.save()
+            else:
+                self._log("FETCH already completed, skipping")
+                result["backfill"] = ckpt.stages.get("FETCH", StageInfo()).result or {"days_backfilled": 0}
 
             # Step 2: Train meta-controller if needed
-            mc_result = self._ensure_meta_controller()
-            result["meta_controller"] = mc_result
+            if ckpt.stage_status("TRAIN") not in ("completed", "skipped"):
+                ckpt.advance("TRAIN")
+                mc_result = self._ensure_meta_controller()
+                result["meta_controller"] = mc_result
+                if mc_result.get("status") == "error":
+                    ckpt.fail("TRAIN", mc_result.get("error", "unknown"))
+                    ckpt.save()
+                    raise RuntimeError(f"Meta-controller failed: {mc_result.get('error')}")
+                elif mc_result.get("status") in ("loaded", "insufficient_data"):
+                    ckpt.skip("TRAIN", mc_result.get("status"))
+                else:
+                    ckpt.complete("TRAIN", mc_result)
+                ckpt.save()
+            else:
+                self._log("TRAIN already completed, skipping")
+                result["meta_controller"] = {"status": "skipped"}
 
             # Step 3: Run daily orchestrator
-            daily_result = self._run_daily(today)
-            result["daily"] = daily_result
+            if ckpt.stage_status("DAILY") not in ("completed", "skipped"):
+                ckpt.advance("DAILY")
+                daily_result = self._run_daily(today)
+                result["daily"] = daily_result
+                if daily_result.get("error"):
+                    ckpt.fail("DAILY", daily_result["error"])
+                    ckpt.save()
+                    raise RuntimeError(f"Daily orchestrator failed: {daily_result['error']}")
+                ckpt.complete("DAILY", daily_result)
+                ckpt.save()
+            else:
+                self._log("DAILY already completed, skipping")
+                result["daily"] = {"decisions": 0, "skipped": True}
 
             # Step 4: Auto-execute paper trades
-            paper_result = self._run_paper_trades()
-            result["paper_trade"] = paper_result
+            if ckpt.stage_status("PAPER") not in ("completed", "skipped"):
+                ckpt.advance("PAPER")
+                paper_result = self._run_paper_trades()
+                result["paper_trade"] = paper_result
+                if paper_result.get("error"):
+                    ckpt.fail("PAPER", paper_result["error"])
+                    ckpt.save()
+                    raise RuntimeError(f"Paper trades failed: {paper_result['error']}")
+                ckpt.complete("PAPER", paper_result)
+                ckpt.save()
+            else:
+                self._log("PAPER already completed, skipping")
+                result["paper_trade"] = {"trades": 0, "skipped": True}
+
+            # Mark pipeline done
+            ckpt.advance("DONE")
+            ckpt.complete("DONE")
+            ckpt.save()
 
             self._last_run_date = today
             self._status = "completed"
-            self._log(f"Auto-pipeline complete | backfill={backfill_result.get('days_backfilled', 0)} days | daily={daily_result.get('decisions', 0)} decisions | paper={paper_result.get('trades', 0)} trades")
+            self._log(
+                f"Auto-pipeline complete | "
+                f"backfill={result.get('backfill', {}).get('days_backfilled', 0)} days | "
+                f"daily={result.get('daily', {}).get('decisions', 0)} decisions | "
+                f"paper={result.get('paper_trade', {}).get('trades', 0)} trades"
+            )
+
+            # Clear checkpoint on successful completion
+            PipelineCheckpoint.clear()
 
         except Exception as e:
             self._log(f"Pipeline error: {e}")
@@ -198,6 +279,11 @@ class AutoPipeline:
             result["errors"].append(str(e))
             logger.exception("Auto-pipeline failed")
             self._record_failure(stage="pipeline", error=str(e))
+            # Save checkpoint on failure so we can resume later
+            try:
+                ckpt.save()
+            except Exception:
+                pass
         finally:
             self._running = False
             if self.ledger:

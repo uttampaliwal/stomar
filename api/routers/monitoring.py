@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter
 
 from src.core.constants import MONITORING_DIR
+from src.core.pipeline_state import PipelineCheckpoint, checkpoint_path
 from src.data.data_fetcher import NSE_STOCKS
 from src.models.model import models_exist
 from src.signals.monitoring import ModelMonitor
@@ -97,6 +98,34 @@ def get_retrain_triggers():
         return {"count": len(triggers), "triggers": triggers[-50:]}
     except (json.JSONDecodeError, OSError) as e:
         return {"error": str(e), "count": 0, "triggers": []}
+
+
+@router.get("/checkpoint")
+def get_pipeline_checkpoint():
+    """Return the current pipeline checkpoint status.
+
+    Shows whether the auto-pipeline or any retraining pipeline has an
+    interrupted run that can be resumed on next startup.
+    """
+    # Auto-pipeline checkpoint
+    auto_ckpt = PipelineCheckpoint.load(pipeline="auto")
+    auto_status = auto_ckpt.get_summary() if auto_ckpt else None
+
+    # Per-ticker retraining checkpoints
+    retrain_checkpoints = []
+    for ticker in NSE_STOCKS:
+        ckpt = PipelineCheckpoint.load(pipeline="retrain", ticker=ticker)
+        if ckpt and not ckpt.is_complete():
+            retrain_checkpoints.append(ckpt.get_summary())
+
+    return {
+        "auto_pipeline": auto_status,
+        "retrain_pipelines": retrain_checkpoints,
+        "has_pending_checkpoints": (
+            (auto_status is not None and auto_status.get("can_resume", False))
+            or len(retrain_checkpoints) > 0
+        ),
+    }
 
 
 def _get_recent_failures(hours: int = 24) -> list[dict]:
