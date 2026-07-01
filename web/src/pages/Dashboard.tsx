@@ -12,7 +12,9 @@ export default function Dashboard() {
   const pipeline = useApi<any>('/api/pipeline/status')
   const monitoring = useApi<any>('/api/monitoring/')
   const recommendation = useApi<any>(`/api/insights/recommend/${ticker}`)
+  const enrichment = useApi<any>(`/api/insights/enrichment/${ticker}`)
   const automation = useApi<any>('/api/automation/decisions')
+  const paperState = useApi<any>('/api/paper-trading/state')
   const runAutomation = usePostApi<any>('/api/automation/run')
 
   const quickSummary = useMemo(() => {
@@ -136,6 +138,73 @@ export default function Dashboard() {
               <p className="text-sm text-muted-foreground">No decisions have been logged yet.</p>
             )}
           </div>
+        </Card>
+      </div>
+
+      {/* Live context and automation snapshot */}
+      <SectionHeader title="Live Market Context" />
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <Card className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold">News & intraday enrichment</p>
+              <p className="text-xs text-muted-foreground">Price, momentum, and headline sentiment for {ticker}</p>
+            </div>
+            <Activity className="h-4 w-4 text-cyan" />
+          </div>
+          {enrichment.loading && <Spinner />}
+          {enrichment.error && <ErrorDisplay message={enrichment.error} />}
+          {enrichment.data && !enrichment.data.error && (
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
+                <span className="text-muted-foreground">Price</span>
+                <span className="font-mono font-semibold">₹{enrichment.data.price?.toLocaleString() || '—'}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
+                <span className="text-muted-foreground">Change</span>
+                <span className={`font-mono font-semibold ${enrichment.data.change_pct >= 0 ? 'text-emerald' : 'text-rose'}`}>
+                  {enrichment.data.change_pct >= 0 ? '+' : ''}{enrichment.data.change_pct}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
+                <span className="text-muted-foreground">Sentiment</span>
+                <span className="font-medium">{enrichment.data.sentiment_label || 'Neutral'}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
+                <span className="text-muted-foreground">Headlines</span>
+                <span className="font-medium">{enrichment.data.headline_count || 0}</span>
+              </div>
+            </div>
+          )}
+        </Card>
+        <Card className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold">Paper trading snapshot</p>
+              <p className="text-xs text-muted-foreground">Risk-aware simulated account state</p>
+            </div>
+            <Shield className="h-4 w-4 text-amber" />
+          </div>
+          {paperState.loading && <Spinner />}
+          {paperState.error && <ErrorDisplay message={paperState.error} />}
+          {paperState.data && !paperState.data.error && (
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
+                <span className="text-muted-foreground">Equity</span>
+                <span className="font-mono font-semibold">₹{Math.round(paperState.data.current_equity || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
+                <span className="text-muted-foreground">Cash</span>
+                <span className="font-mono font-semibold">₹{Math.round(paperState.data.cash || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
+                <span className="text-muted-foreground">Risk</span>
+                <span className={`font-medium ${paperState.data.risk_status?.halted ? 'text-rose' : 'text-emerald'}`}>
+                  {paperState.data.risk_status?.halted ? 'Halted' : 'Active'}
+                </span>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
 

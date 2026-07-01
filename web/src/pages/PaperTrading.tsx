@@ -37,6 +37,20 @@ export default function PaperTrading() {
             <Stat label="Unrealized P&L" value={formatCurrency(state.unrealized_pnl || 0)} trend={state.unrealized_pnl >= 0 ? 'up' : 'down'} />
           </div>
 
+          <Card className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">Risk controls</p>
+              <Badge variant={state.risk_status?.halted ? 'danger' : 'success'}>
+                {state.risk_status?.halted ? 'Halted' : 'Live'}
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {state.risk_status?.halted
+                ? `Trading is paused: ${state.risk_status.halt_reason || 'risk limit breached'}`
+                : `Drawdown ${((state.risk_status?.drawdown_pct || 0) * 100).toFixed(1)}% • Daily loss remaining ${formatCurrency(state.risk_status?.daily_loss_remaining || 0)}`}
+            </p>
+          </Card>
+
           {/* Order Form */}
           <SectionHeader title="Place Order" />
           <Card>
