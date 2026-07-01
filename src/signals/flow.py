@@ -70,9 +70,9 @@ def fetch_fii_dii() -> pd.DataFrame:
         fii_sell = _parse_val(fii_row.get("sellValue", 0))
         fii_net = _parse_val(fii_row.get("netValue", 0))
 
-        dii_buy = _parse_val(dii_row.get("buyValue", 0)) if dii_row else 0
-        dii_sell = _parse_val(dii_row.get("sellValue", 0)) if dii_row else 0
-        dii_net = _parse_val(dii_row.get("netValue", 0)) if dii_row else 0
+        dii_buy = _parse_val(dii_row.get("buyValue", 0)) if dii_row is not None else 0
+        dii_sell = _parse_val(dii_row.get("sellValue", 0)) if dii_row is not None else 0
+        dii_net = _parse_val(dii_row.get("netValue", 0)) if dii_row is not None else 0
 
         new_row = pd.DataFrame([{
             "date": date, "fii_buy": fii_buy, "fii_sell": fii_sell,

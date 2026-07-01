@@ -238,9 +238,12 @@ def add_technical_indicators(df: pd.DataFrame, ticker: str = None) -> pd.DataFra
         df["quarter"] = df.index.quarter
         df["day_of_month"] = df.index.day
 
-    # Target
+    # Target: simple 1-day forward return direction
     df["target"] = close.shift(-1) / close - 1
     df["target_direction"] = (df["target"] > 0).astype(int)
+
+    # Triple-barrier labels (advanced target for trading)
+    df["tb_label"] = _triple_barrier_labels(close, profit_pct=0.02, loss_pct=0.02, max_holding=5)
 
     if ticker:
         df = add_sentiment_features(df, ticker)
@@ -291,3 +294,47 @@ def prepare_lstm_data(
         y.append(scaled[i, 0])
 
     return np.array(X), np.array(y), scaler
+
+
+def _triple_barrier_labels(close: pd.Series, profit_pct: float = 0.02,
+                           loss_pct: float = 0.02, max_holding: int = 5) -> pd.Series:
+    """Triple-barrier labeling for robust ML targets.
+
+    For each bar, labels the outcome as:
+      1 = profit barrier hit first (upward move)
+      0 = loss barrier hit first (downward move)
+      2 = time barrier hit (no clear direction within max_holding bars)
+
+    This is superior to simple return-based labels because it accounts for:
+    - Profit-taking and stop-loss levels
+    - Time decay of signals
+    - Realistic holding periods
+
+    Args:
+        close: Series of closing prices
+        profit_pct: Upper barrier threshold (e.g., 0.02 = 2%)
+        loss_pct: Lower barrier threshold (e.g., 0.02 = 2%)
+        max_holding: Maximum bars to hold before time barrier
+
+    Returns:
+        Series of labels (0, 1, or 2)
+    """
+    n = len(close)
+    labels = pd.Series(2, index=close.index, dtype=int)  # default: time barrier
+
+    for i in range(n - 1):
+        entry_price = close.iloc[i]
+        upper_barrier = entry_price * (1 + profit_pct)
+        lower_barrier = entry_price * (1 - loss_pct)
+
+        # Check subsequent bars within holding period
+        end_idx = min(i + max_holding + 1, n)
+        for j in range(i + 1, end_idx):
+            if close.iloc[j] >= upper_barrier:
+                labels.iloc[i] = 1  # profit hit first
+                break
+            elif close.iloc[j] <= lower_barrier:
+                labels.iloc[i] = 0  # loss hit first
+                break
+
+    return labels

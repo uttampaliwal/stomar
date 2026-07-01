@@ -184,8 +184,8 @@ class Ledger:
         elif action == "SELL":
             correct = 1 if actual_direction == 0 else 0
         elif action == "HOLD":
-            # HOLD is always considered correct (no trade = no loss)
-            correct = 1
+            # HOLD is correct if market went sideways (return between -0.5% and +0.5%)
+            correct = 1 if abs(actual_return) <= 0.005 else 0
         else:
             correct = None
 

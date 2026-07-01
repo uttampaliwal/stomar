@@ -26,8 +26,8 @@ def market_pulse():
         fii_dii = fetch_fii_dii()
         if fii_dii is not None and not fii_dii.empty:
             latest = fii_dii.iloc[-1]
-            fii_net = float(latest.get("FII", 0))
-            dii_net = float(latest.get("DII", 0))
+            fii_net = float(latest.get("fii_net", 0) or 0)
+            dii_net = float(latest.get("dii_net", 0) or 0)
             result["fii_dii"] = {
                 "fii_net": round(fii_net, 2),
                 "dii_net": round(dii_net, 2),

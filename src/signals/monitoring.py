@@ -22,9 +22,9 @@ from typing import Optional
 import numpy as np
 from scipy import stats
 
-logger = logging.getLogger(__name__)
-
 from src.core.constants import MONITORING_DIR
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

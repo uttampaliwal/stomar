@@ -52,9 +52,11 @@ def place_order(data: dict = Body(...)):
             return {"error": f"Cannot get price for {ticker}"}
 
         order = trader.place_order(ticker, side, OrderType.MARKET, quantity)
+        if order is None:
+            return {"order_id": None, "status": "rejected", "price": price}
         return {
-            "order_id": order.order_id if order else None,
-            "status": "filled" if order else "rejected",
+            "order_id": order.order_id,
+            "status": order.status.value.lower() if hasattr(order.status, 'value') else str(order.status).lower(),
             "price": price,
         }
     except Exception as e:

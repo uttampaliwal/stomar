@@ -30,7 +30,7 @@ class PipelineConfig:
     ])
     lookback_period: str = "3y"
     min_oos_accuracy: float = 0.50
-    min_oos_sharpe: float = -1.0
+    min_oos_sharpe: float = 0.0
     max_drawdown_threshold: float = 0.30
     epochs: int = 40
 

@@ -1,5 +1,4 @@
 import warnings
-
 import torch
 import torch.nn as nn
 import joblib
@@ -139,7 +138,6 @@ def load_models(ticker: str):
             return models
         del _model_cache[cache_key]
 
-    import warnings
     ticker_clean = ticker.replace(".", "_")
     def base(name):
         return os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")

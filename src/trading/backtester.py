@@ -169,7 +169,7 @@ def run_walk_forward_backtest(
         X_val = torch.tensor(X_train[split_point:]).to(DEVICE)
         y_val = torch.tensor(y_train[split_point:]).to(DEVICE)
 
-        loader = DataLoader(TensorDataset(X_tr, y_tr), batch_size=BATCH_SIZE, shuffle=True)
+        loader = DataLoader(TensorDataset(X_tr, y_tr), batch_size=BATCH_SIZE, shuffle=False)
         input_dim = X_train.shape[2]
 
         lstm = build_lstm(input_dim)

@@ -1,15 +1,13 @@
 import yfinance as yf
 import pandas as pd
 from datetime import datetime
-from functools import lru_cache
 import os
+import time
 import logging
 
 from src.core.constants import DATA_DIR
 
 logger = logging.getLogger(__name__)
-
-import time
 
 _fetch_cache: dict[str, tuple[float, pd.DataFrame]] = {}
 _FETCH_CACHE_TTL = 600  # 10 minutes in-memory cache

@@ -52,7 +52,7 @@ class Portfolio:
         costs = calculate_nse_costs(price, quantity, "sell")
         proceeds = price * quantity
         net_proceeds = proceeds - costs["total"]
-        # P&L accounts for buy-side costs embedded in avg_price + sell-side costs
+        # P&L: avg_price already includes buy-side costs, so only subtract sell-side costs
         pnl = (price - avg_price) * quantity - costs["total"]
 
         self.cash += net_proceeds

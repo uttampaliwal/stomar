@@ -318,9 +318,15 @@ class DailyOrchestrator:
     def _run_mtf(self, ticker: str, df: pd.DataFrame) -> dict:
         """Run multi-timeframe analysis."""
         try:
-            from src.signals.multitimeframe import get_combined_signal
-            signal = get_combined_signal(ticker)
-            return {"mtf_signal": signal.get("combined_signal", 0) if isinstance(signal, dict) else 0}
+            from src.signals.multitimeframe import fetch_mtf_data, get_combined_signal
+            mtf_data = fetch_mtf_data(ticker)
+            if not mtf_data:
+                return {}
+            signal = get_combined_signal(mtf_data)
+            return {
+                "mtf_signal": signal.get("direction", 0) if isinstance(signal, dict) else 0,
+                "mtf_confidence": signal.get("confidence", 0) if isinstance(signal, dict) else 0,
+            }
         except Exception as e:
             logger.debug(f"MTF failed for {ticker}: {e}")
             return {}

@@ -103,3 +103,18 @@ def get_feature_importance(ticker: str):
         return {"features": [{"name": n, "importance": round(v, 4)} for n, v in pairs]}
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/{ticker}/explain")
+def explain_prediction(ticker: str):
+    """Explain the current prediction with feature contributions."""
+    try:
+        from src.signals.interpretability import explain_prediction as _explain
+        df = fetch_stock_data(ticker)
+        if df is None or df.empty:
+            return {"error": f"No data for {ticker}"}
+        df_feat = add_technical_indicators(df.copy(), ticker)
+        explanation = _explain(ticker, df_feat, FEATURE_COLS)
+        return explanation
+    except Exception as e:
+        return {"error": str(e)}

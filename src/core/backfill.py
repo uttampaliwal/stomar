@@ -160,7 +160,18 @@ class HistoricalBackfill:
         """Fetch historical OHLCV data."""
         try:
             from src.data.data_fetcher import fetch_stock_data
-            return fetch_stock_data(ticker, period="1y")
+            # Convert trading days to approximate period string
+            if lookback_days <= 60:
+                period = "3mo"
+            elif lookback_days <= 126:
+                period = "6mo"
+            elif lookback_days <= 252:
+                period = "1y"
+            elif lookback_days <= 504:
+                period = "2y"
+            else:
+                period = "5y"
+            return fetch_stock_data(ticker, period=period)
         except Exception as e:
             logger.warning(f"Data fetch failed for {ticker}: {e}")
             return None
