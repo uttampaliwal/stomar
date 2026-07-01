@@ -1,365 +1,281 @@
-File: 00_PROJECT_CONSTITUTION.md
+# StoMar Engineering Specification
 
-Version: 0.0.1
+# 00_PROJECT_CONSTITUTION.md
 
-Status: Draft (Foundational)
+Version: 2.0.0 (Working Draft)
+
+Status: Foundational 
+
+Classification: Constitutional Document
+
+Authority Level: Highest
 
 Applies To: Every module, service, AI model, script, workflow, developer, contributor, and AI coding agent.
 
-1. Purpose
+---
 
-This document is the constitutional document of StoMar.
+# PREAMBLE
 
-Every architectural decision, feature implementation, machine learning model, UI component, automation workflow, database schema, and AI-generated code shall comply with the principles defined here.
+The StoMar Engineering Specification establishes the constitutional foundation of the StoMar platform.
 
-Whenever two documents conflict, this Constitution shall take precedence unless an officially versioned amendment explicitly supersedes it.
+It exists to ensure that every engineering decision, software component, machine learning model, automation pipeline, user interface, deployment process, operational workflow, and future enhancement follows a coherent, transparent, and verifiable philosophy.
 
-This document defines what StoMar is, what StoMar must never become, and the engineering principles that cannot be violated.
+Unlike implementation documents, this Constitution defines enduring principles rather than temporary technical details. Technologies, programming languages, machine learning frameworks, database engines, cloud providers, and external APIs may change over time. The constitutional principles defined here shall remain stable unless formally amended.
 
-2. Vision
+Every subsequent engineering specification derives its authority from this document.
 
-StoMar shall become an intelligent financial decision-support platform that assists users in managing investments through transparent, evidence-based analysis and disciplined automation.
+If any implementation, design decision, pull request, AI-generated modification, or future specification conflicts with this Constitution, the Constitution shall take precedence unless an approved constitutional amendment explicitly states otherwise.
 
-Its purpose is not to guarantee profits or eliminate investment risk. Instead, it should help users make more informed decisions by combining quantitative analysis, market data, risk management, and explainable AI.
+---
 
-3. Long-Term Mission
+# ARTICLE I — IDENTITY OF STOMAR
 
-StoMar shall evolve into a platform capable of:
+## Section 1.1 — Official Identity
 
-Portfolio management
-Market research
-Risk analytics
-Asset allocation support
-Automated data collection
-Automated model validation
-Paper trading
-Strategy evaluation
-Explainable AI-assisted recommendations
-Financial monitoring
+StoMar is an autonomous financial intelligence platform designed to assist users in understanding financial markets, evaluating investment opportunities, managing portfolios, and making evidence-based investment decisions.
 
-Support for additional asset classes, markets, and broker integrations may be added over time, provided they comply with this Constitution.
+StoMar is **not** a prediction engine, an automated money-printing system, or a guarantee of financial success.
 
-4. Core Philosophy
+Its purpose is to improve the quality of decision-making by combining high-quality data, disciplined engineering, explainable analytics, quantitative research, and responsible automation.
 
-StoMar shall prioritize:
+---
 
-Safety before profit.
-Transparency before complexity.
-Reliability before speed.
-Evidence before opinion.
-Risk management before return optimization.
-Reproducibility before experimentation.
-Explainability before opaque intelligence.
-Human oversight before autonomous execution.
-5. Non-Negotiable Engineering Principles
+## Section 1.2 — Fundamental Mission
 
-Every subsystem must satisfy the following principles:
+The mission of StoMar is to reduce uncertainty—not eliminate it.
 
-Principle 1 — Capital Preservation
+Financial markets are inherently uncertain, adaptive, and influenced by human behavior, macroeconomic events, regulations, technological change, and unforeseeable circumstances.
 
-Protecting capital is more important than maximizing returns.
+Therefore, StoMar shall never present uncertainty as certainty.
 
-No subsystem shall intentionally increase financial risk solely to pursue higher expected returns.
+Instead, StoMar shall continuously gather evidence, quantify confidence, communicate limitations, and assist users in making informed decisions while openly acknowledging what is unknown.
 
-Principle 2 — Deterministic Behaviour
+---
 
-Given identical inputs, configuration, and model versions, StoMar shall produce identical outputs.
+## Section 1.3 — Long-Term Vision
 
-Randomized components must use reproducible seeds where appropriate.
+StoMar is intended to evolve into a comprehensive financial operating system capable of integrating:
 
-Principle 3 — Explainability
+* quantitative market analysis,
+* portfolio intelligence,
+* financial research,
+* macroeconomic analysis,
+* risk management,
+* explainable machine learning,
+* autonomous operational workflows,
+* decision support,
+* simulation,
+* paper trading,
+* institutional-grade validation,
+* continuous monitoring,
+* transparent reporting.
 
-Every recommendation must include:
+Future capabilities may expand beyond these domains provided they remain consistent with this Constitution.
 
-contributing factors,
-confidence estimate,
-identified risks,
-supporting evidence,
-timestamp,
-model version,
-data sources.
+---
 
-No recommendation shall be presented as unexplained intuition.
+# ARTICLE II — CONSTITUTIONAL PRINCIPLES
 
-Principle 4 — Traceability
+Every engineering decision shall be evaluated against the following constitutional principles.
 
-Every decision must be reconstructable.
+These principles are permanent unless explicitly amended.
 
-The system shall maintain sufficient logs to answer:
+---
 
-Why was this recommendation generated?
-Which models contributed?
-Which data were used?
-Which configuration was active?
-Which code version produced the output?
-Principle 5 — Fail Safely
+## Principle 1 — Truth Before Optimism
 
-Whenever uncertainty exceeds acceptable limits, StoMar shall prefer:
+StoMar shall communicate reality rather than aspiration.
 
-"No Recommendation"
+The platform shall never intentionally exaggerate expected returns, prediction accuracy, model capability, or financial performance.
 
-instead of
+If uncertainty exists, uncertainty shall be reported.
 
-"Possibly Incorrect Recommendation."
+If evidence is weak, confidence shall decrease.
 
-Principle 6 — Automation With Verification
+If sufficient evidence is unavailable, StoMar shall recommend waiting rather than pretending certainty.
 
-Automation shall eliminate repetitive operational tasks but shall not bypass validation.
+Truthfulness takes precedence over user excitement.
 
-Every automated stage must verify inputs, outputs, and health before continuing.
+---
 
-6. Definition of Success
+## Principle 2 — Preservation Before Growth
 
-StoMar shall not measure success by:
+The first responsibility of every financial system is preserving capital.
 
-total profit,
-number of trades,
-prediction frequency,
-portfolio turnover.
+Return optimization shall always be constrained by risk management.
 
-Instead, success shall be evaluated using:
+No subsystem shall intentionally increase financial exposure without explicit justification supported by measurable evidence.
 
-risk-adjusted performance,
-reliability,
-reproducibility,
-model stability,
-transparency,
-user trust,
-operational resilience.
-7. Scope
+---
 
-StoMar is intended to support:
+## Principle 3 — Explainability Before Intelligence
 
-market analysis,
-portfolio monitoring,
-financial research,
-strategy testing,
-model evaluation,
-investment decision support,
-automated data processing,
-paper trading,
-reporting.
+Every recommendation shall be explainable.
 
-Live trading may be supported only when all production readiness criteria defined in later specifications have been met.
+A recommendation that cannot explain itself shall never be considered superior to one that can.
 
-8. Explicit Non-Goals
+Every decision generated by StoMar shall include sufficient reasoning for a technically informed reviewer to reconstruct why that conclusion was reached.
 
-StoMar shall not:
+---
 
-promise guaranteed profits,
-advertise unrealistic returns,
-conceal uncertainty,
-execute trades without documented safeguards,
-hide risks from users,
-encourage excessive leverage,
-optimize solely for historical performance,
-rely exclusively on AI-generated outputs without validation.
-9. Automation Philosophy
+## Principle 4 — Engineering Before Hype
 
-StoMar shall function as an autonomous operational system.
+StoMar shall adopt technologies because they solve clearly identified engineering problems—not because they are fashionable.
 
-The user should not need to manually initiate routine workflows.
+No framework, programming language, machine learning architecture, or external dependency shall be introduced without documented technical justification.
 
-Upon system startup, StoMar shall automatically:
+---
 
-inspect previous execution state,
-recover interrupted workflows,
-reconcile missing data,
-resume scheduled jobs,
-validate databases,
-verify model availability,
-inspect pipeline health,
-continue normal operation.
+## Principle 5 — Reliability Before Features
 
-The system shall recover gracefully after downtime whenever possible.
+Adding features shall never compromise system reliability.
 
-10. Human Control
+A smaller, dependable platform is preferable to a larger, unstable one.
 
-Automation exists to reduce operational burden, not eliminate user authority.
+Engineering effort shall prioritize robustness before expansion.
 
-Users shall always retain the ability to:
+---
 
-pause automation,
-review recommendations,
-inspect evidence,
-disable individual subsystems,
-configure risk preferences.
-11. AI Philosophy
+## Principle 6 — Evidence Before Assumption
 
-Artificial intelligence shall function as an analytical assistant.
+Engineering decisions shall be supported by:
 
-It shall never become the sole authority responsible for financial decisions.
+* empirical measurements,
+* reproducible experiments,
+* benchmarking,
+* testing,
+* peer-reviewed concepts where appropriate,
+* documented reasoning.
 
-AI-generated outputs shall always be subject to:
+Assumptions shall be explicitly identified rather than implicitly embedded within the system.
 
-validation,
-confidence estimation,
-historical evaluation,
-explainability,
-safety checks.
-12. Model Governance
+---
 
-Every production model shall have:
+# ARTICLE III — ENGINEERING PHILOSOPHY
 
-unique identifier,
-semantic version,
-training metadata,
-evaluation report,
-validation history,
-deployment history,
-retirement procedure.
+StoMar shall be engineered as a collection of independent, well-defined, interoperable systems.
 
-No anonymous model may enter production.
+Each subsystem shall possess:
 
-13. Data Governance
+* clearly defined responsibilities,
+* explicit interfaces,
+* deterministic behavior where applicable,
+* measurable outputs,
+* observable internal state,
+* comprehensive validation,
+* recoverable failure modes.
 
-Every dataset shall satisfy:
+Subsystems shall cooperate through documented contracts rather than undocumented assumptions.
 
-source identification,
-timestamp integrity,
-schema validation,
-completeness verification,
-duplication checks,
-quality scoring,
-reproducibility.
+Hidden coupling between components is prohibited.
 
-Missing or corrupted data shall never be silently accepted.
+---
 
-14. Security Principles
+# ARTICLE IV — FINANCIAL PHILOSOPHY
 
-StoMar shall assume that:
+Financial markets should be treated as probabilistic environments.
 
-APIs may fail.
-Networks may become unavailable.
-Data providers may change.
-External services may return incorrect information.
-Credentials may be compromised.
-Local hardware may fail.
+StoMar shall never assume that historical performance guarantees future results.
 
-The system shall be engineered accordingly.
+Every strategy, model, or recommendation shall be evaluated with respect to uncertainty, changing market conditions, and model limitations.
 
-15. Reliability Principles
+Confidence estimates shall accompany predictions whenever feasible.
 
-Every critical subsystem shall:
+Recommendations shall communicate both supporting evidence and known limitations.
 
-detect failure,
-report failure,
-isolate failure,
-recover automatically when safe,
-avoid propagating corruption.
-16. Observability Principles
+---
 
-Nothing important shall occur silently.
+# ARTICLE V — AI PHILOSOPHY
 
-Every meaningful event shall be observable through:
+Artificial Intelligence is an analytical instrument.
 
-structured logs,
-metrics,
-health reports,
-audit records,
-alerts where appropriate.
-17. Testing Philosophy
+It is neither an oracle nor an autonomous authority.
 
-Every feature shall be testable.
+AI shall assist human reasoning rather than replace it.
 
-Every bug shall produce:
+Every AI-generated conclusion shall remain subject to validation, testing, monitoring, and revision.
 
-a root-cause analysis,
-a regression test,
-documentation update if behaviour changes.
+No AI-generated recommendation shall bypass the safety mechanisms defined elsewhere in this specification.
 
-No bug shall be considered permanently resolved without a corresponding automated test where practical.
+---
 
-18. Documentation Philosophy
+# ARTICLE VI — HUMAN PHILOSOPHY
 
-Documentation is part of the software.
+StoMar exists to empower users rather than replace them.
 
-Code without documentation is incomplete.
+The platform shall encourage understanding instead of blind trust.
 
-Documentation shall be updated within the same change set whenever behaviour changes.
+Users shall be provided with sufficient context to understand:
 
-19. Code Quality Principles
+* what StoMar believes,
+* why StoMar believes it,
+* how confident StoMar is,
+* what assumptions influence the conclusion,
+* what risks remain unresolved.
 
-Code shall prioritize:
+A knowledgeable user should always be able to challenge the platform's reasoning.
 
-readability,
-maintainability,
-modularity,
-explicitness,
-consistency,
-testability.
+---
 
-Premature optimization shall be avoided unless supported by profiling evidence.
+# ARTICLE VII — THE CONCEPT OF TRUST
 
-20. Financial Safety Principles
+Trust within StoMar shall never be assumed.
 
-Before any recommendation is surfaced, StoMar shall evaluate:
+Trust shall be earned through evidence.
 
-data integrity,
-model confidence,
-current market conditions,
-known risks,
-portfolio impact,
-available liquidity,
-execution feasibility.
+The platform shall earn trust by demonstrating:
 
-If required information is unavailable or unreliable, the system shall reduce confidence or withhold the recommendation.
+* consistent behavior,
+* transparent reasoning,
+* reproducible outputs,
+* rigorous validation,
+* operational reliability,
+* honest communication of uncertainty.
 
-21. Versioning Policy
+Trust is therefore an outcome of engineering discipline rather than persuasive presentation.
 
-Application versioning and specification versioning shall remain independent.
+---
 
-Example:
+# ARTICLE VIII — DEFINING SUCCESS
 
-Application: v0.0.3
+StoMar shall not define success by:
 
-Specification: v1.0.0
+* the number of trades executed,
+* prediction frequency,
+* historical profit alone,
+* popularity,
+* feature count.
 
-Changes to the specification shall be recorded through explicit amendments.
+Instead, success shall be measured through a balanced evaluation of:
 
-22. Governance for AI Coding Agents
+* reliability,
+* transparency,
+* robustness,
+* maintainability,
+* operational resilience,
+* user understanding,
+* disciplined risk management,
+* reproducibility,
+* continuous improvement.
 
-Any AI system modifying StoMar shall:
+---
 
-preserve architectural consistency,
-avoid introducing unnecessary dependencies,
-prefer extension over duplication,
-preserve backward compatibility unless explicitly authorized,
-include tests for behavioural changes,
-document assumptions,
-avoid placeholder implementations presented as complete solutions.
-23. Definition of Production Ready
+# ARTICLE IX — THE STOmar DECISION STANDARD
 
-A subsystem shall not be considered production ready merely because it executes successfully.
+Before any architectural decision is accepted, the following constitutional questions shall be answered:
 
-Production readiness requires evidence that it is:
+1. Does this improve reliability?
+2. Does this improve transparency?
+3. Does this reduce unnecessary complexity?
+4. Does this preserve architectural consistency?
+5. Can the decision be tested?
+6. Can the decision be explained?
+7. Can future engineers maintain it?
+8. Can failure be detected?
+9. Can failure be recovered?
+10. Does this strengthen long-term trust?
 
-functionally correct,
-resilient,
-observable,
-secure,
-recoverable,
-documented,
-tested,
-maintainable,
-monitored.
+If the answer to any of these questions is uncertain, the decision shall undergo further review before implementation.
 
-The detailed acceptance criteria are defined in 20_ACCEPTANCE_CRITERIA.md.
+---
 
-24. Definition of Financially Safe
-
-Financial safety is achieved when the system demonstrates, through documented testing and operational evidence, that it appropriately manages risk, validates inputs, handles failures gracefully, and communicates uncertainty transparently. It is not defined by profitability alone.
-
-25. Amendment Policy
-
-No document may silently contradict this Constitution.
-
-If future requirements necessitate changes, they shall be introduced as explicit, versioned amendments that preserve traceability and rationale.
-
-26. Guiding Principle
-
-Every engineering decision shall answer one question:
-
-"Does this change make StoMar more reliable, more transparent, safer, and easier to trust?"
-
-If the answer is unclear, the change shall be reconsidered before implementation.
