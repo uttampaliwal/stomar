@@ -16,7 +16,7 @@ System design, data flow, and module dependencies for StoMar.
 │  ├──────────┼──────────┼──────────┼──────────┼──────────┤      │
 │  │Volatility│ Ranking  │Scenarios │ Regime   │Monitoring│      │
 │  ├──────────┼──────────┼──────────┼──────────┼──────────┤      │
-│  │ Pipeline │Paper Trd │MF Tracker│ Ledger   │          │      │
+│  │ Pipeline │Paper Trd │MF Tracker│ Ledger   │Interp.   │      │
 │  └──────────┴──────────┴──────────┴──────────┴──────────┘      │
 │         │           │           │           │                   │
 │  ┌──────▼───────────▼──────────▼───────────▼──────┐            │
@@ -25,10 +25,11 @@ System design, data flow, and module dependencies for StoMar.
 │  └──────────────────┬──────────────────────────────┘            │
 │                     │                                           │
 │  ┌──────────────────▼──────────────────────────────┐            │
-│  │              Signal Layer (14 modules)           │            │
+│  │              Signal Layer (16 modules)           │            │
 │  │  ensemble  sentiment  flow  regime  volatility  │            │
 │  │  ranking   risk  optimizer  mf_tracker  mtf     │            │
 │  │  backtester  execution_quality  benchmarks      │            │
+│  │  interpretability  significance  scenarios       │            │
 │  └──────────────────┬──────────────────────────────┘            │
 │                     │                                           │
 │  ┌──────────────────▼──────────────────────────────┐            │
@@ -51,49 +52,55 @@ System design, data flow, and module dependencies for StoMar.
 
 ```
 web/src/ + api/
-├── src/data_fetcher.py     (no internal deps)
-├── src/features.py
+├── src/core/constants.py     (no internal deps — shared constants)
+├── src/core/logging_config.py (no internal deps)
+├── src/data/data_fetcher.py  (no internal deps)
+├── src/data/features.py
 │   └── uses: sentiment.py, flow.py, multitimeframe.py
-├── src/model.py            (no internal deps — pure PyTorch/sklearn)
-├── src/trainer.py
-│   ├── src/data_fetcher.py
-│   ├── src/features.py
-│   └── src/model.py
-├── src/ensemble.py
-│   └── src/model.py (for DEVICE)
-├── src/backtester.py
-│   └── src/portfolio.py
-├── src/orchestrator.py
-│   ├── src/data_fetcher.py
-│   ├── src/features.py
-│   ├── src/ensemble.py
-│   ├── src/meta_controller.py
-│   ├── src/ledger.py
-│   ├── src/sentiment.py
-│   ├── src/flow.py
-│   ├── src/multitimeframe.py
-│   ├── src/risk.py
-│   ├── src/regime.py
-│   ├── src/volatility.py
-│   └── src/paper_trader.py
-├── src/meta_controller.py
-│   └── src/ledger.py (for training data)
-├── src/ledger.py           (no internal deps — pure sqlite3)
-├── src/paper_trader.py
-│   └── src/risk_controls.py
-├── src/portfolio.py        (no internal deps)
-├── src/sentiment.py        (no internal deps — uses yfinance + HuggingFace)
-├── src/flow.py             (no internal deps — uses requests + NSE APIs)
-├── src/multitimeframe.py   (no internal deps — uses yfinance + ta)
-├── src/risk.py             (no internal deps — pure numpy)
-├── src/optimizer.py        (no internal deps — uses scipy)
-├── src/holdings.py         (no internal deps — uses yfinance)
-├── src/regime.py           (no internal deps — pure pandas/numpy)
-├── src/ranking.py          (no internal deps — pure pandas/numpy)
-├── src/volatility.py       (no internal deps — pure numpy)
-├── src/backfill.py
-│   ├── src/ledger.py
-│   ├── src/data_fetcher.py
+├── src/models/model.py       (no internal deps — pure PyTorch/sklearn)
+├── src/models/trainer.py
+│   ├── src/data/data_fetcher.py
+│   ├── src/data/features.py
+│   └── src/models/model.py
+├── src/models/ensemble.py
+│   └── src/models/model.py (for DEVICE)
+├── src/trading/backtester.py
+│   └── src/trading/portfolio.py
+├── src/signals/orchestrator.py
+│   ├── src/data/data_fetcher.py
+│   ├── src/data/features.py
+│   ├── src/models/ensemble.py
+│   ├── src/models/meta_controller.py
+│   ├── src/trading/ledger.py
+│   ├── src/signals/sentiment.py
+│   ├── src/signals/flow.py
+│   ├── src/signals/multitimeframe.py
+│   ├── src/trading/risk.py
+│   ├── src/signals/regime.py
+│   ├── src/signals/volatility.py
+│   └── src/trading/paper_trader.py
+├── src/models/meta_controller.py
+│   └── src/trading/ledger.py (for training data)
+├── src/signals/interpretability.py
+│   └── src/models/model.py (for feature importance)
+├── src/signals/monitoring.py
+│   └── src/core/constants.py (for MONITORING_DIR)
+├── src/trading/ledger.py     (no internal deps — pure sqlite3)
+├── src/trading/paper_trader.py
+│   └── src/trading/risk_controls.py
+├── src/trading/portfolio.py  (no internal deps)
+├── src/signals/sentiment.py  (no internal deps — uses yfinance + HuggingFace)
+├── src/signals/flow.py       (no internal deps — uses requests + NSE APIs)
+├── src/signals/multitimeframe.py (no internal deps — uses yfinance + ta)
+├── src/trading/risk.py       (no internal deps — pure numpy)
+├── src/trading/optimizer.py  (no internal deps — uses scipy)
+├── src/trading/holdings.py   (no internal deps — uses yfinance)
+├── src/signals/regime.py     (no internal deps — pure pandas/numpy)
+├── src/signals/ranking.py    (no internal deps — pure pandas/numpy)
+├── src/signals/volatility.py (no internal deps — pure numpy)
+├── src/core/backfill.py
+│   ├── src/trading/ledger.py
+│   ├── src/data/data_fetcher.py
 │   ├── src/features.py
 │   ├── src/ensemble.py
 │   └── src/regime.py

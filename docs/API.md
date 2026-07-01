@@ -39,14 +39,14 @@ Returns `"Open"` or `"Closed"` based on current IST time.
 ## src/features.py
 
 ### `add_technical_indicators(df, ticker=None) -> pd.DataFrame`
-Adds 41 features to the input DataFrame. Calls sub-functions for sentiment, flow, PCR, and MTF features.
+Adds 48+ features to the input DataFrame. Calls sub-functions for sentiment, flow, PCR, and MTF features. Includes triple-barrier labels for superior ML training targets.
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `df` | `pd.DataFrame` | required | OHLCV data |
 | `ticker` | `str` | `None` | Used for sentiment/MTF feature fetching |
 
-**Returns:** DataFrame with original columns + 41 new feature columns
+**Returns:** DataFrame with original columns + 48+ new feature columns including `tb_label` (triple-barrier labels: 0=loss, 1=profit, 2=time)
 
 ---
 
@@ -957,9 +957,68 @@ Forecasts next-day volatility using GARCH(1,1).
 
 ---
 
+## src/interpretability.py
+
+### `explain_prediction(ticker, df_feat, feature_cols, top_n=10) -> dict`
+Explain the current prediction using feature importance from XGBoost/LightGBM.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `ticker` | `str` | required | Stock ticker symbol |
+| `df_feat` | `pd.DataFrame` | required | DataFrame with features |
+| `feature_cols` | `list[str]` | required | Feature column names |
+| `top_n` | `int` | `10` | Number of top features to return |
+
+**Returns:**
+```python
+{
+    "ticker": str,
+    "top_features": [
+        {"feature": str, "importance": float, "pct": float},
+        ...
+    ],
+    "current_values": {"rsi": 65.2, "macd": 0.45, ...},
+    "directions": {"rsi": "neutral", "macd": "bullish", ...},
+    "total_features": int,
+}
+```
+
+---
+
+### `explain_prediction_shap(ticker, df_feat, feature_cols, top_n=10) -> dict`
+Full SHAP-based explanation (requires `shap` package). Falls back to built-in importance if shap is not installed.
+
+**Returns:**
+```python
+{
+    "ticker": str,
+    "method": "shap",
+    "top_features": [
+        {"feature": str, "shap_value": float, "direction": "bullish"|"bearish"},
+        ...
+    ],
+    "base_value": float,
+    "total_features": int,
+}
+```
+
+---
+
 ## src/features.py (updated)
 
 ### `add_technical_indicators(df, ticker=None) -> pd.DataFrame`
-Adds 48 features to the input DataFrame.
+Adds 48+ features to the input DataFrame including triple-barrier labels.
 
-**Feature count: 48** (33 technical + 15 alternative/derived)
+**Feature count: 48+** (33 technical + 15 alternative/derived + triple-barrier labels)
+
+### `_triple_barrier_labels(close, profit_pct=0.02, loss_pct=0.02, max_holding=5) -> pd.Series`
+Triple-barrier labeling for robust ML targets.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `close` | `pd.Series` | required | Closing prices |
+| `profit_pct` | `float` | `0.02` | Upper barrier threshold (2%) |
+| `loss_pct` | `float` | `0.02` | Lower barrier threshold (2%) |
+| `max_holding` | `int` | `5` | Maximum bars to hold |
+
+**Returns:** Series of labels: 1 = profit hit first, 0 = loss hit first, 2 = time expired

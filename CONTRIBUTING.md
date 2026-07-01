@@ -34,7 +34,7 @@ Thank you for your interest in contributing to StoMar! This document provides gu
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.12+
 - pip
 - Git
 
@@ -47,11 +47,8 @@ source venv/bin/activate  # Linux/Mac
 # or
 venv\Scripts\activate     # Windows
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Install development dependencies
-pip install ruff pytest pytest-cov
+# Install dependencies (includes dev dependencies)
+pip install -e ".[dev]"
 ```
 
 ### Environment Variables

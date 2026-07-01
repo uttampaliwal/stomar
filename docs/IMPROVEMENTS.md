@@ -10,12 +10,13 @@ Honest assessment of current state, what matters most, and concrete steps to get
 
 | Metric | Value | What It Means |
 |--------|-------|---------------|
-| Codebase | ~40 src/ modules | Modular architecture, React + FastAPI stack |
-| Tests | 601 passing (36 test files) | Full coverage across all modules |
+| Codebase | ~50 src/ modules | Modular architecture, React + FastAPI stack |
+| Tests | 679 passing (40+ test files) | Full coverage across all modules |
+| Lint | 0 errors (ruff) | Clean code quality |
 | CI/CD | GitHub Actions (lint + test) | Automated quality gate on every push |
 | Stocks trained | 20 of 20 | All NSE stocks trained with walk-forward validation |
 | Ensemble | 5-model + stacked meta-learner + regime routing | Learned weights, not equal-weight |
-| Meta-controller | 14-signal contextual bandit (83.6% on backfill) | LogisticRegression combining all modules |
+| Meta-controller | 14-signal contextual bandit | LogisticRegression combining all modules |
 | Directional accuracy | 44-55% (walk-forward, large test sets) | 2-5pp edge over coin flip, varies by stock |
 | Data source | yfinance (delayed) | Fine for research, not live |
 | Backtesting | Walk-forward (5-fold) + event-driven engine | Both batch and event-driven modes |
@@ -27,21 +28,27 @@ Honest assessment of current state, what matters most, and concrete steps to get
 | Execution quality | Fill rates, latency, cost decomposition | Order analysis |
 | Autonomous loop | Daily orchestrator + SQLite ledger + paper trading | Runs independently of the UI |
 | Signal consensus | Unified signal across Scanner/Ranking/Risk modules | Resolves signal contradictions |
+| Interpretability | Feature importance + prediction explanations | Know WHY the model says BUY/SELL |
+| Triple-barrier labels | Profit/loss/time-based ML targets | Superior to simple return labels |
+| Risk controls | Kill switch, Kelly sizing, position limits | Pre-trade risk validation |
 | License | Apache 2.0 + CONTRIBUTING.md | Open-source ready |
 
 ### What's Actually Good
 - Clean modular architecture (leaf-node design, minimal coupling)
 - Walk-forward backtesting with brokerage/slippage (rare in hobby projects)
-- Feature pipeline covers technical + alternative data (48 features)
+- Feature pipeline covers technical + alternative data (48+ features)
+- Triple-barrier labels for superior ML training targets
 - Multi-source sentiment (Yahoo, Google, MoneyControl, ET, Screener.in)
 - Portfolio tooling (MVO, Black-Litterman, Efficient Frontier, Ledoit-Wolf)
 - Risk metrics (VaR/CVaR, Kelly, drawdown, regime detection)
 - Event-driven engine with realistic execution simulation
-- 601 tests, CI on every push
+- 679 tests, 0 lint errors, CI on every push
 - Meta-controller combines 14 modules into one decision
+- Model interpretability (feature importance + SHAP support)
 - Persistent SQLite ledger tracks all decisions and outcomes
 - Paper trading with short selling support
 - Signal consensus tab resolves module contradictions
+- Pre-trade risk controls (kill switch, Kelly sizing, position limits)
 - The code is honest about its limitations (README disclaimers)
 
 ### What's Still Missing

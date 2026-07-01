@@ -34,7 +34,7 @@ python -m venv venv
 venv\Scripts\activate
 
 # 4. Install Python dependencies
-pip install -r requirements.txt
+pip install -e ".[dev]"
 
 # 5. Install frontend dependencies
 cd web && npm install && cd ..
@@ -50,7 +50,7 @@ git clone <repo-url>
 cd stomar
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[dev]"
 cd web && npm install && cd ..
 # Start FastAPI
 uvicorn api.main:app --reload --port 8000 &

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stomar Trading Advice</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+      .container { max-width: 960px; margin: 0 auto; padding: 2rem; }
+      .tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+      .tab { padding: 0.75rem 1rem; border: 1px solid #334155; border-radius: 8px; cursor: pointer; background: #111827; }
+      .tab.active { background: #2563eb; }
+      .panel { display: none; background: #111827; padding: 1.25rem; border-radius: 12px; border: 1px solid #334155; }
+      .panel.active { display: block; }
+      .badge { display: inline-block; padding: 0.25rem 0.6rem; border-radius: 999px; background: #1e293b; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Stomar Trading Advice</h1>
+      <p>A consolidated, explainable decision view for a trading prototype.</p>
+      <div class="tabs">
+        <div class="tab active" data-target="overview">Overview</div>
+        <div class="tab" data-target="signals">Signals</div>
+        <div class="tab" data-target="risk">Risk</div>
+      </div>
+      <div class="panel active" id="overview">
+        <h2>Current recommendation</h2>
+        <p><strong>Action:</strong> <span id="action">BUY</span></p>
+        <p><strong>Confidence:</strong> <span id="confidence">78%</span></p>
+        <p><strong>Rationale:</strong> <span id="rationale">Momentum is strengthening and the setup is supportive.</span></p>
+      </div>
+      <div class="panel" id="signals">
+        <h2>Signal breakdown</h2>
+        <ul>
+          <li>Moving average crossover: bullish</li>
+          <li>RSI: supportive</li>
+          <li>News sentiment: positive</li>
+          <li>Volatility: controlled</li>
+        </ul>
+      </div>
+      <div class="panel" id="risk">
+        <h2>Risk summary</h2>
+        <p>Risk level: <span class="badge">MEDIUM</span></p>
+        <p>Suggested stop-loss: 97.00</p>
+        <p>Suggested take-profit: 106.00</p>
+      </div>
+    </div>
+    <script>
+      document.querySelectorAll('.tab').forEach((tab) => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach((item) => item.classList.remove('active'));
+          document.querySelectorAll('.panel').forEach((panel) => panel.classList.remove('active'));
+          tab.classList.add('active');
+          document.getElementById(tab.dataset.target).classList.add('active');
+        });
+      });
+    </script>
+  </body>
+</html>
