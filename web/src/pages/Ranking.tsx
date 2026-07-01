@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState } from '@/components/UI'
+import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 type SortKey = 'rank' | 'composite_score' | 'momentum_score' | 'volatility_score' | 'technical_score' | 'ml_score'
@@ -40,19 +40,19 @@ export default function Ranking() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Stock Ranking</h1>
-          <p className="text-sm text-muted-foreground">Cross-sectional momentum, volatility, technical, ML composite</p>
-        </div>
+      <PageHeader
+        title="Stock Ranking"
+        description="Cross-sectional momentum, volatility, technical, and ML composite"
+        badge="Relative"
+      >
         <button
           onClick={refetch}
           disabled={loading}
-          className="rounded-lg bg-cyan/90 hover:bg-cyan px-4 py-2 text-sm font-mono font-semibold text-black transition-colors disabled:opacity-50"
+          className="rounded-lg bg-cyan px-4 py-2 text-sm font-mono font-semibold text-black transition-colors hover:opacity-90 disabled:opacity-50"
         >
           {loading ? 'Ranking...' : 'Rank All Stocks'}
         </button>
-      </div>
+      </PageHeader>
 
       <Card className="border-l-4 border-l-cyan bg-cyan/5">
         <p className="text-sm text-muted-foreground">

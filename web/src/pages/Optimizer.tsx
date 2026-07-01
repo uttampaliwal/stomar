@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot } from 'recharts'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 export default function Optimizer() {
@@ -22,10 +22,15 @@ export default function Optimizer() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Portfolio Optimizer</h1>
-        <p className="text-sm text-muted-foreground">Max Sharpe, Min Variance, Black-Litterman</p>
-      </div>
+      <PageHeader
+        title="Portfolio Optimizer"
+        description="Max Sharpe, Min Variance, and Black-Litterman"
+        badge="Allocation"
+      />
+
+      <Card className="border-l-4 border-l-cyan bg-cyan/5">
+        <p className="text-sm text-muted-foreground">These portfolios are optimized from the same market context that drives the risk and automation views.</p>
+      </Card>
 
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
@@ -74,7 +79,7 @@ export default function Optimizer() {
             </>
           )}
 
-          {strategies.map(({ key, label, color }) => {
+          {strategies.map(({ key, label }) => {
             const p = data[key]
             if (!p) return null
             const weights: Record<string, number> = {}
@@ -111,6 +116,10 @@ export default function Optimizer() {
               </Card>
             )
           })}
+
+          {(!data?.efficient_frontier?.length || !strategies.some(s => !!data[s.key])) && (
+            <EmptyState message="No optimizer output is available yet." />
+          )}
         </>
       )}
     </div>

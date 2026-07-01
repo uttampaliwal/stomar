@@ -1,4 +1,4 @@
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 export default function Monitoring() {
@@ -6,15 +6,20 @@ export default function Monitoring() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">System Monitoring</h1>
-        <p className="text-sm text-muted-foreground">Model health, data validation, alerts</p>
-      </div>
+      <PageHeader
+        title="System Monitoring"
+        description="Model health, data validation, and alerts"
+        badge="Ops"
+      />
+
+      <Card className="border-l-4 border-l-cyan bg-cyan/5">
+        <p className="text-sm text-muted-foreground">This view surfaces the health of the training pipeline and the alert history so issues are visible before they become costly.</p>
+      </Card>
 
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && (
+      {data ? (
         <>
           <div className="grid grid-cols-3 gap-3">
             <Stat label="Models Trained" value={data.models_trained?.length || 0} trend="up" />
@@ -69,6 +74,8 @@ export default function Monitoring() {
             </>
           )}
         </>
+      ) : (
+        !loading && <EmptyState message="No monitoring data is available right now." />
       )}
     </div>
   )

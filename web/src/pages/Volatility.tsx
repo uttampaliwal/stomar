@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatPercent } from '@/lib/utils'
@@ -20,11 +20,11 @@ export default function Volatility() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Volatility Analysis</h1>
-          <p className="text-sm text-muted-foreground">Multiple volatility estimators, regime detection, forecasting</p>
-        </div>
+      <PageHeader
+        title="Volatility Analysis"
+        description="Multiple volatility estimators, regime detection, and forecasting"
+        badge="Risk"
+      >
         <select
           value={ticker}
           onChange={(e) => setTicker(e.target.value)}
@@ -34,12 +34,12 @@ export default function Volatility() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
-      </div>
+      </PageHeader>
 
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error && (
+      {data && !data.error ? (
         <>
           {data.regime && (
             <Card className="text-center py-4">
@@ -108,6 +108,8 @@ export default function Volatility() {
             </>
           )}
         </>
+      ) : (
+        !loading && <EmptyState message="No volatility data is available for the selected ticker." />
       )}
     </div>
   )

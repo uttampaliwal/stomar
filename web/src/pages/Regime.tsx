@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge } from '@/components/UI'
+import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
@@ -19,11 +19,11 @@ export default function Regime() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Market Regime</h1>
-          <p className="text-sm text-muted-foreground">Current market environment detection</p>
-        </div>
+      <PageHeader
+        title="Market Regime"
+        description="Current market environment detection"
+        badge="Signal"
+      >
         <select
           value={ticker}
           onChange={(e) => setTicker(e.target.value)}
@@ -33,12 +33,12 @@ export default function Regime() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
-      </div>
+      </PageHeader>
 
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error && (
+      {data && !data.error ? (
         <>
           {regime && (
             <Card className="text-center py-6">
@@ -141,6 +141,8 @@ export default function Regime() {
             </>
           )}
         </>
+      ) : (
+        !loading && <EmptyState message="No regime data is available for this ticker." />
       )}
     </div>
   )

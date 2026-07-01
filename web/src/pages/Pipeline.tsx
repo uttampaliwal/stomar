@@ -1,4 +1,4 @@
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 export default function Pipeline() {
@@ -6,15 +6,20 @@ export default function Pipeline() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Training Pipeline</h1>
-        <p className="text-sm text-muted-foreground">Model training status and pipeline overview</p>
-      </div>
+      <PageHeader
+        title="Training Pipeline"
+        description="Model training status and pipeline overview"
+        badge="Ops"
+      />
+
+      <Card className="border-l-4 border-l-cyan bg-cyan/5">
+        <p className="text-sm text-muted-foreground">This page reflects the same training and readiness state used by the scanner, predictions, and automation features.</p>
+      </Card>
 
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && (
+      {data ? (
         <>
           <div className="grid grid-cols-3 gap-3">
             <Stat label="Total Stocks" value={data.total || 0} />
@@ -50,6 +55,8 @@ export default function Pipeline() {
             ))}
           </div>
         </>
+      ) : (
+        !loading && <EmptyState message="No pipeline status is available yet." />
       )}
     </div>
   )

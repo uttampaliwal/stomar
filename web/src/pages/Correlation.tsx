@@ -1,4 +1,4 @@
-import { Card, SectionHeader, Spinner, ErrorDisplay } from '@/components/UI'
+import { Card, SectionHeader, Spinner, ErrorDisplay, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 function getCorrelationColor(val: number): string {
@@ -19,15 +19,20 @@ export default function Correlation() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Correlation Matrix</h1>
-        <p className="text-sm text-muted-foreground">Cross-asset correlation heatmap</p>
-      </div>
+      <PageHeader
+        title="Correlation Matrix"
+        description="Cross-asset correlation heatmap"
+        badge="Diversification"
+      />
+
+      <Card className="border-l-4 border-l-cyan bg-cyan/5">
+        <p className="text-sm text-muted-foreground">Use this view to understand how assets move together and whether the portfolio is over-concentrated.</p>
+      </Card>
 
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && data.tickers && (
+      {data && data.tickers ? (
         <>
           <Card className="overflow-x-auto">
             <div className="min-w-[600px]">
@@ -78,6 +83,8 @@ export default function Correlation() {
             </Card>
           )}
         </>
+      ) : (
+        !loading && <EmptyState message="No correlation matrix data is available yet." />
       )}
     </div>
   )

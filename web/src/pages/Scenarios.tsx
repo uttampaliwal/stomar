@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge } from '@/components/UI'
+import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatPercent } from '@/lib/utils'
@@ -26,11 +26,11 @@ export default function Scenarios() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Scenario Comparison</h1>
-          <p className="text-sm text-muted-foreground">Compare strategy performance across different market conditions</p>
-        </div>
+      <PageHeader
+        title="Scenario Comparison"
+        description="Compare strategy performance across different market conditions"
+        badge="Stress"
+      >
         <select
           value={ticker}
           onChange={(e) => setTicker(e.target.value)}
@@ -40,12 +40,12 @@ export default function Scenarios() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
-      </div>
+      </PageHeader>
 
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error && (
+      {data && !data.error ? (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {bestScenario && (
@@ -131,6 +131,8 @@ export default function Scenarios() {
             </table>
           </Card>
         </>
+      ) : (
+        !loading && <EmptyState message="No scenario data is available for this ticker." />
       )}
     </div>
   )

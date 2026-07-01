@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Card, SectionHeader, Spinner, ErrorDisplay, Badge } from '@/components/UI'
+import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
@@ -16,11 +16,11 @@ export default function Sentiment() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">News Sentiment</h1>
-          <p className="text-sm text-muted-foreground">AI-powered sentiment analysis from financial news</p>
-        </div>
+      <PageHeader
+        title="News Sentiment"
+        description="AI-powered sentiment analysis from financial news"
+        badge="Context"
+      >
         <select
           value={ticker}
           onChange={(e) => setTicker(e.target.value)}
@@ -30,7 +30,7 @@ export default function Sentiment() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
-      </div>
+      </PageHeader>
 
       <Card className="border-l-4 border-l-cyan bg-cyan/5">
         <p className="text-sm text-muted-foreground">
@@ -132,9 +132,7 @@ export default function Sentiment() {
           )}
 
           {headlines.length === 0 && Object.keys(sourceScores).length === 0 && (
-            <Card className="text-center py-6">
-              <p className="text-sm text-muted-foreground">No sentiment data available for this stock</p>
-            </Card>
+            <EmptyState message="No sentiment data is available for this stock right now." />
           )}
         </>
       )}

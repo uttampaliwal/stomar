@@ -1,4 +1,4 @@
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, EmptyState } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
 
@@ -7,15 +7,20 @@ export default function MFTracker() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">MF Tracker</h1>
-        <p className="text-sm text-muted-foreground">Mutual fund portfolio with XIRR and factor analysis</p>
-      </div>
+      <PageHeader
+        title="MF Tracker"
+        description="Mutual fund portfolio with XIRR and factor analysis"
+        badge="Portfolio"
+      />
+
+      <Card className="border-l-4 border-l-cyan bg-cyan/5">
+        <p className="text-sm text-muted-foreground">This view tracks mutual-fund-style holdings alongside the paper-trading portfolio so the account picture stays coherent.</p>
+      </Card>
 
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error && (
+      {data && !data.error ? (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat label="Invested" value={formatCurrency(data.invested || 0)} />
@@ -73,6 +78,8 @@ export default function MFTracker() {
             </>
           )}
         </>
+      ) : (
+        !loading && <EmptyState message="No mutual fund data is available yet." />
       )}
     </div>
   )
