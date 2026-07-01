@@ -1,7 +1,6 @@
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
-import { formatCurrency, formatPercent } from '@/lib/utils'
-import { Briefcase, TrendingUp, TrendingDown, DollarSign, Activity } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils'
 
 export default function Portfolio() {
   const stats = useApi<any>('/api/portfolio/stats')
@@ -15,16 +14,17 @@ export default function Portfolio() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Portfolio</h1>
-          <p className="text-sm text-muted-foreground mt-1">Paper trading portfolio overview</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Briefcase className="h-5 w-5 text-muted-foreground" />
-        </div>
-      </div>
+      <PageHeader
+        title="Portfolio"
+        description="Paper trading portfolio overview"
+        badge="Live"
+      />
+
+      <Card className="border-l-4 border-l-cyan bg-cyan/5">
+        <p className="text-sm text-muted-foreground">
+          This page mirrors the paper-trading account state and stays aligned with the daily automation workflow.
+        </p>
+      </Card>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -85,9 +85,7 @@ export default function Portfolio() {
             </table>
           </div>
         ) : (
-          <div className="py-8 text-center text-muted-foreground">
-            No open positions
-          </div>
+          <EmptyState message="No open positions yet. Place an order to start the simulation." />
         )}
       </Card>
 
@@ -122,9 +120,7 @@ export default function Portfolio() {
             </table>
           </div>
         ) : (
-          <div className="py-8 text-center text-muted-foreground">
-            No trades recorded
-          </div>
+          <EmptyState message="No trades recorded yet." />
         )}
       </Card>
     </div>

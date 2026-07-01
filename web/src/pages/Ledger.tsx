@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 export default function Ledger() {
@@ -53,22 +53,33 @@ export default function Ledger() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Trading Ledger</h1>
-          <p className="text-sm text-muted-foreground">Decision history, signal accuracy, P&L tracking</p>
-        </div>
+      <PageHeader
+        title="Trading Ledger"
+        description="Decision history, signal accuracy, and P&L tracking"
+        badge="Audit"
+      >
         <button
           onClick={handleRunPipeline}
           disabled={running}
-          className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          className="rounded-lg bg-cyan px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-50"
         >
           {running ? 'Running...' : 'Run Pipeline'}
         </button>
-      </div>
+      </PageHeader>
+
+      <Card className="border-l-4 border-l-cyan bg-cyan/5">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Use this ledger to review historical decisions and trace how the automation pipeline behaved over time.
+          </p>
+          <div className="rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs text-muted-foreground">
+            python run_daily.py --backfill --days 252
+          </div>
+        </div>
+      </Card>
 
       {runResult && (
-        <div className="p-3 rounded-lg bg-muted text-sm font-mono">{runResult}</div>
+        <div className="rounded-lg border border-border bg-card/70 p-3 text-sm font-mono text-muted-foreground">{runResult}</div>
       )}
 
       {loading && <Spinner />}
@@ -135,7 +146,7 @@ export default function Ledger() {
           )}
 
           {/* Decisions Table */}
-          {decisionsData?.decisions?.length > 0 && (
+          {decisionsData?.decisions?.length > 0 ? (
             <>
               <SectionHeader title="Recent Decisions" />
               <Card className="overflow-x-auto">
@@ -171,6 +182,8 @@ export default function Ledger() {
                 </table>
               </Card>
             </>
+          ) : (
+            <EmptyState message="No decisions have been logged yet." />
           )}
         </>
       )}

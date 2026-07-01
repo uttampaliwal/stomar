@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatPercent } from '@/lib/utils'
@@ -25,21 +25,24 @@ export default function Risk() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Risk Analysis</h1>
-          <p className="text-sm text-muted-foreground">VaR, CVaR, Sharpe, Kelly criterion</p>
+      <PageHeader
+        title="Risk Analysis"
+        description="VaR, CVaR, Sharpe, and Kelly criterion"
+        badge="Protected"
+      >
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-card/70 px-3 py-2">
+          <label className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Ticker</label>
+          <select
+            value={ticker}
+            onChange={(e) => setTicker(e.target.value)}
+            className="rounded-md border border-border bg-background px-2 py-1 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan"
+          >
+            {stocks.data?.stocks?.map((s: string) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
         </div>
-        <select
-          value={ticker}
-          onChange={(e) => setTicker(e.target.value)}
-          className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan"
-        >
-          {stocks.data?.stocks?.map((s: string) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-      </div>
+      </PageHeader>
 
       <Card className="border-l-4 border-l-cyan bg-cyan/5">
         <p className="text-sm text-muted-foreground">

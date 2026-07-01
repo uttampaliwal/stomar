@@ -1,4 +1,4 @@
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, EmptyState } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 export default function MarketPulse() {
@@ -6,15 +6,22 @@ export default function MarketPulse() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Market Pulse</h1>
-        <p className="text-sm text-muted-foreground">FII/DII flows, options PCR, multi-timeframe signals</p>
-      </div>
+      <PageHeader
+        title="Market Pulse"
+        description="FII/DII flows, options PCR, and multi-timeframe signals"
+        badge="Context"
+      />
+
+      <Card className="border-l-4 border-l-cyan bg-cyan/5">
+        <p className="text-sm text-muted-foreground">
+          This view brings together the broader market context that supports signal selection and risk stance.
+        </p>
+      </Card>
 
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && (
+      {data && !data.error ? (
         <>
           {/* FII/DII */}
           {data.fii_dii && (
@@ -83,6 +90,8 @@ export default function MarketPulse() {
             </>
           )}
         </>
+      ) : (
+        !loading && <EmptyState message="No market pulse data is available right now." />
       )}
     </div>
   )
