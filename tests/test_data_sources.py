@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock
 
-from src.data_sources import (
+from src.data.data_sources import (
     DataSource,
     YFinanceSource,
     NSEArchiveSource,
@@ -70,7 +70,7 @@ def test_yfinance_fetch_calls_ticker():
     ds = YFinanceSource()
     mock_ticker = MagicMock()
     mock_ticker.history.return_value = _make_df(50)
-    with patch("src.data_sources.yf.Ticker", return_value=mock_ticker) as mock_cls:
+    with patch("src.data.data_sources.yf.Ticker", return_value=mock_ticker) as mock_cls:
         result = ds.fetch("RELIANCE.NS", period="1y")
         mock_cls.assert_called_once_with("RELIANCE.NS")
         mock_ticker.history.assert_called_once_with(period="1y", interval="1d")
@@ -81,7 +81,7 @@ def test_yfinance_fetch_raises_on_empty():
     ds = YFinanceSource()
     mock_ticker = MagicMock()
     mock_ticker.history.return_value = pd.DataFrame()
-    with patch("src.data_sources.yf.Ticker", return_value=mock_ticker):
+    with patch("src.data.data_sources.yf.Ticker", return_value=mock_ticker):
         with pytest.raises(ValueError, match="empty data"):
             ds.fetch("BAD.NS")
 
@@ -92,7 +92,7 @@ def test_yfinance_fetch_lowercases_columns():
     df = _make_df(20)
     df.columns = [c.upper() for c in df.columns]
     mock_ticker.history.return_value = df
-    with patch("src.data_sources.yf.Ticker", return_value=mock_ticker):
+    with patch("src.data.data_sources.yf.Ticker", return_value=mock_ticker):
         result = ds.fetch("TEST.NS")
         assert all(c.islower() for c in result.columns)
 

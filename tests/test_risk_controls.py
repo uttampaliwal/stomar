@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.risk_controls import RiskController
+from src.trading.risk_controls import RiskController
 
 
 def _rc(**kwargs):

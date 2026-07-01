@@ -2,7 +2,7 @@
 
 import os
 from fastapi import APIRouter
-from src.paper_trader import PaperTrader
+from src.trading.paper_trader import PaperTrader
 
 router = APIRouter()
 

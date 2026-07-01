@@ -1,8 +1,8 @@
 """Portfolio optimizer endpoint."""
 
 from fastapi import APIRouter
-from src.data_fetcher import fetch_stock_data, NSE_STOCKS
-from src.optimizer import optimize_portfolio
+from src.data.data_fetcher import fetch_stock_data, NSE_STOCKS
+from src.trading.optimizer import optimize_portfolio
 from api.utils import parallel_fetch
 
 router = APIRouter()

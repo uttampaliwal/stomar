@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.flow import get_flow_sentiment, _compute_pcr
+from src.signals.flow import get_flow_sentiment, _compute_pcr
 
 
 class TestGetFlowSentiment:

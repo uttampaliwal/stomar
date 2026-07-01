@@ -2,8 +2,8 @@
 
 import threading
 from fastapi import APIRouter
-from src.model import models_exist
-from src.data_fetcher import NSE_STOCKS
+from src.models.model import models_exist
+from src.data.data_fetcher import NSE_STOCKS
 
 router = APIRouter()
 
@@ -31,7 +31,7 @@ def _train_worker(ticker: str, force: bool):
     try:
         with _training_lock:
             _training_status[ticker] = {"status": "training", "progress": "Starting..."}
-        from src.trainer import train_for_ticker
+        from src.models.trainer import train_for_ticker
         result = train_for_ticker(ticker, force_retrain=force)
         with _training_lock:
             _training_status[ticker] = {"status": "done", "result": result}

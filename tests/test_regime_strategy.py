@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.regime_strategy import (
+from src.signals.regime_strategy import (
     get_regime_allocation,
     regime_adjusted_position_size,
     generate_regime_signals,

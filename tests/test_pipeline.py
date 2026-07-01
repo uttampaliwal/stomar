@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from unittest.mock import patch
 
-from src.pipeline import RetrainingPipeline, PipelineConfig, PipelineResult
+from src.core.pipeline import RetrainingPipeline, PipelineConfig, PipelineResult
 
 
 def _mock_df(n=100):
@@ -50,7 +50,7 @@ class TestPipelineResult:
 
 class TestPipelineStages:
     def test_fetch_success(self):
-        with patch("src.data_fetcher.fetch_stock_data") as mock:
+        with patch("src.data.data_fetcher.fetch_stock_data") as mock:
             mock.return_value = _mock_df(50)
             pipeline = RetrainingPipeline()
             result = pipeline._stage_fetch("TEST.NS")
@@ -58,15 +58,15 @@ class TestPipelineStages:
             assert "50" in result.message
 
     def test_fetch_failure(self):
-        with patch("src.data_fetcher.fetch_stock_data", side_effect=Exception("network")):
+        with patch("src.data.data_fetcher.fetch_stock_data", side_effect=Exception("network")):
             pipeline = RetrainingPipeline()
             result = pipeline._stage_fetch("TEST.NS")
             assert result.status == "failed"
             assert "network" in result.message
 
     def test_validate_pass(self):
-        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
-             patch("src.data_validation.validate_data") as mock_val:
+        with patch("src.data.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data.data_validation.validate_data") as mock_val:
             mock_fetch.return_value = _mock_df()
             mock_val.return_value = {
                 "passed": True, "errors": [], "warnings": [],
@@ -77,8 +77,8 @@ class TestPipelineStages:
             assert result.status == "success"
 
     def test_validate_failure(self):
-        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
-             patch("src.data_validation.validate_data") as mock_val:
+        with patch("src.data.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data.data_validation.validate_data") as mock_val:
             mock_fetch.return_value = _mock_df()
             mock_val.return_value = {
                 "passed": False, "errors": ["bad prices"], "warnings": [],
@@ -89,10 +89,10 @@ class TestPipelineStages:
             assert result.status == "failed"
 
     def test_features_computes_hash(self):
-        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
-             patch("src.features.add_technical_indicators") as mock_feat, \
-             patch("src.feature_store.compute_feature_hash") as mock_hash, \
-             patch("src.feature_store.register_feature_version") as mock_reg:
+        with patch("src.data.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data.features.add_technical_indicators") as mock_feat, \
+             patch("src.data.feature_store.compute_feature_hash") as mock_hash, \
+             patch("src.data.feature_store.register_feature_version") as mock_reg:
             mock_fetch.return_value = _mock_df()
             mock_feat.return_value = _mock_df()
             mock_hash.return_value = "abc123def456"
@@ -104,9 +104,9 @@ class TestPipelineStages:
             assert result.feature_hash == "abc123def456"
 
     def test_evaluate_rejects_low_accuracy(self):
-        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
-             patch("src.features.add_technical_indicators") as mock_feat, \
-             patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+        with patch("src.data.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data.features.add_technical_indicators") as mock_feat, \
+             patch("src.trading.backtester.run_walk_forward_backtest") as mock_bt:
             mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_bt.return_value = (
@@ -119,9 +119,9 @@ class TestPipelineStages:
             assert "accuracy" in result.message.lower()
 
     def test_evaluate_rejects_low_sharpe(self):
-        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
-             patch("src.features.add_technical_indicators") as mock_feat, \
-             patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+        with patch("src.data.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data.features.add_technical_indicators") as mock_feat, \
+             patch("src.trading.backtester.run_walk_forward_backtest") as mock_bt:
             mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_bt.return_value = (
@@ -134,9 +134,9 @@ class TestPipelineStages:
             assert "sharpe" in result.message.lower()
 
     def test_evaluate_rejects_high_drawdown(self):
-        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
-             patch("src.features.add_technical_indicators") as mock_feat, \
-             patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+        with patch("src.data.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data.features.add_technical_indicators") as mock_feat, \
+             patch("src.trading.backtester.run_walk_forward_backtest") as mock_bt:
             mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_bt.return_value = (
@@ -149,9 +149,9 @@ class TestPipelineStages:
             assert "dd" in result.message.lower()
 
     def test_evaluate_passes_good_model(self):
-        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
-             patch("src.features.add_technical_indicators") as mock_feat, \
-             patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+        with patch("src.data.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data.features.add_technical_indicators") as mock_feat, \
+             patch("src.trading.backtester.run_walk_forward_backtest") as mock_bt:
             mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_bt.return_value = (
@@ -163,7 +163,7 @@ class TestPipelineStages:
             assert result.status == "success"
 
     def test_promote_success(self):
-        with patch("src.model.promote_model") as mock_promote:
+        with patch("src.models.model.promote_model") as mock_promote:
             pipeline = RetrainingPipeline()
             prev = PipelineResult(
                 ticker="T", stage="eval", status="success", message="ok",
@@ -173,7 +173,7 @@ class TestPipelineStages:
             assert result.status == "success"
 
     def test_promote_failure(self):
-        with patch("src.model.promote_model", side_effect=Exception("disk full")):
+        with patch("src.models.model.promote_model", side_effect=Exception("disk full")):
             pipeline = RetrainingPipeline()
             prev = PipelineResult(
                 ticker="T", stage="eval", status="success", message="ok",
@@ -187,7 +187,7 @@ class TestPipelineStages:
 class TestPipelineRun:
     def test_run_stops_on_fetch_failure(self):
         pipeline = RetrainingPipeline()
-        with patch("src.data_fetcher.fetch_stock_data", side_effect=Exception("down")):
+        with patch("src.data.data_fetcher.fetch_stock_data", side_effect=Exception("down")):
             result = pipeline.run("TEST.NS")
             assert result.status == "failed"
             assert result.stage == "fetch"
@@ -195,8 +195,8 @@ class TestPipelineRun:
 
     def test_run_stops_on_validate_failure(self):
         pipeline = RetrainingPipeline()
-        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
-             patch("src.data_validation.validate_data") as mock_val:
+        with patch("src.data.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data.data_validation.validate_data") as mock_val:
             mock_fetch.return_value = _mock_df()
             mock_val.return_value = {
                 "passed": False, "errors": ["bad"], "warnings": [], "data_points": 0,
@@ -207,15 +207,15 @@ class TestPipelineRun:
 
     def test_run_stops_on_evaluate_rejection(self):
         pipeline = RetrainingPipeline(PipelineConfig(min_oos_accuracy=0.99))
-        with patch("src.data_fetcher.fetch_stock_data") as mock_fetch, \
-             patch("src.data_validation.validate_data") as mock_val, \
-             patch("src.features.add_technical_indicators") as mock_feat, \
-             patch("src.feature_store.compute_feature_hash") as mock_hash, \
-             patch("src.feature_store.register_feature_version"), \
-             patch("src.trainer.train_for_ticker") as mock_train, \
-             patch("src.data_fetcher.fetch_stock_data") as mock_pipe_fetch, \
-             patch("src.features.add_technical_indicators") as mock_pipe_feat, \
-             patch("src.backtester.run_walk_forward_backtest") as mock_bt:
+        with patch("src.data.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data.data_validation.validate_data") as mock_val, \
+             patch("src.data.features.add_technical_indicators") as mock_feat, \
+             patch("src.data.feature_store.compute_feature_hash") as mock_hash, \
+             patch("src.data.feature_store.register_feature_version"), \
+             patch("src.models.trainer.train_for_ticker") as mock_train, \
+             patch("src.data.data_fetcher.fetch_stock_data") as mock_pipe_fetch, \
+             patch("src.data.features.add_technical_indicators") as mock_pipe_feat, \
+             patch("src.trading.backtester.run_walk_forward_backtest") as mock_bt:
             mock_fetch.return_value = _mock_df()
             mock_val.return_value = {"passed": True, "errors": [], "warnings": [], "data_points": 100}
             mock_feat.return_value = _mock_df()

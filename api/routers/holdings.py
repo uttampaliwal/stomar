@@ -2,7 +2,7 @@
 
 import os
 from fastapi import APIRouter, UploadFile, File
-from src.holdings import parse_holdings_csv, compute_portfolio_stats
+from src.trading.holdings import parse_holdings_csv, compute_portfolio_stats
 
 router = APIRouter()
 

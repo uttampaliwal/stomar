@@ -24,7 +24,7 @@ def _make_price_df(n=200):
 
 class TestSentimentPointInTime:
     def test_sentiment_only_on_last_row(self):
-        from src.features import add_sentiment_features
+        from src.data.features import add_sentiment_features
         df = _make_price_df()
         result = add_sentiment_features(df, "RELIANCE.NS")
         # All rows except the last should be 0.0
@@ -35,7 +35,7 @@ class TestSentimentPointInTime:
         )
 
     def test_sentiment_last_row_can_be_nonzero(self):
-        from src.features import add_sentiment_features
+        from src.data.features import add_sentiment_features
         df = _make_price_df()
         result = add_sentiment_features(df, "RELIANCE.NS")
         # Last row may or may not be non-zero (depends on cache)
@@ -43,7 +43,7 @@ class TestSentimentPointInTime:
         assert isinstance(last_val, float)
 
     def test_sentiment_no_cache_returns_zero(self):
-        from src.features import add_sentiment_features
+        from src.data.features import add_sentiment_features
         df = _make_price_df()
         result = add_sentiment_features(df, "NONEXISTENT_TICKER_XYZ.NS")
         assert (result["sentiment_score"] == 0.0).all()
@@ -51,7 +51,7 @@ class TestSentimentPointInTime:
 
 class TestFlowPointInTime:
     def test_flow_shifted_by_one_day(self):
-        from src.features import add_flow_features
+        from src.data.features import add_flow_features
         df = _make_price_df()
         result = add_flow_features(df)
         # Flow features should be present
@@ -60,14 +60,14 @@ class TestFlowPointInTime:
         assert "flow_signal" in result.columns
 
     def test_flow_join_preserves_index(self):
-        from src.features import add_flow_features
+        from src.data.features import add_flow_features
         df = _make_price_df()
         result = add_flow_features(df)
         assert len(result) == len(df)
         assert list(result.index) == list(df.index)
 
     def test_flow_no_cache_returns_zeros(self):
-        from src.features import add_flow_features
+        from src.data.features import add_flow_features
         df = _make_price_df()
         result = add_flow_features(df)
         # Without cache or with empty cache, should be zeros
@@ -77,7 +77,7 @@ class TestFlowPointInTime:
 
 class TestPCRPointInTime:
     def test_pcr_only_on_last_row(self):
-        from src.features import add_pcr_features
+        from src.data.features import add_pcr_features
         df = _make_price_df()
         result = add_pcr_features(df)
         # All rows except the last should be default (1.0)
@@ -88,7 +88,7 @@ class TestPCRPointInTime:
         )
 
     def test_max_pcr_only_on_last_row(self):
-        from src.features import add_pcr_features
+        from src.data.features import add_pcr_features
         df = _make_price_df()
         result = add_pcr_features(df)
         historical = result["max_pain"].iloc[:-1]
@@ -97,7 +97,7 @@ class TestPCRPointInTime:
 
 class TestMTFPointInTime:
     def test_mtf_only_on_last_row(self):
-        from src.features import add_multitimeframe_features
+        from src.data.features import add_multitimeframe_features
         df = _make_price_df()
         result = add_multitimeframe_features(df, "RELIANCE.NS")
         # All rows except the last should be 0
@@ -107,7 +107,7 @@ class TestMTFPointInTime:
 
 class TestFullFeaturePipelinePointInTime:
     def test_all_alt_features_only_on_last_row(self):
-        from src.features import add_technical_indicators
+        from src.data.features import add_technical_indicators
         df = _make_price_df()
         result = add_technical_indicators(df, ticker="RELIANCE.NS")
 
@@ -129,7 +129,7 @@ class TestFullFeaturePipelinePointInTime:
                     assert (historical == 0).all(), f"{col} leaked"
 
     def test_technical_indicators_are_point_in_time(self):
-        from src.features import add_technical_indicators
+        from src.data.features import add_technical_indicators
         df = _make_price_df()
         result = add_technical_indicators(df)
         # Technical indicators use only past data (rolling windows)

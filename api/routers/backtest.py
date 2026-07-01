@@ -1,10 +1,10 @@
 """Backtest endpoint."""
 
 from fastapi import APIRouter
-from src.data_fetcher import fetch_stock_data
-from src.features import add_technical_indicators
-from src.trainer import FEATURE_COLS
-from src.backtester import run_walk_forward_backtest
+from src.data.data_fetcher import fetch_stock_data
+from src.data.features import add_technical_indicators
+from src.models.trainer import FEATURE_COLS
+from src.trading.backtester import run_walk_forward_backtest
 
 router = APIRouter()
 

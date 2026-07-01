@@ -3,11 +3,11 @@
 import os
 import numpy as np
 from fastapi import APIRouter, Query
-from src.data_fetcher import fetch_stock_data
-from src.features import add_technical_indicators
-from src.model import load_models, models_exist
-from src.trainer import FEATURE_COLS
-from src.ensemble import predict_ensemble
+from src.data.data_fetcher import fetch_stock_data
+from src.data.features import add_technical_indicators
+from src.models.model import load_models, models_exist
+from src.models.trainer import FEATURE_COLS
+from src.models.ensemble import predict_ensemble
 
 router = APIRouter()
 

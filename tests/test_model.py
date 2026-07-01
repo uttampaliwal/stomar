@@ -9,33 +9,33 @@ class TestModelArchitectures:
     """Test neural network model construction and forward pass."""
 
     def test_lstm_forward_pass(self):
-        from src.model import StockLSTM
+        from src.models.model import StockLSTM
         model = StockLSTM(input_dim=14)
         x = torch.randn(1, 60, 14)
         out = model(x)
         assert out.shape == (1, 1)
 
     def test_gru_forward_pass(self):
-        from src.model import StockGRU
+        from src.models.model import StockGRU
         model = StockGRU(input_dim=14)
         x = torch.randn(1, 60, 14)
         out = model(x)
         assert out.shape == (1, 1)
 
     def test_transformer_forward_pass(self):
-        from src.model import StockTransformer
+        from src.models.model import StockTransformer
         model = StockTransformer(input_dim=14)
         x = torch.randn(1, 60, 14)
         out = model(x)
         assert out.shape == (1, 1)
 
     def test_build_xgb_model(self):
-        from src.model import build_xgb_model
+        from src.models.model import build_xgb_model
         model = build_xgb_model()
         assert hasattr(model, "fit")
 
     def test_build_lgb_model(self):
-        from src.model import build_lgb_model
+        from src.models.model import build_lgb_model
         model = build_lgb_model()
         assert hasattr(model, "fit")
 
@@ -44,7 +44,7 @@ class TestModelSaveLoad:
     """Test save/load roundtrip preserves model state."""
 
     def test_lstm_save_load_roundtrip(self, tmp_path):
-        from src.model import StockLSTM
+        from src.models.model import StockLSTM
         model = StockLSTM(input_dim=14)
         x = torch.randn(1, 60, 14)
         model.eval()
@@ -66,6 +66,6 @@ class TestModelSaveLoad:
         assert abs(pred_before - pred_after) < 1e-6
 
     def test_build_lstm(self):
-        from src.model import build_lstm
+        from src.models.model import build_lstm
         model = build_lstm(input_dim=14)
         assert isinstance(model, torch.nn.Module)

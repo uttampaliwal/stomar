@@ -2,9 +2,9 @@
 
 import pytest
 
-from src.engine import OrderSide, OrderType, OrderStatus
-from src.paper_trader import PaperTrader, Position
-from src.risk_controls import RiskLimits
+from src.trading.engine import OrderSide, OrderType, OrderStatus
+from src.trading.paper_trader import PaperTrader, Position
+from src.trading.risk_controls import RiskLimits
 
 
 def _trader(capital=100_000):

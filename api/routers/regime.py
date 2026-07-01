@@ -1,8 +1,8 @@
 """Regime detection endpoint."""
 
 from fastapi import APIRouter
-from src.data_fetcher import fetch_stock_data
-from src.regime import detect_regime
+from src.data.data_fetcher import fetch_stock_data
+from src.signals.regime import detect_regime
 
 router = APIRouter()
 

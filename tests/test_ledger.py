@@ -5,7 +5,7 @@ import json
 import tempfile
 import pytest
 
-from src.ledger import Ledger
+from src.trading.ledger import Ledger
 
 
 @pytest.fixture

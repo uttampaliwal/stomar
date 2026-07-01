@@ -2,8 +2,8 @@
 import os, sys, tempfile, numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
 
-from src.ledger import Ledger
-from src.meta_controller import MetaController
+from src.trading.ledger import Ledger
+from src.models.meta_controller import MetaController
 
 print("=" * 60)
 print("STOMAR SYSTEM VERIFICATION")
@@ -91,7 +91,7 @@ print(f"   Accuracy: {perf2['accuracy']:.1%}" if perf2['accuracy'] else "   Accu
 lg2.close()
 
 # --- Test 5: Backfill ---
-from src.backfill import HistoricalBackfill
+from src.core.backfill import HistoricalBackfill
 print(f"\n5. BACKFILL MODULE: Available")
 print(f"   Can reconstruct: ensemble, regime, risk, volatility, fundamentals, MTF")
 print(f"   Cannot reconstruct (neutral defaults): sentiment, FII/DII, PCR")

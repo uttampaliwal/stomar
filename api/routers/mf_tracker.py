@@ -2,7 +2,7 @@
 
 import os
 from fastapi import APIRouter
-from src.mf_tracker import MFTracker
+from src.signals.mf_tracker import MFTracker
 
 router = APIRouter()
 

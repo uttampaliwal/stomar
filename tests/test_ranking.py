@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from src.ranking import (
+from src.signals.ranking import (
     rank_stocks,
     get_recommendation,
     fetch_fundamentals,
@@ -136,7 +136,7 @@ class TestRankStocksWithFundamentals:
             "dividend_yield": 0.03, "debt_to_equity": 40,
             "profit_margin": 0.15, "pb_ratio": 1.2, "market_cap": 1e12,
         }
-        with patch("src.ranking.fetch_fundamentals", return_value=mock_fund):
+        with patch("src.signals.ranking.fetch_fundamentals", return_value=mock_fund):
             rankings = rank_stocks(data, use_fundamentals=True)
             assert rankings[0]["fundamental_score"] > 50
 
@@ -178,7 +178,7 @@ class TestGetRecommendation:
 class TestFactorAnalysis:
     def test_returns_correlations(self):
         data = {f"T{i}.NS": _make_df(120, 100 + i * 10) for i in range(5)}
-        from src.ranking import factor_analysis
+        from src.signals.ranking import factor_analysis
         result = factor_analysis(data)
         assert "factor_correlations" in result
         assert "n_stocks" in result
@@ -186,6 +186,6 @@ class TestFactorAnalysis:
 
     def test_insufficient_data(self):
         data = {"A.NS": _make_df(120, 100)}
-        from src.ranking import factor_analysis
+        from src.signals.ranking import factor_analysis
         result = factor_analysis(data)
         assert result["insufficient_data"] is True

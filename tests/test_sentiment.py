@@ -4,7 +4,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 
-from src.sentiment import (
+from src.signals.sentiment import (
     _deduplicate,
     _fetch_google_news,
     _fetch_moneycontrol,
@@ -121,11 +121,11 @@ class TestFetchScreener:
 
 class TestFetchHeadlines:
     def test_deduplicates_across_sources(self):
-        with patch("src.sentiment._fetch_yahoo_news") as mock_yahoo, \
-             patch("src.sentiment._fetch_google_news") as mock_google, \
-             patch("src.sentiment._fetch_moneycontrol") as mock_mc, \
-             patch("src.sentiment._fetch_economic_times") as mock_et, \
-             patch("src.sentiment._fetch_screener") as mock_sc:
+        with patch("src.signals.sentiment._fetch_yahoo_news") as mock_yahoo, \
+             patch("src.signals.sentiment._fetch_google_news") as mock_google, \
+             patch("src.signals.sentiment._fetch_moneycontrol") as mock_mc, \
+             patch("src.signals.sentiment._fetch_economic_times") as mock_et, \
+             patch("src.signals.sentiment._fetch_screener") as mock_sc:
             mock_yahoo.return_value = [{"title": "Same headline about stock", "source": "Yahoo"}]
             mock_google.return_value = [{"title": "Same headline about stock", "source": "Google"}]
             mock_mc.return_value = [{"title": "Different headline about results", "source": "MC"}]
@@ -135,11 +135,11 @@ class TestFetchHeadlines:
             assert len(result) == 2
 
     def test_respects_max_articles(self):
-        with patch("src.sentiment._fetch_yahoo_news") as mock_yahoo, \
-             patch("src.sentiment._fetch_google_news") as mock_google, \
-             patch("src.sentiment._fetch_moneycontrol") as mock_mc, \
-             patch("src.sentiment._fetch_economic_times") as mock_et, \
-             patch("src.sentiment._fetch_screener") as mock_sc:
+        with patch("src.signals.sentiment._fetch_yahoo_news") as mock_yahoo, \
+             patch("src.signals.sentiment._fetch_google_news") as mock_google, \
+             patch("src.signals.sentiment._fetch_moneycontrol") as mock_mc, \
+             patch("src.signals.sentiment._fetch_economic_times") as mock_et, \
+             patch("src.signals.sentiment._fetch_screener") as mock_sc:
             mock_yahoo.return_value = [{"title": f"Headline {i} about the stock market today", "source": "Y"} for i in range(20)]
             mock_google.return_value = []
             mock_mc.return_value = []
@@ -158,7 +158,7 @@ class TestAnalyzeSentiment:
 
     def test_returns_all_keys(self):
         articles = [{"title": "Stock rallies on strong earnings", "source": "Yahoo"}]
-        with patch("src.sentiment.get_finbert") as mock_finbert:
+        with patch("src.signals.sentiment.get_finbert") as mock_finbert:
             mock_pipe = MagicMock()
             mock_pipe.return_value = [{"label": "positive", "score": 0.9}]
             mock_finbert.return_value = mock_pipe
@@ -173,7 +173,7 @@ class TestAnalyzeSentiment:
             {"title": "Stock surges on great results", "source": "Yahoo"},
             {"title": "Strong buy rating maintained", "source": "MoneyControl"},
         ]
-        with patch("src.sentiment.get_finbert") as mock_finbert:
+        with patch("src.signals.sentiment.get_finbert") as mock_finbert:
             mock_pipe = MagicMock()
             mock_pipe.return_value = [
                 {"label": "positive", "score": 0.9},
@@ -188,7 +188,7 @@ class TestAnalyzeSentiment:
         articles = [
             {"title": "Stock crashes on poor guidance", "source": "ET"},
         ]
-        with patch("src.sentiment.get_finbert") as mock_finbert:
+        with patch("src.signals.sentiment.get_finbert") as mock_finbert:
             mock_pipe = MagicMock()
             mock_pipe.return_value = [{"label": "negative", "score": 0.95}]
             mock_finbert.return_value = mock_pipe
@@ -201,7 +201,7 @@ class TestAnalyzeSentiment:
             {"title": "Headline from Yahoo", "source": "Yahoo Finance"},
             {"title": "Headline from MC", "source": "MoneyControl"},
         ]
-        with patch("src.sentiment.get_finbert") as mock_finbert:
+        with patch("src.signals.sentiment.get_finbert") as mock_finbert:
             mock_pipe = MagicMock()
             mock_pipe.return_value = [
                 {"label": "positive", "score": 0.8},
@@ -214,7 +214,7 @@ class TestAnalyzeSentiment:
 
     def test_handles_finbert_exception(self):
         articles = [{"title": "Test headline", "source": "Yahoo"}]
-        with patch("src.sentiment.get_finbert", side_effect=Exception("Model load failed")):
+        with patch("src.signals.sentiment.get_finbert", side_effect=Exception("Model load failed")):
             result = analyze_sentiment(articles)
             assert result["score"] == 0.0
             assert "error" in result
@@ -230,7 +230,7 @@ class TestGetStockSentiment:
         with open(cache_file, "w") as f:
             json.dump(cached, f)
 
-        with patch("src.sentiment._sentiment_cache_dir", str(cache_dir)):
+        with patch("src.signals.sentiment._sentiment_cache_dir", str(cache_dir)):
             result = get_stock_sentiment("TEST.NS")
             assert result["score"] == 0.5
 
@@ -238,7 +238,7 @@ class TestGetStockSentiment:
         cache_dir = str(tmp_path / "empty_cache")
         os.makedirs(cache_dir, exist_ok=True)
 
-        import src.sentiment as mod
+        import src.signals.sentiment as mod
         old_dir = mod._sentiment_cache_dir
         mod._sentiment_cache_dir = cache_dir
         try:
@@ -258,7 +258,7 @@ class TestMultiSourceAggregation:
             {"title": "Very positive headline", "source": "Reddit"},
             {"title": "Slightly positive headline", "source": "Yahoo Finance"},
         ]
-        with patch("src.sentiment.get_finbert") as mock_finbert:
+        with patch("src.signals.sentiment.get_finbert") as mock_finbert:
             mock_pipe = MagicMock()
             # Reddit: high positive, Yahoo: low positive
             mock_pipe.return_value = [

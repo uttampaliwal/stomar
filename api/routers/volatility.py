@@ -1,8 +1,8 @@
 """Volatility analysis endpoint."""
 
 from fastapi import APIRouter
-from src.data_fetcher import fetch_stock_data
-from src.volatility import (
+from src.data.data_fetcher import fetch_stock_data
+from src.signals.volatility import (
     historical_volatility, ewma_volatility, parkinson_volatility,
     garman_klass_volatility, yang_zhang_volatility,
     detect_volatility_regime, forecast_volatility,

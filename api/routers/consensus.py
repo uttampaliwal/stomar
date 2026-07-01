@@ -6,14 +6,14 @@ import warnings as _warnings
 import joblib
 import numpy as np
 from fastapi import APIRouter
-from src.data_fetcher import fetch_stock_data, NSE_STOCKS
-from src.features import add_technical_indicators
-from src.model import load_models, models_exist
-from src.ensemble import predict_ensemble
-from src.trainer import FEATURE_COLS
-from src.regime import detect_regime
-from src.sentiment import get_stock_sentiment
-from src.meta_controller import MetaController
+from src.data.data_fetcher import fetch_stock_data, NSE_STOCKS
+from src.data.features import add_technical_indicators
+from src.models.model import load_models, models_exist
+from src.models.ensemble import predict_ensemble
+from src.models.trainer import FEATURE_COLS
+from src.signals.regime import detect_regime
+from src.signals.sentiment import get_stock_sentiment
+from src.models.meta_controller import MetaController
 from api.utils import parallel_fetch
 
 logger = logging.getLogger(__name__)
@@ -67,8 +67,8 @@ def _consensus_one(ticker, meta_controller):
     meta_conf = 0.0
     if meta_controller is not None and meta_controller.model is not None:
         try:
-            from src.risk import calculate_var, calculate_cvar, calculate_sharpe
-            from src.volatility import forecast_volatility
+            from src.trading.risk import calculate_var, calculate_cvar, calculate_sharpe
+            from src.signals.volatility import forecast_volatility
 
             returns = close.pct_change().dropna()
             var_val = calculate_var(returns) if len(returns) > 30 else 0
@@ -96,7 +96,7 @@ def _consensus_one(ticker, meta_controller):
             except Exception:
                 pass
             try:
-                from src.flow import fetch_fii_dii, get_flow_sentiment, fetch_options_pcr
+                from src.signals.flow import fetch_fii_dii, get_flow_sentiment, fetch_options_pcr
                 fii_dii = fetch_fii_dii()
                 if len(fii_dii) > 0:
                     fii_raw = float(fii_dii.iloc[0]["fii_net"])
@@ -112,7 +112,7 @@ def _consensus_one(ticker, meta_controller):
             except Exception:
                 pass
             try:
-                from src.multitimeframe import fetch_mtf_data, get_combined_signal
+                from src.signals.multitimeframe import fetch_mtf_data, get_combined_signal
                 mtf_raw = fetch_mtf_data(ticker)
                 if mtf_raw:
                     mtf_combined = get_combined_signal(mtf_raw)

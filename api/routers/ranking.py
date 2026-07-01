@@ -1,12 +1,12 @@
 """Stock ranking endpoint."""
 
 from fastapi import APIRouter
-from src.data_fetcher import fetch_stock_data, NSE_STOCKS
-from src.features import add_technical_indicators
-from src.model import load_models, models_exist
-from src.ensemble import predict_ensemble
-from src.trainer import FEATURE_COLS
-from src.ranking import rank_stocks
+from src.data.data_fetcher import fetch_stock_data, NSE_STOCKS
+from src.data.features import add_technical_indicators
+from src.models.model import load_models, models_exist
+from src.models.ensemble import predict_ensemble
+from src.models.trainer import FEATURE_COLS
+from src.signals.ranking import rank_stocks
 from api.utils import parallel_fetch
 
 router = APIRouter()

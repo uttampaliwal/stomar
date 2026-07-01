@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock
 
-from src.orchestrator import DailyOrchestrator
-from src.ledger import Ledger
+from src.signals.orchestrator import DailyOrchestrator
+from src.trading.ledger import Ledger
 
 
 @pytest.fixture

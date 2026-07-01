@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 import numpy as np
 import pytest
 
-from src import monitoring
-from src.monitoring import (
+from src.signals import monitoring
+from src.signals.monitoring import (
     ModelMonitor,
     DriftAlert,
     MonitoringReport,

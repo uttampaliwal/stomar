@@ -26,20 +26,20 @@ def _make_df(n=500):
 
 class TestHypothesis:
     def test_correlated_feature_significant(self):
-        from src.alpha_research import test_hypothesis
+        from src.signals.alpha_research import test_hypothesis
         df = _make_df(500)
         result = test_hypothesis(df, "feature_a", "target")
         assert result["significant"] or result["p_value"] < 0.20
         assert result["f_stat"] >= 0
 
     def test_uncorrelated_feature_not_significant(self):
-        from src.alpha_research import test_hypothesis
+        from src.signals.alpha_research import test_hypothesis
         df = _make_df(500)
         result = test_hypothesis(df, "feature_b", "target")
         assert result["p_value"] > 0.01
 
     def test_returns_all_keys(self):
-        from src.alpha_research import test_hypothesis
+        from src.signals.alpha_research import test_hypothesis
         df = _make_df(100)
         result = test_hypothesis(df, "feature_a", "target")
         expected = ["feature", "f_stat", "p_value", "significant",
@@ -48,7 +48,7 @@ class TestHypothesis:
             assert k in result
 
     def test_direction_positive(self):
-        from src.alpha_research import test_hypothesis
+        from src.signals.alpha_research import test_hypothesis
         df = _make_df(500)
         result = test_hypothesis(df, "feature_a", "target")
         assert result["direction"] in [1, -1]
@@ -56,14 +56,14 @@ class TestHypothesis:
 
 class TestDecayAnalysis:
     def test_peak_lag_exists(self):
-        from src.alpha_research import decay_analysis
+        from src.signals.alpha_research import decay_analysis
         df = _make_df(300)
         result = decay_analysis(df, "feature_a", "target", max_lag=10)
         assert "peak_lag" in result
         assert result["n_lags"] > 0
 
     def test_correlations_in_range(self):
-        from src.alpha_research import decay_analysis
+        from src.signals.alpha_research import decay_analysis
         df = _make_df(300)
         result = decay_analysis(df, "feature_a", "target", max_lag=5)
         for corr in result["correlations"]:
@@ -72,14 +72,14 @@ class TestDecayAnalysis:
 
 class TestRankSignals:
     def test_sorted_by_pvalue(self):
-        from src.alpha_research import rank_signals
+        from src.signals.alpha_research import rank_signals
         df = _make_df(500)
         rankings = rank_signals(df, ["feature_a", "feature_b", "noise"], "target")
         p_values = [r["p_value"] for r in rankings]
         assert p_values == sorted(p_values)
 
     def test_correlated_first(self):
-        from src.alpha_research import rank_signals
+        from src.signals.alpha_research import rank_signals
         df = _make_df(1000)
         rankings = rank_signals(df, ["feature_a", "feature_b", "noise"], "target")
         assert rankings[0]["feature"] in ["feature_a", "noise"]
@@ -87,21 +87,21 @@ class TestRankSignals:
 
 class TestQualityScore:
     def test_score_in_range(self):
-        from src.alpha_research import compute_signal_quality_score
+        from src.signals.alpha_research import compute_signal_quality_score
         hypothesis = {"p_value": 0.01, "effect_size": 0.05}
         decay = {"half_life": 10}
         score = compute_signal_quality_score(hypothesis, decay)
         assert 0 <= score <= 1
 
     def test_high_quality_high_score(self):
-        from src.alpha_research import compute_signal_quality_score
+        from src.signals.alpha_research import compute_signal_quality_score
         hypothesis = {"p_value": 0.001, "effect_size": 0.15}
         decay = {"half_life": 20}
         score = compute_signal_quality_score(hypothesis, decay)
         assert score > 0.5
 
     def test_low_quality_low_score(self):
-        from src.alpha_research import compute_signal_quality_score
+        from src.signals.alpha_research import compute_signal_quality_score
         hypothesis = {"p_value": 0.5, "effect_size": 0.001}
         decay = {"half_life": 1}
         score = compute_signal_quality_score(hypothesis, decay)
@@ -110,7 +110,7 @@ class TestQualityScore:
 
 class TestFullAlphaResearch:
     def test_returns_all_keys(self):
-        from src.alpha_research import full_alpha_research
+        from src.signals.alpha_research import full_alpha_research
         df = _make_df(500)
         result = full_alpha_research(df, ["feature_a", "feature_b", "noise"], "target")
         expected = ["rankings", "decay_curves", "quality_scores",
@@ -119,7 +119,7 @@ class TestFullAlphaResearch:
             assert k in result
 
     def test_top_features_populated(self):
-        from src.alpha_research import full_alpha_research
+        from src.signals.alpha_research import full_alpha_research
         df = _make_df(500)
         result = full_alpha_research(df, ["feature_a", "feature_b", "noise"], "target")
         assert len(result["top_features"]) > 0

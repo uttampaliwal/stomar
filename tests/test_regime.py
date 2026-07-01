@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.regime import detect_regime
+from src.signals.regime import detect_regime
 
 
 def _make_price_series(n=200, trend="up"):

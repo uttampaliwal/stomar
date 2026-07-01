@@ -3,9 +3,9 @@
 import os
 import json
 from fastapi import APIRouter
-from src.monitoring import ModelMonitor, MONITORING_DIR
-from src.data_fetcher import NSE_STOCKS, fetch_stock_data
-from src.model import models_exist
+from src.signals.monitoring import ModelMonitor, MONITORING_DIR
+from src.data.data_fetcher import NSE_STOCKS, fetch_stock_data
+from src.models.model import models_exist
 
 router = APIRouter()
 

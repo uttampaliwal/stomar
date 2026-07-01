@@ -5,8 +5,8 @@ import tempfile
 import numpy as np
 import pytest
 
-from src.meta_controller import MetaController, SIGNAL_NAMES
-from src.ledger import Ledger
+from src.models.meta_controller import MetaController, SIGNAL_NAMES
+from src.trading.ledger import Ledger
 
 
 @pytest.fixture

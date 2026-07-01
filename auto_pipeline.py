@@ -21,12 +21,12 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from src.constants import (
+from src.core.constants import (
     DATA_DIR, MODELS_DIR, LEDGER_DB, META_CONTROLLER_PATH,
 )
-from src.data_fetcher import NSE_STOCKS
-from src.ledger import Ledger
-from src.logging_config import get_logger
+from src.data.data_fetcher import NSE_STOCKS
+from src.trading.ledger import Ledger
+from src.core.logging_config import get_logger
 
 logger = get_logger("auto_pipeline")
 
@@ -194,7 +194,7 @@ class AutoPipeline:
         """Run the historical backfill."""
         self._log(f"Running backfill ({lookback_days} days)")
         try:
-            from src.backfill import HistoricalBackfill
+            from src.core.backfill import HistoricalBackfill
             backfill = HistoricalBackfill(self.ledger)
             summary = backfill.run(tickers=self.tickers, lookback_days=lookback_days)
             days_backfilled = summary.get("total_decisions", 0)
@@ -209,7 +209,7 @@ class AutoPipeline:
         result = {"status": "not_needed"}
         try:
             import joblib
-            from src.meta_controller import MetaController
+            from src.models.meta_controller import MetaController
 
             if os.path.exists(META_CONTROLLER_PATH):
                 mc = joblib.load(META_CONTROLLER_PATH)
@@ -242,8 +242,8 @@ class AutoPipeline:
         self._log(f"Running daily orchestrator for {today}")
         try:
             import joblib
-            from src.orchestrator import DailyOrchestrator
-            from src.meta_controller import MetaController
+            from src.signals.orchestrator import DailyOrchestrator
+            from src.models.meta_controller import MetaController
 
             meta_controller = None
             if os.path.exists(META_CONTROLLER_PATH):
@@ -268,7 +268,7 @@ class AutoPipeline:
         """Auto-execute paper trades based on today's signals."""
         result = {"trades": 0}
         try:
-            from src.constants import PAPER_STATE_PATH
+            from src.core.constants import PAPER_STATE_PATH
             if not os.path.exists(PAPER_STATE_PATH):
                 self._log("No paper state found, skipping paper trades")
                 return result
@@ -335,7 +335,7 @@ class AutoPipeline:
         errors = 0
         for ticker in tickers:
             try:
-                from src.sentiment import get_stock_sentiment
+                from src.signals.sentiment import get_stock_sentiment
                 get_stock_sentiment(ticker)
                 warmed += 1
             except Exception:

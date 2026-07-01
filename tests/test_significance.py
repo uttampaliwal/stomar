@@ -33,7 +33,7 @@ def _make_df(n=500):
 
 class TestPurgedKfoldCV:
     def test_returns_list_of_tuples(self):
-        from src.significance import purged_kfold_cv
+        from src.signals.significance import purged_kfold_cv
         df = _make_df(500)
         splits = purged_kfold_cv(df, ["rsi"], "target", n_splits=5)
         assert isinstance(splits, list)
@@ -42,14 +42,14 @@ class TestPurgedKfoldCV:
             assert isinstance(test_idx, list)
 
     def test_no_overlap_between_train_and_test(self):
-        from src.significance import purged_kfold_cv
+        from src.signals.significance import purged_kfold_cv
         df = _make_df(500)
         splits = purged_kfold_cv(df, ["rsi"], "target", n_splits=5)
         for train_idx, test_idx in splits:
             assert len(set(train_idx) & set(test_idx)) == 0
 
     def test_test_follows_train(self):
-        from src.significance import purged_kfold_cv
+        from src.signals.significance import purged_kfold_cv
         df = _make_df(500)
         splits = purged_kfold_cv(df, ["rsi"], "target", n_splits=5)
         for train_idx, test_idx in splits:
@@ -57,7 +57,7 @@ class TestPurgedKfoldCV:
                 assert max(train_idx) < min(test_idx)
 
     def test_purge_window_removes_rows(self):
-        from src.significance import purged_kfold_cv
+        from src.signals.significance import purged_kfold_cv
         df = _make_df(500)
         splits_no_purge = purged_kfold_cv(df, ["rsi"], "target",
                                            n_splits=5, purge_window=0)
@@ -68,7 +68,7 @@ class TestPurgedKfoldCV:
             assert len(test_no) == len(test_p)  # Test sets same
 
     def test_short_data_few_splits(self):
-        from src.significance import purged_kfold_cv
+        from src.signals.significance import purged_kfold_cv
         df = _make_df(100)
         splits = purged_kfold_cv(df, ["rsi"], "target", n_splits=10)
         # Should have fewer splits due to small data
@@ -77,7 +77,7 @@ class TestPurgedKfoldCV:
 
 class TestCPCV:
     def test_returns_distribution(self):
-        from src.significance import run_cpcv
+        from src.signals.significance import run_cpcv
         df = _make_df(300)
 
         def dummy_backtest(X_train, y_train, X_test, y_test):
@@ -91,7 +91,7 @@ class TestCPCV:
         assert result["n"] > 0
 
     def test_outcomes_are_floats(self):
-        from src.significance import run_cpcv
+        from src.signals.significance import run_cpcv
         df = _make_df(300)
 
         def dummy_backtest(X_train, y_train, X_test, y_test):
@@ -102,7 +102,7 @@ class TestCPCV:
         assert all(isinstance(x, float) for x in result["outcomes"])
 
     def test_prob_profit_in_range(self):
-        from src.significance import run_cpcv
+        from src.signals.significance import run_cpcv
         df = _make_df(300)
 
         def dummy_backtest(X_train, y_train, X_test, y_test):
@@ -115,30 +115,30 @@ class TestCPCV:
 
 class TestDeflatedSharpeRatio:
     def test_single_trial_no_deflation(self):
-        from src.significance import deflated_sharpe_ratio
+        from src.signals.significance import deflated_sharpe_ratio
         result = deflated_sharpe_ratio(2.0, 1, 3.0, 250)
         # With 1 trial, deflated should be close to observed
         assert result["deflated_sharpe"] > 0
 
     def test_many_trials_deflates_more(self):
-        from src.significance import deflated_sharpe_ratio
+        from src.signals.significance import deflated_sharpe_ratio
         r1 = deflated_sharpe_ratio(2.0, 1, 3.0, 250)
         r100 = deflated_sharpe_ratio(2.0, 100, 3.0, 250)
         # More trials -> more deflation
         assert r100["deflated_sharpe"] < r1["deflated_sharpe"]
 
     def test_high_sharpe_significant(self):
-        from src.significance import deflated_sharpe_ratio
+        from src.signals.significance import deflated_sharpe_ratio
         result = deflated_sharpe_ratio(3.0, 10, 4.0, 1000)
         assert result["sharpe_observed"] == 3.0
 
     def test_zero_trials(self):
-        from src.significance import deflated_sharpe_ratio
+        from src.signals.significance import deflated_sharpe_ratio
         result = deflated_sharpe_ratio(2.0, 0, 3.0, 250)
         assert result["p_value"] == 1.0
 
     def test_returns_all_keys(self):
-        from src.significance import deflated_sharpe_ratio
+        from src.signals.significance import deflated_sharpe_ratio
         result = deflated_sharpe_ratio(1.5, 20, 3.0, 500)
         expected = ["sharpe_observed", "e_max_sr", "deflated_sharpe",
                     "p_value", "significant", "n_trials"]
@@ -148,7 +148,7 @@ class TestDeflatedSharpeRatio:
 
 class TestPermutationTestAccuracy:
     def test_random_predictions_not_significant(self):
-        from src.significance import permutation_test_accuracy
+        from src.signals.significance import permutation_test_accuracy
         np.random.seed(42)
         preds = np.random.randint(0, 2, 200)
         actuals = np.random.randint(0, 2, 200)
@@ -157,14 +157,14 @@ class TestPermutationTestAccuracy:
         assert result["p_value"] > 0.01
 
     def test_perfect_predictions_significant(self):
-        from src.significance import permutation_test_accuracy
+        from src.signals.significance import permutation_test_accuracy
         actuals = np.random.randint(0, 2, 200)
         result = permutation_test_accuracy(actuals, actuals, n_permutations=500)
         assert result["p_value"] < 0.05
         assert result["real_accuracy"] == 1.0
 
     def test_returns_all_keys(self):
-        from src.significance import permutation_test_accuracy
+        from src.signals.significance import permutation_test_accuracy
         preds = np.random.randint(0, 2, 100)
         actuals = np.random.randint(0, 2, 100)
         result = permutation_test_accuracy(preds, actuals, n_permutations=100)
@@ -176,13 +176,13 @@ class TestPermutationTestAccuracy:
 
 class TestBootstrapCI:
     def test_ci_contains_point(self):
-        from src.significance import bootstrap_confidence_interval
+        from src.signals.significance import bootstrap_confidence_interval
         data = np.random.randn(200) * 0.01 + 0.001
         result = bootstrap_confidence_interval(data, np.mean)
         assert result["ci_lower"] <= result["point_estimate"] <= result["ci_upper"]
 
     def test_ci_width_decreases_with_data(self):
-        from src.significance import bootstrap_confidence_interval
+        from src.signals.significance import bootstrap_confidence_interval
         np.random.seed(42)
         data_small = np.random.randn(50) * 0.01
         data_large = np.random.randn(500) * 0.01
@@ -194,7 +194,7 @@ class TestBootstrapCI:
         assert width_large < width_small
 
     def test_returns_all_keys(self):
-        from src.significance import bootstrap_confidence_interval
+        from src.signals.significance import bootstrap_confidence_interval
         data = np.random.randn(100)
         result = bootstrap_confidence_interval(data, np.mean)
         expected = ["point_estimate", "ci_lower", "ci_upper",
@@ -205,7 +205,7 @@ class TestBootstrapCI:
 
 class TestBacktestSharpe:
     def test_all_correct_predictions(self):
-        from src.significance import backtest_predictions_to_sharpe
+        from src.signals.significance import backtest_predictions_to_sharpe
         predictions = np.array([1, 0, 1, 1, 0, 1, 0, 0, 1, 1,
                                 1, 0, 1, 1, 0, 1, 0, 0, 1, 1])
         actuals = predictions.copy()
@@ -214,13 +214,13 @@ class TestBacktestSharpe:
         assert isinstance(sharpe, float)
 
     def test_short_data(self):
-        from src.significance import backtest_predictions_to_sharpe
+        from src.signals.significance import backtest_predictions_to_sharpe
         sharpe = backtest_predictions_to_sharpe(np.array([1]), np.array([1]),
                                                 np.array([0.01]))
         assert sharpe == 0.0
 
     def test_zero_volatility(self):
-        from src.significance import backtest_predictions_to_sharpe
+        from src.signals.significance import backtest_predictions_to_sharpe
         predictions = np.array([1, 1, 1, 1, 1])
         actuals = np.array([1, 1, 1, 1, 1])
         returns = np.array([0.01, 0.01, 0.01, 0.01, 0.01])

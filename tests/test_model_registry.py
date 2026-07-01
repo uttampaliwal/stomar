@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-from src.model_registry import ModelRegistry, ModelVersion
+from src.models.model_registry import ModelRegistry, ModelVersion
 
 
 @pytest.fixture

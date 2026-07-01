@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.multitimeframe import get_tf_signal, get_combined_signal
+from src.signals.multitimeframe import get_tf_signal, get_combined_signal
 
 
 def _make_ohlcv(n=200, seed=42):

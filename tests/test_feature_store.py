@@ -4,8 +4,8 @@ import os
 
 import pytest
 
-from src import feature_store
-from src.feature_store import (
+from src.data import feature_store
+from src.data.feature_store import (
     compute_feature_hash,
     register_feature_version,
     load_feature_version,

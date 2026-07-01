@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.mf_tracker import MFTracker
+from src.signals.mf_tracker import MFTracker
 
 
 @pytest.fixture

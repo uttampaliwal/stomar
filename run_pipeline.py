@@ -12,7 +12,7 @@ import argparse
 import logging
 import sys
 
-from src.pipeline import RetrainingPipeline, PipelineConfig
+from src.core.pipeline import RetrainingPipeline, PipelineConfig
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
 
     # --- Batch train mode (standalone) ---
     if args.train_all or args.train:
-        from src.trainer import batch_train
+        from src.models.trainer import batch_train
 
         tickers = None if args.train_all else args.train
         print("=== StoMar Batch Training ===")
@@ -88,7 +88,7 @@ def main():
 
     if args.paper:
         print("\n=== Paper Trading Mode ===")
-        from src.paper_trader import PaperTrader
+        from src.trading.paper_trader import PaperTrader
 
         trader = PaperTrader(initial_capital=100_000)
         trader.load_state()
@@ -98,7 +98,7 @@ def main():
                 ticker = r.ticker
                 print(f"  Loading latest data for {ticker}...")
                 try:
-                    from src.data_fetcher import fetch_stock_data
+                    from src.data.data_fetcher import fetch_stock_data
                     df = fetch_stock_data(ticker, period="5d")
                     if len(df) >= 2:
                         last = df.iloc[-1]

@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.execution_quality import ExecutionQualityAnalyzer, _safe_mean
+from src.signals.execution_quality import ExecutionQualityAnalyzer, _safe_mean
 
 
 def _analyzer():

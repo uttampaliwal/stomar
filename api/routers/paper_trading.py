@@ -3,10 +3,10 @@
 import os
 import json
 from fastapi import APIRouter, Body
-from src.paper_trader import PaperTrader
-from src.engine import OrderSide, OrderType
-from src.risk_controls import RiskLimits
-from src.data_fetcher import NSE_STOCKS
+from src.trading.paper_trader import PaperTrader
+from src.trading.engine import OrderSide, OrderType
+from src.trading.risk_controls import RiskLimits
+from src.data.data_fetcher import NSE_STOCKS
 
 router = APIRouter()
 
@@ -46,7 +46,7 @@ def place_order(data: dict = Body(...)):
 
         side = OrderSide.BUY if side_str == "BUY" else OrderSide.SELL
 
-        from src.data_fetcher import get_live_price
+        from src.data.data_fetcher import get_live_price
         price = get_live_price(ticker)
         if price is None or price <= 0:
             return {"error": f"Cannot get price for {ticker}"}

@@ -18,17 +18,17 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from src.data_fetcher import NSE_STOCKS
-from src.ledger import Ledger
-from src.orchestrator import DailyOrchestrator
-from src.meta_controller import MetaController
+from src.data.data_fetcher import NSE_STOCKS
+from src.trading.ledger import Ledger
+from src.signals.orchestrator import DailyOrchestrator
+from src.models.meta_controller import MetaController
 
 
 def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
                      state_path: str = None):
     """Auto-execute paper trades based on orchestrator decisions."""
-    from src.paper_trader import PaperTrader
-    from src.engine import OrderSide, OrderType
+    from src.trading.paper_trader import PaperTrader
+    from src.trading.engine import OrderSide, OrderType
 
     trader = PaperTrader(initial_capital=capital)
     trader.load_state(state_path)
@@ -57,7 +57,7 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
         qty = max(1, int(invest_amount / price))
 
         if action == "BUY":
-            from src.data_fetcher import get_live_price
+            from src.data.data_fetcher import get_live_price
             current_price = get_live_price(ticker)
             if current_price <= 0:
                 current_price = price
@@ -74,7 +74,7 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
             sell_qty = qty
             if ticker in trader.positions and trader.positions[ticker].quantity > 0:
                 sell_qty = min(qty, trader.positions[ticker].quantity)
-            from src.data_fetcher import get_live_price
+            from src.data.data_fetcher import get_live_price
             current_price = get_live_price(ticker)
             if current_price <= 0:
                 current_price = price
@@ -90,7 +90,7 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
     # Update current prices for open positions
     for ticker in list(trader.positions.keys()):
         try:
-            from src.data_fetcher import get_live_price
+            from src.data.data_fetcher import get_live_price
             current_price = get_live_price(ticker)
             if current_price > 0:
                 trader.update_prices({ticker: current_price})
@@ -148,7 +148,7 @@ def main():
         print(f"Ledger:   {args.db}")
         print()
 
-        from src.backfill import HistoricalBackfill
+        from src.core.backfill import HistoricalBackfill
         backfill = HistoricalBackfill(ledger)
         bf_summary = backfill.run(tickers=tickers, lookback_days=args.days)
 

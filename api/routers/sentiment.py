@@ -1,7 +1,7 @@
 """Sentiment analysis endpoint."""
 
 from fastapi import APIRouter, Query
-from src.sentiment import get_stock_sentiment
+from src.signals.sentiment import get_stock_sentiment
 
 router = APIRouter()
 

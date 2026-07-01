@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from src.data_validation import (
+from src.data.data_validation import (
     detect_gaps,
     detect_corporate_actions,
     detect_stale_data,

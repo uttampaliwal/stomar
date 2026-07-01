@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.holdings import (
+from src.trading.holdings import (
     parse_holdings_csv,
     compute_xirr,
     compute_portfolio_stats,

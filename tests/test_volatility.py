@@ -25,13 +25,13 @@ def _make_ohlcv(n=500):
 
 class TestHistoricalVolatility:
     def test_output_length(self):
-        from src.volatility import historical_volatility
+        from src.signals.volatility import historical_volatility
         returns = _make_ohlcv()["returns"]
         vol = historical_volatility(returns, window=20)
         assert len(vol) == len(returns)
 
     def test_annualized(self):
-        from src.volatility import historical_volatility
+        from src.signals.volatility import historical_volatility
         returns = _make_ohlcv()["returns"]
         vol = historical_volatility(returns, window=20, annualize=True)
         valid = vol.dropna()
@@ -39,7 +39,7 @@ class TestHistoricalVolatility:
         assert valid.iloc[-1] > 0
 
     def test_not_annualized(self):
-        from src.volatility import historical_volatility
+        from src.signals.volatility import historical_volatility
         returns = _make_ohlcv()["returns"]
         vol = historical_volatility(returns, window=20, annualize=False)
         valid = vol.dropna()
@@ -49,13 +49,13 @@ class TestHistoricalVolatility:
 
 class TestEWMAMVolatility:
     def test_output_length(self):
-        from src.volatility import ewma_volatility
+        from src.signals.volatility import ewma_volatility
         returns = _make_ohlcv()["returns"]
         vol = ewma_volatility(returns, span=20)
         assert len(vol) == len(returns)
 
     def test_positive(self):
-        from src.volatility import ewma_volatility
+        from src.signals.volatility import ewma_volatility
         returns = _make_ohlcv()["returns"]
         vol = ewma_volatility(returns, span=20)
         assert vol.dropna().iloc[-1] > 0
@@ -63,13 +63,13 @@ class TestEWMAMVolatility:
 
 class TestParkinsonVolatility:
     def test_output_length(self):
-        from src.volatility import parkinson_volatility
+        from src.signals.volatility import parkinson_volatility
         df = _make_ohlcv()
         vol = parkinson_volatility(df["high"], df["low"], window=20)
         assert len(vol) == len(df)
 
     def test_positive(self):
-        from src.volatility import parkinson_volatility
+        from src.signals.volatility import parkinson_volatility
         df = _make_ohlcv()
         vol = parkinson_volatility(df["high"], df["low"], window=20)
         assert vol.dropna().iloc[-1] > 0
@@ -77,13 +77,13 @@ class TestParkinsonVolatility:
 
 class TestGarmanKlassVolatility:
     def test_output_length(self):
-        from src.volatility import garman_klass_volatility
+        from src.signals.volatility import garman_klass_volatility
         df = _make_ohlcv()
         vol = garman_klass_volatility(df["open"], df["high"], df["low"], df["close"], window=20)
         assert len(vol) == len(df)
 
     def test_positive(self):
-        from src.volatility import garman_klass_volatility
+        from src.signals.volatility import garman_klass_volatility
         df = _make_ohlcv()
         vol = garman_klass_volatility(df["open"], df["high"], df["low"], df["close"], window=20)
         assert vol.dropna().iloc[-1] > 0
@@ -91,13 +91,13 @@ class TestGarmanKlassVolatility:
 
 class TestYangZhangVolatility:
     def test_output_length(self):
-        from src.volatility import yang_zhang_volatility
+        from src.signals.volatility import yang_zhang_volatility
         df = _make_ohlcv()
         vol = yang_zhang_volatility(df["open"], df["high"], df["low"], df["close"], window=20)
         assert len(vol) == len(df)
 
     def test_positive(self):
-        from src.volatility import yang_zhang_volatility
+        from src.signals.volatility import yang_zhang_volatility
         df = _make_ohlcv()
         vol = yang_zhang_volatility(df["open"], df["high"], df["low"], df["close"], window=20)
         assert vol.dropna().iloc[-1] > 0
@@ -105,7 +105,7 @@ class TestYangZhangVolatility:
 
 class TestForecastVolatility:
     def test_returns_all_keys(self):
-        from src.volatility import forecast_volatility
+        from src.signals.volatility import forecast_volatility
         returns = _make_ohlcv()["returns"]
         result = forecast_volatility(returns, method="ewma", horizon=5)
         expected = ["current_vol", "forecast_vols", "long_term_vol", "vol_std", "horizon", "method"]
@@ -113,13 +113,13 @@ class TestForecastVolatility:
             assert k in result
 
     def test_forecast_length(self):
-        from src.volatility import forecast_volatility
+        from src.signals.volatility import forecast_volatility
         returns = _make_ohlcv()["returns"]
         result = forecast_volatility(returns, horizon=5)
         assert len(result["forecast_vols"]) == 5
 
     def test_historical_method(self):
-        from src.volatility import forecast_volatility
+        from src.signals.volatility import forecast_volatility
         returns = _make_ohlcv()["returns"]
         result = forecast_volatility(returns, method="historical", horizon=3)
         assert result["method"] == "historical"
@@ -127,7 +127,7 @@ class TestForecastVolatility:
 
 class TestDetectVolatilityRegime:
     def test_returns_all_keys(self):
-        from src.volatility import detect_volatility_regime
+        from src.signals.volatility import detect_volatility_regime
         returns = _make_ohlcv()["returns"]
         result = detect_volatility_regime(returns)
         expected = ["current_regime", "current_vol", "vol_percentile",
@@ -136,13 +136,13 @@ class TestDetectVolatilityRegime:
             assert k in result
 
     def test_regime_is_valid(self):
-        from src.volatility import detect_volatility_regime
+        from src.signals.volatility import detect_volatility_regime
         returns = _make_ohlcv()["returns"]
         result = detect_volatility_regime(returns)
         assert result["current_regime"] in ["Low", "Medium", "High"]
 
     def test_regime_percentages_sum_to_one(self):
-        from src.volatility import detect_volatility_regime
+        from src.signals.volatility import detect_volatility_regime
         returns = _make_ohlcv()["returns"]
         result = detect_volatility_regime(returns)
         total = sum(result["regime_percentages"].values())
@@ -151,7 +151,7 @@ class TestDetectVolatilityRegime:
 
 class TestBollingerBands:
     def test_returns_all_keys(self):
-        from src.volatility import compute_bollinger_bands
+        from src.signals.volatility import compute_bollinger_bands
         close = _make_ohlcv()["close"]
         result = compute_bollinger_bands(close, window=20)
         expected = ["upper", "middle", "lower", "bandwidth", "percent_b"]
@@ -159,7 +159,7 @@ class TestBollingerBands:
             assert k in result
 
     def test_upper_above_lower(self):
-        from src.volatility import compute_bollinger_bands
+        from src.signals.volatility import compute_bollinger_bands
         close = _make_ohlcv()["close"]
         result = compute_bollinger_bands(close, window=20)
         valid = result["upper"].dropna() > result["lower"].dropna()
@@ -168,14 +168,14 @@ class TestBollingerBands:
 
 class TestVolatilityCone:
     def test_returns_all_windows(self):
-        from src.volatility import volatility_cone
+        from src.signals.volatility import volatility_cone
         df = _make_ohlcv()
         result = volatility_cone(df["high"], df["low"], df["close"], windows=[10, 20])
         assert 10 in result
         assert 20 in result
 
     def test_min_less_than_max(self):
-        from src.volatility import volatility_cone
+        from src.signals.volatility import volatility_cone
         df = _make_ohlcv()
         result = volatility_cone(df["high"], df["low"], df["close"], windows=[20])
         assert result[20]["min"] <= result[20]["max"] or np.isnan(result[20]["min"])
@@ -183,13 +183,13 @@ class TestVolatilityCone:
 
 class TestComputeATR:
     def test_output_length(self):
-        from src.volatility import compute_atr
+        from src.signals.volatility import compute_atr
         df = _make_ohlcv()
         atr = compute_atr(df["high"], df["low"], df["close"], window=14)
         assert len(atr) == len(df)
 
     def test_positive(self):
-        from src.volatility import compute_atr
+        from src.signals.volatility import compute_atr
         df = _make_ohlcv()
         atr = compute_atr(df["high"], df["low"], df["close"], window=14)
         assert atr.dropna().iloc[-1] > 0
@@ -197,25 +197,25 @@ class TestComputeATR:
 
 class TestPositionSizeForVol:
     def test_default_size(self):
-        from src.volatility import position_size_for_vol
+        from src.signals.volatility import position_size_for_vol
         result = position_size_for_vol()
         assert result["position_size_pct"] > 0
         assert result["vol_scalar"] == 1.0
 
     def test_high_vol_reduces(self):
-        from src.volatility import position_size_for_vol
+        from src.signals.volatility import position_size_for_vol
         result = position_size_for_vol(current_vol=0.30, target_vol=0.15)
         assert result["vol_scalar"] < 1.0
 
     def test_low_vol_increases(self):
-        from src.volatility import position_size_for_vol
+        from src.signals.volatility import position_size_for_vol
         result = position_size_for_vol(current_vol=0.10, target_vol=0.15)
         assert result["vol_scalar"] > 1.0
 
 
 class TestFullVolatilityAnalysis:
     def test_returns_all_keys(self):
-        from src.volatility import full_volatility_analysis
+        from src.signals.volatility import full_volatility_analysis
         df = _make_ohlcv()
         result = full_volatility_analysis(df)
         expected = ["current", "regime", "forecast", "bollinger",
@@ -224,7 +224,7 @@ class TestFullVolatilityAnalysis:
             assert k in result
 
     def test_current_has_all_estimators(self):
-        from src.volatility import full_volatility_analysis
+        from src.signals.volatility import full_volatility_analysis
         df = _make_ohlcv()
         result = full_volatility_analysis(df)
         estimators = ["hist_vol", "ewma_vol", "parkinson_vol",
