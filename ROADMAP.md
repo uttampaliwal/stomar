@@ -21,34 +21,34 @@
 ## Phase 0 — Operational Wiring (Do This Week)
 *These are one-day fixes that close real safety gaps right now.*
 
-- [ ] 🔴 **P0.1** Wire drift detection to automatic retraining trigger
+- [x] 🔴 **P0.1** Wire drift detection to automatic retraining trigger
   - File: `src/signals/monitoring.py` → `ModelMonitor._log_alert()`
   - When `alert.severity == "critical"` on `oos_accuracy` or `feature_drift`, enqueue `RetrainingPipeline.run(ticker)`
   - Log the trigger event to `data/monitoring/retrain_triggers.json`
   - Effort: 2–3 hours
 
-- [ ] 🔴 **P0.2** Attach stop-loss orders to every paper trade entry
+- [x] 🔴 **P0.2** Attach stop-loss orders to every paper trade entry
   - File: `src/signals/orchestrator.py` → `DailyOrchestrator._execute_paper_trade()`
   - After BUY fill, place a SELL STOP at `fill_price * (1 - 0.05)` (5% stop, configurable)
   - After SELL SHORT fill, place a BUY STOP at `fill_price * (1 + 0.05)`
   - The `ExecutionEngine` already supports `stop_price` on orders — just wire it
   - Effort: 2 hours
 
-- [ ] 🔴 **P0.3** Pipeline failure notification
+- [x] 🔴 **P0.3** Pipeline failure notification
   - File: `auto_pipeline.py` → `run()` except block
   - On any step failure, write to `data/pipeline_failures.json` with timestamp + stage + error
   - Add `/api/monitoring/failures` endpoint to surface this in the UI
   - Add a visible red banner on the Dashboard if failures exist from last 24h
   - Effort: 2–3 hours
 
-- [ ] 🔴 **P0.4** Daily P&L reset for `RiskController`
+- [x] 🔴 **P0.4** Daily P&L reset for `RiskController`
   - File: `src/trading/risk_controls.py` + `src/signals/orchestrator.py`
   - `RiskController.daily_pnl` is tracked but `reset_daily()` is never called automatically
   - Call `reset_daily()` at the start of each new trading day in the orchestrator
   - Without this, the 2% daily loss limit accumulates across days and becomes meaningless
   - Effort: 30 minutes
 
-- [ ] 🟠 **P0.5** Persist meta-controller per-ticker, not just global
+- [x] 🟠 **P0.5** Persist meta-controller per-ticker, not just global
   - File: `auto_pipeline.py` → `_ensure_meta_controller()`
   - Currently loads one global `meta_controller.pkl`; per-ticker meta models are trained in `trainer.py` but not used in the daily loop
   - Load `models/meta_{ticker}.pkl` per ticker in `_run_daily()` if it exists
@@ -398,7 +398,7 @@
 
 | Phase | Status | Started | Completed | Notes |
 |-------|--------|---------|-----------|-------|
-| Phase 0 — Operational Wiring | 🔲 Not started | — | — | |
+| Phase 0 — Operational Wiring | ✅ Complete | 2026-07-01 | 2026-07-01 | All 5 items done |
 | Phase 1 — State Machine | 🔲 Not started | — | — | |
 | Phase 2 — Data Quality | 🔲 Not started | — | — | |
 | Phase 3 — Paper Trading | 🔲 Not started | — | — | Time-gated: 3 months |

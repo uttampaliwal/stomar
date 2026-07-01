@@ -264,12 +264,14 @@ class DailyOrchestrator:
             return None
 
     def _run_ensemble(self, ticker: str, df: pd.DataFrame, signals: dict = None) -> dict:
-        """Run ensemble prediction."""
+        """Run ensemble prediction, using a per-ticker meta-learner when available."""
         try:
             from src.data.features import add_technical_indicators
             from src.models.model import load_models, models_exist
-            from src.models.ensemble import predict_ensemble
+            from src.models.ensemble import predict_ensemble, load_meta_model
             from src.models.trainer import FEATURE_COLS
+            from src.core.constants import MODELS_DIR
+            import os
 
             if not models_exist(ticker):
                 return {}
@@ -279,6 +281,19 @@ class DailyOrchestrator:
                 "lstm": tup[0], "gru": tup[1], "transformer": tup[2],
                 "xgb": tup[3], "scaler": tup[4], "features": tup[5], "lgb": tup[6],
             }
+
+            # Load per-ticker meta-learner if available (trained in trainer.py)
+            meta_model = None
+            ticker_meta_path = os.path.join(
+                MODELS_DIR, f"meta_{ticker.replace('.', '_')}.pkl"
+            )
+            if os.path.exists(ticker_meta_path):
+                try:
+                    meta_model = load_meta_model(ticker_meta_path)
+                    logger.debug(f"Loaded per-ticker meta-learner for {ticker}")
+                except Exception as e:
+                    logger.debug(f"Could not load per-ticker meta for {ticker}: {e}")
+
             df_feat = add_technical_indicators(df)
 
             # Inject real-time signal values as features for the model
@@ -299,17 +314,20 @@ class DailyOrchestrator:
                 if col not in df_feat.columns:
                     df_feat[col] = 0
 
-            # Only dropna on columns that exist in the data
             existing_feats = [c for c in FEATURE_COLS if c in df_feat.columns]
             df_feat = df_feat.dropna(subset=[c for c in existing_feats if c in df_feat.columns] + ["target"])
 
             if len(df_feat) < 2:
                 return {}
 
+            regime = signals.get("regime") if signals else None
+
             ensemble_dir, confidence, details = predict_ensemble(
                 models["lstm"], models["gru"], models["transformer"],
                 models["xgb"], models["scaler"], FEATURE_COLS, df_feat,
                 lgb_model=models["lgb"],
+                meta_model=meta_model,
+                regime=regime,
             )
             return {
                 "ensemble_direction": ensemble_dir,
