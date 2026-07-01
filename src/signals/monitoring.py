@@ -6,6 +6,10 @@ Detects:
 - Prediction drift (model output distribution shifting)
 - Data freshness (stale data in pipeline)
 
+When a critical alert is raised for oos_accuracy or feature_drift,
+the monitor automatically enqueues a retraining job for the affected
+ticker. The trigger is recorded in data/monitoring/retrain_triggers.json.
+
 Usage:
     from src.signals.monitoring import ModelMonitor
     monitor = ModelMonitor()
@@ -15,6 +19,7 @@ Usage:
 import json
 import logging
 import os
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -25,6 +30,9 @@ from scipy import stats
 from src.core.constants import MONITORING_DIR
 
 logger = logging.getLogger(__name__)
+
+# Metrics that trigger automatic retraining when critical
+_RETRAIN_TRIGGER_METRICS = {"oos_accuracy", "feature_drift"}
 
 
 @dataclass
@@ -244,7 +252,7 @@ class ModelMonitor:
         logger.info(f"Saved baseline metrics for {ticker}")
 
     def _log_alert(self, ticker: str, alert: DriftAlert):
-        """Log an alert and persist it."""
+        """Log an alert, persist it, and trigger retraining if critical."""
         level = {"info": logging.INFO, "warning": logging.WARNING, "critical": logging.CRITICAL}
         logger.log(level.get(alert.severity, logging.INFO), f"[{ticker}] {alert.message}")
 
@@ -253,8 +261,11 @@ class ModelMonitor:
         )
         alerts = []
         if os.path.exists(history_path):
-            with open(history_path) as f:
-                alerts = json.load(f)
+            try:
+                with open(history_path) as f:
+                    alerts = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                alerts = []
 
         alerts.append({
             "metric": alert.metric,
@@ -270,3 +281,78 @@ class ModelMonitor:
 
         with open(history_path, "w") as f:
             json.dump(alerts, f, indent=2)
+
+        # Auto-trigger retraining for critical drift on actionable metrics
+        if alert.severity == "critical" and alert.metric in _RETRAIN_TRIGGER_METRICS:
+            self._trigger_retrain(ticker, alert)
+
+    def _trigger_retrain(self, ticker: str, alert: DriftAlert):
+        """Record a retrain trigger and launch the pipeline in a background thread.
+
+        The trigger is logged to data/monitoring/retrain_triggers.json so the
+        Monitoring page can show it. The pipeline runs asynchronously so the
+        daily orchestrator is not blocked.
+        """
+        trigger_path = os.path.join(MONITORING_DIR, "retrain_triggers.json")
+        triggers = []
+        if os.path.exists(trigger_path):
+            try:
+                with open(trigger_path) as f:
+                    triggers = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                triggers = []
+
+        trigger_entry = {
+            "ticker": ticker,
+            "metric": alert.metric,
+            "severity": alert.severity,
+            "message": alert.message,
+            "timestamp": datetime.now().isoformat(),
+            "status": "queued",
+        }
+        triggers.append(trigger_entry)
+        triggers = triggers[-200:]  # keep last 200
+
+        with open(trigger_path, "w") as f:
+            json.dump(triggers, f, indent=2)
+
+        logger.warning(
+            "[%s] Critical drift on '%s' — queuing automatic retrain", ticker, alert.metric
+        )
+
+        # Run in a daemon thread so a slow retrain doesn't block the caller
+        thread = threading.Thread(
+            target=self._run_retrain_pipeline,
+            args=(ticker, trigger_path, trigger_entry),
+            daemon=True,
+            name=f"retrain-{ticker}",
+        )
+        thread.start()
+
+    def _run_retrain_pipeline(self, ticker: str, trigger_path: str, trigger_entry: dict):
+        """Execute the retraining pipeline and update trigger status."""
+        start = datetime.now().isoformat()
+        try:
+            from src.core.pipeline import RetrainingPipeline
+            pipeline = RetrainingPipeline()
+            result = pipeline.run(ticker)
+            status = f"completed:{result.status}"
+            logger.info("[%s] Auto-retrain finished: %s — %s", ticker, result.status, result.message)
+        except Exception as e:
+            status = f"failed:{e}"
+            logger.error("[%s] Auto-retrain failed: %s", ticker, e)
+
+        # Update the status of this specific trigger entry in the file
+        try:
+            with open(trigger_path) as f:
+                triggers = json.load(f)
+            for t in triggers:
+                if (t.get("ticker") == ticker
+                        and t.get("timestamp") == trigger_entry["timestamp"]):
+                    t["status"] = status
+                    t["completed_at"] = datetime.now().isoformat()
+                    break
+            with open(trigger_path, "w") as f:
+                json.dump(triggers, f, indent=2)
+        except (json.JSONDecodeError, OSError, KeyError) as e:
+            logger.debug("Could not update trigger status: %s", e)

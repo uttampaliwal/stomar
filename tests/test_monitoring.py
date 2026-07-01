@@ -180,3 +180,87 @@ class TestSaveBaseline:
         with open(path) as f:
             data = json.load(f)
         assert data["accuracy"] == 0.53
+
+
+# ── Auto-retrain trigger ──
+
+class TestRetainTrigger:
+    """Critical drift on retrain-eligible metrics writes a trigger entry."""
+
+    def test_critical_oos_accuracy_queues_trigger(self, tmp_path):
+        monitor = ModelMonitor()
+        # Patch _run_retrain_pipeline so the test doesn't actually train models
+        monitor._run_retrain_pipeline = lambda ticker, path, entry: None
+
+        monitor.check_performance_drift("TEST.NS", 0.45, 0.53)
+
+        trigger_path = os.path.join(monitoring.MONITORING_DIR, "retrain_triggers.json")
+        assert os.path.exists(trigger_path), "retrain_triggers.json should be created"
+        with open(trigger_path) as f:
+            triggers = json.load(f)
+        assert len(triggers) >= 1
+        assert triggers[-1]["ticker"] == "TEST.NS"
+        assert triggers[-1]["metric"] == "oos_accuracy"
+        assert triggers[-1]["status"] == "queued"
+
+    def test_critical_feature_drift_queues_trigger(self):
+        monitor = ModelMonitor()
+        monitor._run_retrain_pipeline = lambda ticker, path, entry: None
+
+        np.random.seed(0)
+        baseline = np.random.randn(100, 5)
+        current = baseline + 10.0  # guaranteed critical drift
+
+        monitor.check_feature_drift("TEST.NS", baseline, current)
+
+        trigger_path = os.path.join(monitoring.MONITORING_DIR, "retrain_triggers.json")
+        assert os.path.exists(trigger_path)
+        with open(trigger_path) as f:
+            triggers = json.load(f)
+        metrics = [t["metric"] for t in triggers]
+        assert "feature_drift" in metrics
+
+    def test_warning_does_not_trigger_retrain(self):
+        monitor = ModelMonitor()
+        monitor._run_retrain_pipeline = lambda ticker, path, entry: None
+
+        # 5% drift → warning, not critical
+        monitor.check_performance_drift("TEST.NS", 0.50, 0.53)
+
+        trigger_path = os.path.join(monitoring.MONITORING_DIR, "retrain_triggers.json")
+        # Either file doesn't exist, or has no entries for this ticker
+        if os.path.exists(trigger_path):
+            with open(trigger_path) as f:
+                triggers = json.load(f)
+            # No critical-level triggers should have been added
+            critical = [t for t in triggers if t["ticker"] == "TEST.NS"]
+            assert len(critical) == 0
+
+    def test_prediction_drift_does_not_trigger_retrain(self):
+        """prediction_drift is not in the retrain trigger set."""
+        monitor = ModelMonitor()
+        monitor._run_retrain_pipeline = lambda ticker, path, entry: None
+
+        baseline = np.array([0.5, 0.5, 0.5])
+        current = np.array([0.8, 0.8, 0.8])
+        monitor.check_prediction_drift("TEST.NS", baseline, current)
+
+        trigger_path = os.path.join(monitoring.MONITORING_DIR, "retrain_triggers.json")
+        if os.path.exists(trigger_path):
+            with open(trigger_path) as f:
+                triggers = json.load(f)
+            pred_triggers = [t for t in triggers if t["metric"] == "prediction_drift"]
+            assert len(pred_triggers) == 0
+
+    def test_triggers_capped_at_200(self):
+        monitor = ModelMonitor()
+        monitor._run_retrain_pipeline = lambda ticker, path, entry: None
+
+        # Force 210 triggers by calling critical drift repeatedly
+        for _ in range(210):
+            monitor.check_performance_drift("TEST.NS", 0.40, 0.53)
+
+        trigger_path = os.path.join(monitoring.MONITORING_DIR, "retrain_triggers.json")
+        with open(trigger_path) as f:
+            triggers = json.load(f)
+        assert len(triggers) <= 200
