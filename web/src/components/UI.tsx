@@ -71,6 +71,34 @@ export function SectionHeader({ title, action }: { title: string; action?: React
   )
 }
 
+// ─── Page Header ───
+interface PageHeaderProps {
+  title: string
+  description?: string
+  badge?: React.ReactNode
+  children?: React.ReactNode
+  className?: string
+}
+
+export function PageHeader({ title, description, badge, children, className }: PageHeaderProps) {
+  return (
+    <div className={cn('flex flex-col gap-3 md:flex-row md:items-end md:justify-between', className)}>
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+          {badge && (
+            <span className="rounded-full border border-cyan/20 bg-cyan/10 px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-cyan">
+              {badge}
+            </span>
+          )}
+        </div>
+        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
 // ─── Empty State ───
 export function EmptyState({ message = 'No data available' }: { message?: string }) {
   return (

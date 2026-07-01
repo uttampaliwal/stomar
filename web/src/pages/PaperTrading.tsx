@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi, usePostApi } from '@/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
 
@@ -19,10 +19,23 @@ export default function PaperTrading() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Paper Trading</h1>
-        <p className="text-sm text-muted-foreground">Simulated execution with real prices</p>
-      </div>
+      <PageHeader
+        title="Paper Trading"
+        description="Simulated execution with real prices and built-in risk controls"
+        badge="Live"
+      />
+
+      <Card className="border-l-4 border-l-cyan bg-cyan/5">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold">CLI equivalent</p>
+            <p className="text-sm text-muted-foreground">The same workflow can be launched from the terminal for repeatable paper trading.</p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs text-muted-foreground">
+            python run_daily.py --paper-trade --capital 200000
+          </div>
+        </div>
+      </Card>
 
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
@@ -54,37 +67,37 @@ export default function PaperTrading() {
           {/* Order Form */}
           <SectionHeader title="Place Order" />
           <Card>
-            <div className="flex gap-3 items-end">
-              <div>
+            <div className="flex flex-col gap-3 md:flex-row md:items-end">
+              <div className="flex-1">
                 <label className="text-xs text-muted-foreground block mb-1">Ticker</label>
                 <select
                   value={form.ticker}
                   onChange={(e) => setForm({ ...form, ticker: e.target.value })}
-                  className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono"
                 >
                   {stocks?.stocks?.map((s: string) => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="w-full md:w-32">
                 <label className="text-xs text-muted-foreground block mb-1">Side</label>
                 <select
                   value={form.side}
                   onChange={(e) => setForm({ ...form, side: e.target.value })}
-                  className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono"
                 >
                   <option value="BUY">BUY</option>
                   <option value="SELL">SELL</option>
                 </select>
               </div>
-              <div>
+              <div className="w-full md:w-28">
                 <label className="text-xs text-muted-foreground block mb-1">Quantity</label>
                 <input
                   type="number"
                   value={form.quantity}
                   onChange={(e) => setForm({ ...form, quantity: parseInt(e.target.value) || 0 })}
-                  className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono w-24"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono"
                 />
               </div>
               <button
@@ -98,7 +111,7 @@ export default function PaperTrading() {
           </Card>
 
           {/* Positions */}
-          {positions?.positions?.length > 0 && (
+          {positions?.positions?.length > 0 ? (
             <>
               <SectionHeader title="Open Positions" />
               <Card className="overflow-x-auto">
@@ -132,10 +145,12 @@ export default function PaperTrading() {
                 </table>
               </Card>
             </>
+          ) : (
+            <EmptyState message="No open positions yet. Place an order to start the simulation." />
           )}
 
           {/* Trade Log */}
-          {trades?.trades?.length > 0 && (
+          {trades?.trades?.length > 0 ? (
             <>
               <SectionHeader title="Recent Trades" />
               <Card className="overflow-x-auto">
@@ -165,6 +180,8 @@ export default function PaperTrading() {
                 </table>
               </Card>
             </>
+          ) : (
+            <EmptyState message="The trade log will appear here after your first fill." />
           )}
         </>
       )}

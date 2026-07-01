@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader } from '@/components/UI'
 import { useApi, usePostApi } from '@/hooks/useApi'
 import { formatCurrency, formatPercent } from '@/lib/utils'
 import { Brain, TrendingUp, Shield, Zap, Activity, Target } from 'lucide-react'
@@ -32,17 +32,16 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Hero Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Command Center</h1>
-          <p className="text-sm text-muted-foreground mt-1">Quantitative intelligence terminal for NSE markets</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="Command Center"
+        description="Quantitative intelligence terminal for NSE markets"
+        badge={marketStatus.data?.status === 'Open' ? 'Live' : 'Warm-up'}
+      >
+        <div className="flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1.5">
           <div className={`h-2 w-2 rounded-full ${marketStatus.data?.status === 'Open' ? 'bg-emerald animate-pulse' : 'bg-rose'}`} />
           <span className="font-mono text-xs text-muted-foreground">{marketStatus.data?.status || 'Loading...'}</span>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -71,6 +70,18 @@ export default function Dashboard() {
           trend="up"
         />
       </div>
+
+      <Card className="border-l-4 border-l-cyan bg-cyan/5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold">Automation is wired to both the UI and the CLI</p>
+            <p className="text-sm text-muted-foreground">Use the dashboard for instant decisions, or run the same workflow from the terminal with the commands below.</p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs text-muted-foreground">
+            python run_daily.py --paper-trade
+          </div>
+        </div>
+      </Card>
 
       <SectionHeader title="Simple Decision Guide" />
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatPercent } from '@/lib/utils'
@@ -24,33 +24,41 @@ export default function Backtest() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Walk-Forward Backtest</h1>
-          <p className="text-sm text-muted-foreground">Train on 2 years, test on 6 months, rolling forward</p>
+      <PageHeader
+        title="Walk-Forward Backtest"
+        description="Train on 2 years, test on 6 months, rolling forward"
+        badge="Historical"
+      >
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-card/70 px-3 py-2">
+          <label className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Ticker</label>
+          <select
+            value={ticker}
+            onChange={(e) => setTicker(e.target.value)}
+            className="rounded-md border border-border bg-background px-2 py-1 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan"
+          >
+            {stocks.data?.stocks?.map((s: string) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
         </div>
-        <select
-          value={ticker}
-          onChange={(e) => setTicker(e.target.value)}
-          className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan"
-        >
-          {stocks.data?.stocks?.map((s: string) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-      </div>
+      </PageHeader>
 
       <Card className="border-l-4 border-l-cyan bg-cyan/5">
-        <p className="text-sm text-muted-foreground">
-          Train on <span className="font-semibold text-foreground">2 years</span> of data,
-          test on <span className="font-semibold text-foreground">6 months</span>,
-          then roll forward. Simulates real-world deployment where you don't know the future.
-        </p>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Train on <span className="font-semibold text-foreground">2 years</span> of data,
+            test on <span className="font-semibold text-foreground">6 months</span>,
+            then roll forward. This mirrors the same historical validation path used by the CLI runner.
+          </p>
+          <div className="rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs text-muted-foreground">
+            python run_daily.py --backfill --days 252
+          </div>
+        </div>
       </Card>
 
       {/* Inputs */}
       <Card>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
             <label className="text-xs text-muted-foreground uppercase block mb-1">Starting Capital</label>
             <input type="number" value={capital} onChange={(e) => setCapital(Number(e.target.value))}
