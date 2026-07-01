@@ -13,22 +13,27 @@ Usage:
     pipeline.run()  # detects gaps, backfills, runs daily, paper trades
 """
 
+import json
 import logging
 import os
 import sys
+import tempfile
 import time
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 from src.core.constants import (
-    DATA_DIR, MODELS_DIR, LEDGER_DB, META_CONTROLLER_PATH,
+    DATA_DIR, MODELS_DIR, LEDGER_DB, META_CONTROLLER_PATH, MONITORING_DIR,
 )
 from src.data.data_fetcher import NSE_STOCKS
 from src.trading.ledger import Ledger
 from src.core.logging_config import get_logger
 
 logger = get_logger("auto_pipeline")
+
+# Path for pipeline failure records surfaced on the Monitoring page
+PIPELINE_FAILURES_PATH = os.path.join(MONITORING_DIR, "pipeline_failures.json")
 
 
 def _is_business_day(dt) -> bool:
@@ -80,6 +85,46 @@ class AutoPipeline:
         if len(self._log_lines) > 200:
             self._log_lines = self._log_lines[-100:]
         logger.info(msg)
+
+    # ── Failure notification ─────────────────────────────────────────────────
+
+    def _record_failure(self, stage: str, error: str):
+        """Persist a pipeline failure to MONITORING_DIR/pipeline_failures.json.
+
+        The Monitoring page polls this file and displays a banner when failures
+        exist from the last 24 hours.
+        """
+        os.makedirs(MONITORING_DIR, exist_ok=True)
+        failures = []
+        if os.path.exists(PIPELINE_FAILURES_PATH):
+            try:
+                with open(PIPELINE_FAILURES_PATH) as f:
+                    failures = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                failures = []
+
+        failures.append({
+            "stage": stage,
+            "error": str(error)[:500],
+            "timestamp": datetime.now().isoformat(),
+        })
+        failures = failures[-100:]  # keep last 100 entries
+
+        # Atomic write
+        dir_name = os.path.dirname(PIPELINE_FAILURES_PATH) or "."
+        fd, tmp = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(failures, f, indent=2)
+            os.replace(tmp, PIPELINE_FAILURES_PATH)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+        logger.critical("Pipeline failure recorded | stage=%s | error=%s", stage, error)
 
     def run(self, force: bool = False) -> dict:
         """Run the full auto-pipeline.
@@ -152,6 +197,7 @@ class AutoPipeline:
             result["status"] = "error"
             result["errors"].append(str(e))
             logger.exception("Auto-pipeline failed")
+            self._record_failure(stage="pipeline", error=str(e))
         finally:
             self._running = False
             if self.ledger:
@@ -235,7 +281,12 @@ class AutoPipeline:
         return result
 
     def _run_daily(self, today: str) -> dict:
-        """Run the daily orchestrator."""
+        """Run the daily orchestrator.
+
+        Resets the RiskController's daily P&L counter at the start of each
+        new trading day (P0.4 fix) so the 2% daily loss limit is evaluated
+        on today's activity only, not accumulated across multiple days.
+        """
         self._log(f"Running daily orchestrator for {today}")
         try:
             import joblib
@@ -246,19 +297,50 @@ class AutoPipeline:
             if os.path.exists(META_CONTROLLER_PATH):
                 meta_controller = joblib.load(META_CONTROLLER_PATH)
 
+            # ── P0.4: reset daily P&L on the paper trader ─────────────────
+            paper_trader = None
+            try:
+                from src.trading.paper_trader import PaperTrader
+                from src.core.constants import PAPER_STATE_PATH
+                paper_trader = PaperTrader(initial_capital=200_000)
+                if os.path.exists(PAPER_STATE_PATH):
+                    paper_trader.load_state()
+                paper_trader.risk_controller.reset_daily()
+                self._log("Daily P&L counter reset on paper trader")
+            except Exception as e:
+                self._log(f"Paper trader init warning: {e}")
+            # ──────────────────────────────────────────────────────────────
+
             orchestrator = DailyOrchestrator(
                 tickers=self.tickers,
                 ledger=self.ledger,
                 meta_controller=meta_controller,
+                paper_trader=paper_trader,
             )
 
             summary = orchestrator.run(date=today)
             n_decisions = len(summary.get("decisions", []))
             n_errors = len(summary.get("errors", []))
+
+            # Persist updated paper trader state after the daily run
+            if paper_trader is not None:
+                try:
+                    paper_trader.save_state()
+                except Exception as e:
+                    self._log(f"Paper trader save warning: {e}")
+
+            if n_errors > 0:
+                self._record_failure(
+                    stage="daily_orchestrator",
+                    error=f"{n_errors} ticker errors: " +
+                          ", ".join(e.get("ticker", "?") for e in summary.get("errors", [])[:5])
+                )
+
             self._log(f"Daily complete: {n_decisions} decisions, {n_errors} errors")
             return {"decisions": n_decisions, "errors": n_errors}
         except Exception as e:
             self._log(f"Daily orchestrator error: {e}")
+            self._record_failure(stage="daily_orchestrator", error=str(e))
             return {"error": str(e), "decisions": 0}
 
     def _run_paper_trades(self) -> dict:
