@@ -3,7 +3,7 @@ import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Cell, Area, LineChart, BarChart
 } from 'recharts'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
@@ -145,18 +145,17 @@ export default function Predictions() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Predictions</h1>
-          <p className="text-sm text-muted-foreground">5-model ML ensemble signals</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-xs">
+      <PageHeader
+        title="Predictions"
+        description="5-model ML ensemble signals"
+        badge="Live"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-full border border-border bg-card/70 px-3 py-1.5 text-xs">
             <span className={`h-2 w-2 rounded-full ${isMarketOpen ? 'bg-emerald animate-pulse' : 'bg-rose'}`} />
             <span className="text-muted-foreground">{marketStatus}</span>
           </div>
-          <span className="text-xs text-muted-foreground font-mono">{now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+          <span className="rounded-full border border-border bg-card/70 px-3 py-1.5 text-xs font-mono text-muted-foreground">{now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
           <select
             value={ticker}
             onChange={(e) => setTicker(e.target.value)}
@@ -175,12 +174,12 @@ export default function Predictions() {
           <button
             onClick={handleTrain}
             disabled={training}
-            className="rounded-lg bg-cyan/90 hover:bg-cyan px-4 py-2 text-sm font-mono font-semibold text-black transition-colors disabled:opacity-50"
+            className="rounded-lg bg-cyan px-4 py-2 text-sm font-mono font-semibold text-black transition-colors hover:opacity-90 disabled:opacity-50"
           >
             {training ? 'Training...' : 'Train Model'}
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       {training && (
         <Card className="border-cyan/30 bg-cyan/5">

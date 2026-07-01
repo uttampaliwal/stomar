@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState } from '@/components/UI'
+import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 type SortKey = 'ticker' | 'ensemble_confidence' | 'meta_confidence' | 'consensus'
@@ -57,23 +57,19 @@ export default function Consensus() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🎯</span>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Signal Consensus</h1>
-            <p className="text-sm text-muted-foreground">Unified view across all modules — the only signal that matters</p>
-          </div>
-        </div>
+      <PageHeader
+        title="Signal Consensus"
+        description="Unified view across all modules — the only signal that matters"
+        badge="Consensus"
+      >
         <button
           onClick={refetch}
           disabled={loading}
-          className="rounded-lg bg-cyan/90 hover:bg-cyan px-4 py-2 text-sm font-mono font-semibold text-black transition-colors disabled:opacity-50"
+          className="rounded-lg bg-cyan px-4 py-2 text-sm font-mono font-semibold text-black transition-colors hover:opacity-90 disabled:opacity-50"
         >
           {loading ? 'Scanning...' : 'Scan Now'}
         </button>
-      </div>
+      </PageHeader>
 
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}

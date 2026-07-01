@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 type SortKey = 'ticker' | 'signal' | 'confidence' | 'price' | 'chg_5d' | 'rsi'
@@ -37,20 +37,19 @@ export default function Scanner() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Stock Scanner</h1>
-          <p className="text-sm text-muted-foreground">Multi-stock ML signal scan</p>
-        </div>
+      <PageHeader
+        title="Stock Scanner"
+        description="Multi-stock ML signal scan"
+        badge="Live"
+      >
         <button
           onClick={refetch}
           disabled={loading}
-          className="rounded-lg bg-cyan/90 hover:bg-cyan px-4 py-2 text-sm font-mono font-semibold text-black transition-colors disabled:opacity-50"
+          className="rounded-lg bg-cyan px-4 py-2 text-sm font-mono font-semibold text-black transition-colors hover:opacity-90 disabled:opacity-50"
         >
           {loading ? 'Scanning...' : 'Scan Now'}
         </button>
-      </div>
+      </PageHeader>
 
       {/* Info Banner */}
       <Card className="border-l-4 border-l-cyan bg-cyan/5">
@@ -68,7 +67,7 @@ export default function Scanner() {
         <Card className="text-center py-12">
           <p className="text-4xl mb-3">🔍</p>
           <h3 className="text-lg font-bold">No Trained Models</h3>
-          <p className="text-sm text-muted-foreground mt-1">Train models in the Predictions tab first.</p>
+          <p className="text-sm text-muted-foreground mt-1">Train models in the Predictions tab first, then refresh the scan.</p>
         </Card>
       )}
 
