@@ -1,0 +1,79 @@
+# ─── Version Control ───
+.git/
+.gitignore
+
+# ─── Secrets ───
+.env
+.env.local
+.env.*
+
+# ─── Python ───
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.venv/
+venv/
+ENV/
+
+# ─── Data (runtime artifacts — not needed in image) ───
+data/
+src/data/*.parquet
+src/data/*.pkl
+
+# ─── Models (trained weights — not needed in base image) ───
+models/
+src/models/*.pt
+src/models/*.pkl
+
+# ─── Runtime State ───
+*.db
+paper_state.json
+paper_session.json
+mf_state.json
+meta_controller.pkl
+meta_*_NS.pkl
+
+# ─── React / Node ───
+web/node_modules/
+web/dist/
+web/.vite/
+
+# ─── Testing ───
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ─── Linting ───
+.ruff_cache/
+
+# ─── IDE / Editor ───
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ─── Debug / Scratch ───
+debug/
+tmp/
+temp/
+archive/
+
+# ─── Logs ───
+*.log
+
+# ─── Docker ───
+Dockerfile
+.dockerignore
