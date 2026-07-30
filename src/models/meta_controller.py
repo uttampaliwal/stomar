@@ -1,7 +1,7 @@
 """Meta-controller: combines 14 signal modules into one decision.
 
-Uses contextual bandit (stacked logistic regression) to learn which
-combination of signals has historically predicted price moves.
+Uses regularized logistic regression with temporal cross-validation
+to learn which combination of signals has historically predicted price moves.
 
 The learned weights ARE the audit mechanism:
   high weight = module is currently predictive
@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.model_selection import TimeSeriesSplit
 
 logger = logging.getLogger(__name__)
 
@@ -35,19 +36,40 @@ SIGNAL_NAMES = [
     "volatility_forecast", "fundamental_score",
 ]
 
+# Defaults — overridden by settings at runtime
 MAX_POSITION_PCT = 0.10
 BUY_THRESHOLD = 0.6
 SELL_THRESHOLD = 0.4
 MIN_CONFIDENCE_TO_TRADE = 0.3
-MIN_SAMPLES_TO_TRAIN = 100
+MIN_SAMPLES_TO_TRAIN = 500
+META_CONTROLLER_C = 0.1
 
 
 class MetaController:
-    """Combines signal modules into one decision via contextual bandit."""
+    """Combines signal modules into one decision via regularized regression."""
 
     def __init__(self):
         self.model = None
         self.weights = None
+        self._load_settings()
+
+    def _load_settings(self):
+        """Load configurable thresholds from settings."""
+        try:
+            from src.core.settings import settings
+            self.max_position_pct = getattr(settings, "max_position_pct", MAX_POSITION_PCT)
+            self.buy_threshold = getattr(settings, "buy_threshold", BUY_THRESHOLD)
+            self.sell_threshold = getattr(settings, "sell_threshold", SELL_THRESHOLD)
+            self.min_confidence_to_trade = getattr(settings, "min_confidence_to_trade", MIN_CONFIDENCE_TO_TRADE)
+            self.min_samples_to_train = getattr(settings, "min_samples_to_train", MIN_SAMPLES_TO_TRAIN)
+            self.meta_controller_c = getattr(settings, "meta_controller_c", META_CONTROLLER_C)
+        except Exception:
+            self.max_position_pct = MAX_POSITION_PCT
+            self.buy_threshold = BUY_THRESHOLD
+            self.sell_threshold = SELL_THRESHOLD
+            self.min_confidence_to_trade = MIN_CONFIDENCE_TO_TRADE
+            self.min_samples_to_train = MIN_SAMPLES_TO_TRAIN
+            self.meta_controller_c = META_CONTROLLER_C
 
     @staticmethod
     def _to_float(val, default=0.0) -> float:
@@ -106,24 +128,24 @@ class MetaController:
         prob = proba[0, 1]
         confidence = round(abs(prob - 0.5) * 2, 4)
 
-        if confidence < MIN_CONFIDENCE_TO_TRADE:
+        if confidence < self.min_confidence_to_trade:
             return {
                 "action": "HOLD",
                 "position_size": 0.0,
                 "confidence": confidence,
-                "reasoning": f"Confidence {confidence:.2f} below threshold {MIN_CONFIDENCE_TO_TRADE}",
+                "reasoning": f"Confidence {confidence:.2f} below threshold {self.min_confidence_to_trade}",
             }
 
-        if prob > BUY_THRESHOLD:
+        if prob > self.buy_threshold:
             action = "BUY"
-        elif prob < SELL_THRESHOLD:
+        elif prob < self.sell_threshold:
             action = "SELL"
         else:
             action = "HOLD"
 
         # Scale position size by confidence (higher confidence = larger position)
         if action != "HOLD":
-            position_size = min(MAX_POSITION_PCT, confidence * MAX_POSITION_PCT)
+            position_size = min(self.max_position_pct, confidence * self.max_position_pct)
         else:
             position_size = 0.0
 
@@ -159,10 +181,10 @@ class MetaController:
 
         if score > 0.2:
             action = "BUY"
-            position_size = min(MAX_POSITION_PCT, score * 0.2)
+            position_size = min(self.max_position_pct, score * 0.2)
         elif score < -0.2:
             action = "SELL"
-            position_size = min(MAX_POSITION_PCT, abs(score) * 0.2)
+            position_size = min(self.max_position_pct, abs(score) * 0.2)
         else:
             action = "HOLD"
             position_size = 0.0
@@ -175,15 +197,20 @@ class MetaController:
         }
 
     def train(self, ledger) -> dict:
-        """Retrain on ledger history. Returns accuracy metrics."""
+        """Retrain on ledger history using temporal cross-validation.
+
+        Uses TimeSeriesSplit to prevent look-ahead bias and provide robust
+        out-of-sample estimates. The final model is trained on all data
+        with the regularization strength found by cross-validation.
+        """
         decisions = ledger.get_decisions()
         resolved = [d for d in decisions if d["actual_direction"] is not None]
 
-        if len(resolved) < MIN_SAMPLES_TO_TRAIN:
+        if len(resolved) < self.min_samples_to_train:
             return {
                 "status": "insufficient_data",
                 "n_samples": len(resolved),
-                "required": MIN_SAMPLES_TO_TRAIN,
+                "required": self.min_samples_to_train,
             }
 
         # Reverse to chronological order (ledger returns DESC)
@@ -200,30 +227,83 @@ class MetaController:
                 "message": "All resolved decisions have the same direction",
             }
 
-        split = int(len(X) * 0.8)
-        X_train, X_test = X[:split], X[split:]
-        y_train, y_test = y[:split], y[split:]
+        # ── Temporal cross-validation ─────────────────────────────────────
+        n_splits = min(5, max(2, len(X) // 100))
+        tscv = TimeSeriesSplit(n_splits=n_splits)
 
-        base_model = LogisticRegression(C=1.0, max_iter=1000, class_weight="balanced")
-        base_model.fit(X_train, y_train)
+        fold_accuracies = []
+        fold_models = []
+
+        for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+            X_train, X_test = X[train_idx], X[test_idx]
+            y_train, y_test = y[train_idx], y[test_idx]
+
+            # Skip folds where a class is missing
+            if len(np.unique(y_train)) < 2 or len(np.unique(y_test)) < 2:
+                continue
+
+            base = LogisticRegression(
+                C=self.meta_controller_c,
+                max_iter=1000,
+                class_weight="balanced",
+                solver="lbfgs",
+            )
+            base.fit(X_train, y_train)
+
+            try:
+                calibrated = CalibratedClassifierCV(base, cv=3)
+                calibrated.fit(X_train, y_train)
+                acc = calibrated.score(X_test, y_test)
+                fold_models.append(calibrated)
+            except Exception:
+                acc = base.score(X_test, y_test)
+                fold_models.append(base)
+
+            fold_accuracies.append(acc)
+            logger.debug("Fold %d: accuracy=%.3f (train=%d, test=%d)",
+                         fold_idx, acc, len(train_idx), len(test_idx))
+
+        if not fold_accuracies:
+            return {
+                "status": "cv_failed",
+                "n_samples": len(X),
+                "message": "Temporal cross-validation produced no valid folds",
+            }
+
+        mean_acc = np.mean(fold_accuracies)
+        std_acc = np.std(fold_accuracies)
+
+        # ── Train final model on all data ─────────────────────────────────
+        final_model = LogisticRegression(
+            C=self.meta_controller_c,
+            max_iter=1000,
+            class_weight="balanced",
+            solver="lbfgs",
+        )
+        final_model.fit(X, y)
 
         try:
-            self.model = CalibratedClassifierCV(base_model, cv=3)
-            self.model.fit(X_train, y_train)
-            # Extract weights from the calibrated model's first estimator
+            self.model = CalibratedClassifierCV(final_model, cv=3)
+            self.model.fit(X, y)
             self.weights = dict(zip(SIGNAL_NAMES, self.model.calibrated_classifiers_[0].estimator.coef_[0]))
         except Exception:
-            self.model = base_model
-            self.weights = dict(zip(SIGNAL_NAMES, base_model.coef_[0]))
+            self.model = final_model
+            self.weights = dict(zip(SIGNAL_NAMES, final_model.coef_[0]))
 
-        accuracy = self.model.score(X_test, y_test)
-        logger.info(f"Meta-controller trained: accuracy={accuracy:.3f}, n_samples={len(X)}")
+        logger.info(
+            "Meta-controller trained: cv_accuracy=%.3f (+/- %.3f), n_samples=%d, "
+            "folds=%d, C=%.2f",
+            mean_acc, std_acc, len(X), len(fold_accuracies), self.meta_controller_c,
+        )
+
         return {
             "status": "trained",
-            "accuracy": round(accuracy, 4),
+            "accuracy": round(float(mean_acc), 4),
+            "accuracy_std": round(float(std_acc), 4),
             "n_samples": len(X),
-            "train_size": len(X_train),
-            "test_size": len(X_test),
+            "n_folds": len(fold_accuracies),
+            "fold_accuracies": [round(float(a), 4) for a in fold_accuracies],
+            "C": self.meta_controller_c,
         }
 
     def get_weights(self) -> dict:

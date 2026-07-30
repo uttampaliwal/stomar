@@ -65,6 +65,8 @@ if _HAS_PYDANTIC_SETTINGS:
         buy_threshold: float = Field(default=0.6, description="Buy signal threshold")
         sell_threshold: float = Field(default=0.4, description="Sell signal threshold")
         min_confidence_to_trade: float = Field(default=0.3, description="Minimum confidence to trade")
+        min_samples_to_train: int = Field(default=500, description="Min resolved samples to train meta-controller")
+        meta_controller_c: float = Field(default=0.1, description="Regularization strength (inverse) for meta-controller LogisticRegression")
 
         # ── Risk Controls ──────────────────────────────────────────────────
         max_daily_loss_pct: float = Field(default=0.02, description="Daily loss limit")
@@ -125,6 +127,8 @@ else:
             self.buy_threshold = float(os.environ.get("STOMAR_BUY_THRESHOLD", "0.6"))
             self.sell_threshold = float(os.environ.get("STOMAR_SELL_THRESHOLD", "0.4"))
             self.min_confidence_to_trade = float(os.environ.get("STOMAR_MIN_CONFIDENCE_TO_TRADE", "0.3"))
+            self.min_samples_to_train = int(os.environ.get("STOMAR_MIN_SAMPLES_TO_TRAIN", "500"))
+            self.meta_controller_c = float(os.environ.get("STOMAR_META_CONTROLLER_C", "0.1"))
             self.max_daily_loss_pct = float(os.environ.get("STOMAR_MAX_DAILY_LOSS_PCT", "0.02"))
             self.max_weekly_loss_pct = float(os.environ.get("STOMAR_MAX_WEEKLY_LOSS_PCT", "0.05"))
             self.max_drawdown_pct = float(os.environ.get("STOMAR_MAX_DRAWDOWN_PCT", "0.15"))
