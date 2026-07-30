@@ -5,6 +5,8 @@ import os
 import json
 import logging
 
+from src.core.constants import DATA_DIR
+
 logger = logging.getLogger(__name__)
 
 
@@ -16,8 +18,7 @@ def add_sentiment_features(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     available on those dates. This prevents look-ahead bias in backtests.
     """
     df = df.copy()
-    cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-    cache_file = os.path.join(cache_dir, f"sentiment_{ticker.replace('.','_')}.json")
+    cache_file = os.path.join(DATA_DIR, f"sentiment_{ticker.replace('.','_')}.json")
 
     score = 0.0
     if os.path.exists(cache_file):
@@ -44,8 +45,7 @@ def add_flow_features(df: pd.DataFrame) -> pd.DataFrame:
     joining on date and then shifting by 1 day.
     """
     df = df.copy()
-    cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-    cache_file = os.path.join(cache_dir, "fii_dii.parquet")
+    cache_file = os.path.join(DATA_DIR, "fii_dii.parquet")
 
     # Default: all zeros
     df["fii_net"] = 0.0
@@ -100,8 +100,7 @@ def add_pcr_features(df: pd.DataFrame) -> pd.DataFrame:
     Assign only to the most recent row to prevent look-ahead bias.
     """
     df = df.copy()
-    cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-    cache_file = os.path.join(cache_dir, "options_pcr.json")
+    cache_file = os.path.join(DATA_DIR, "options_pcr.json")
 
     pcr = 1.0
     max_pain = 0.0
