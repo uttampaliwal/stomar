@@ -375,7 +375,8 @@ def generate_model_signals(ticker, df_feat, lstm, gru, transformer, xgb, scaler,
     return {ticker: signals}
 
 
-def monte_carlo_backtest(equity_curve, trades, n_simulations=1000, seed=42):
+def monte_carlo_backtest(equity_curve, trades, n_simulations=1000, seed=42,
+                         risk_free_rate: float = RISK_FREE_RATE):
     """Run Monte Carlo simulation by shuffling trade outcomes.
 
     Tests robustness: if the strategy's edge is real, performance should
@@ -416,7 +417,7 @@ def monte_carlo_backtest(equity_curve, trades, n_simulations=1000, seed=42):
         if len(rets) > 1:
             ann_ret = float(np.mean(rets) * 252)
             ann_vol = float(np.std(rets) * np.sqrt(252))
-            sharpe = ann_ret / ann_vol if ann_vol > 0 else 0
+            sharpe = (ann_ret - risk_free_rate) / ann_vol if ann_vol > 0 else 0
             cummax = np.maximum.accumulate(eq_arr)
             dd = (eq_arr - cummax) / np.maximum(cummax, 1)
             max_dd = float(dd.min())

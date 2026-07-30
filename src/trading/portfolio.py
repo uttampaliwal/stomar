@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from src.core.constants import BROKERAGE_RATE, calculate_nse_costs
+from src.core.constants import BROKERAGE_RATE, RISK_FREE_RATE, calculate_nse_costs
 
 
 class Portfolio:
@@ -98,7 +98,8 @@ class Portfolio:
         equity = pd.Series([e["equity"] for e in self.equity_curve])
         rets = equity.pct_change().dropna()
         total_return = (equity.iloc[-1] - self.initial_capital) / self.initial_capital
-        sharpe = float(rets.mean() / rets.std() * np.sqrt(252)) if rets.std() > 0 else 0
+        daily_rf = RISK_FREE_RATE / 252
+        sharpe = float((rets.mean() - daily_rf) / rets.std() * np.sqrt(252)) if rets.std() > 0 else 0
         cummax = equity.cummax()
         drawdown = (equity - cummax) / cummax
         max_dd = float(drawdown.min())

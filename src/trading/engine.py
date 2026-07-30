@@ -221,6 +221,58 @@ class ExecutionEngine:
             return [o for o in self.filled_orders if o.ticker == ticker]
         return self.filled_orders
 
+    def get_state(self) -> dict:
+        """Serialize engine state for persistence."""
+        return {
+            "order_counter": self.order_counter,
+            "pending_orders": [self._order_to_dict(o) for o in self.pending_orders],
+            "filled_orders": [self._order_to_dict(o) for o in self.filled_orders],
+            "rejected_orders": [self._order_to_dict(o) for o in self.rejected_orders],
+        }
+
+    def restore_state(self, state: dict):
+        """Restore engine state from serialized dict."""
+        self.order_counter = state.get("order_counter", 0)
+        self.pending_orders = [self._order_from_dict(d) for d in state.get("pending_orders", [])]
+        self.filled_orders = [self._order_from_dict(d) for d in state.get("filled_orders", [])]
+        self.rejected_orders = [self._order_from_dict(d) for d in state.get("rejected_orders", [])]
+
+    @staticmethod
+    def _order_to_dict(order: Order) -> dict:
+        return {
+            "order_id": order.order_id,
+            "ticker": order.ticker,
+            "side": order.side.value,
+            "order_type": order.order_type.value,
+            "quantity": order.quantity,
+            "price": order.price,
+            "stop_price": order.stop_price,
+            "status": order.status.value,
+            "filled_price": order.filled_price,
+            "filled_quantity": order.filled_quantity,
+            "fill_cost": order.fill_cost,
+            "timestamp": order.timestamp,
+            "notes": order.notes,
+        }
+
+    @staticmethod
+    def _order_from_dict(d: dict) -> Order:
+        return Order(
+            order_id=d["order_id"],
+            ticker=d["ticker"],
+            side=OrderSide(d["side"]),
+            order_type=OrderType(d["order_type"]),
+            quantity=d["quantity"],
+            price=d.get("price", 0.0),
+            stop_price=d.get("stop_price", 0.0),
+            status=OrderStatus(d.get("status", "PENDING")),
+            filled_price=d.get("filled_price", 0.0),
+            filled_quantity=d.get("filled_quantity", 0),
+            fill_cost=d.get("fill_cost", 0.0),
+            timestamp=d.get("timestamp", ""),
+            notes=d.get("notes", ""),
+        )
+
 
 # ─── Slippage Models ───
 

@@ -24,10 +24,12 @@ def compute_covariance(returns: pd.DataFrame, method: str = "standard") -> np.nd
     return returns.cov().values
 
 
-def portfolio_stats(weights: np.ndarray, mean_returns: np.ndarray, cov_matrix: np.ndarray) -> dict:
+def portfolio_stats(weights: np.ndarray, mean_returns: np.ndarray, cov_matrix: np.ndarray,
+                    risk_free_rate: float = 0.0) -> dict:
     port_return = weights @ mean_returns
     port_vol = np.sqrt(weights @ cov_matrix @ weights)
-    sharpe = port_return / port_vol if port_vol > 0 else 0
+    excess = port_return - risk_free_rate
+    sharpe = excess / port_vol if port_vol > 0 else 0
     return {"return": port_return, "volatility": port_vol, "sharpe": sharpe}
 
 

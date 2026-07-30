@@ -373,6 +373,7 @@ class PaperTrader:
             "risk_daily_pnl": self.risk_controller.daily_pnl,
             "risk_weekly_pnl": self.risk_controller.weekly_pnl,
             "risk_peak_equity": self.risk_controller.peak_equity,
+            "engine": self.engine.get_state(),
         }
         import tempfile
         dir_name = os.path.dirname(path)
@@ -431,6 +432,11 @@ class PaperTrader:
         self.risk_controller.peak_equity = state.get(
             "risk_peak_equity", self.initial_capital)
         self.risk_controller.current_equity = self.get_equity()
+
+        engine_state = state.get("engine")
+        if engine_state:
+            self.engine.restore_state(engine_state)
+
         logger.info("State loaded from %s", path)
         return True
 
