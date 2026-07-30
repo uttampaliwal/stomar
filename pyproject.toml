@@ -4,29 +4,29 @@ version = "0.0.3"
 description = "State-of-the-art stock market prediction and trading suite for Indian NSE market"
 requires-python = ">=3.11"
 dependencies = [
-    "yfinance>=0.2.44",
-    "pandas>=2.2",
-    "numpy>=1.26",
-    "scikit-learn>=1.5",
-    "xgboost>=2.0",
-    "lightgbm>=4.0",
-    "torch>=2.0",
-    "ta>=0.11",
-    "joblib>=1.4",
-    "python-dotenv>=1.0",
-    "transformers>=4.30",
-    "scipy>=1.11",
-    "requests>=2.31",
-    "fastapi>=0.111.0",
-    "uvicorn[standard]>=0.30.0",
-    "gunicorn>=22.0",
-    "pydantic>=2.0",
+    "yfinance>=0.2.44,<3",
+    "pandas>=2.2,<4",
+    "numpy>=1.26,<3",
+    "scikit-learn>=1.5,<2",
+    "xgboost>=2.0,<3",
+    "lightgbm>=4.0,<5",
+    "torch>=2.0,<3",
+    "ta>=0.11,<1",
+    "joblib>=1.4,<2",
+    "python-dotenv>=1.0,<2",
+    "transformers>=4.30,<5",
+    "scipy>=1.11,<2",
+    "requests>=2.31,<3",
+    "fastapi>=0.111.0,<1",
+    "uvicorn[standard]>=0.30.0,<1",
+    "gunicorn>=22.0,<23",
+    "pydantic>=2.0,<3",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
-    "ruff>=0.4",
+    "pytest>=8.0,<9",
+    "ruff>=0.4,<1",
 ]
 
 [tool.pytest.ini_options]
