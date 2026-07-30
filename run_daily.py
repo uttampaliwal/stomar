@@ -151,10 +151,26 @@ def main():
                         help="Paper trading capital (default: 200000)")
     parser.add_argument("--schedule-hours", type=float, default=0,
                         help="Run the loop repeatedly every N hours (0 = disabled)")
+    parser.add_argument("--cleanup", action="store_true",
+                        help="Run data retention cleanup after daily loop (or standalone)")
+    parser.add_argument("--cleanup-dry-run", action="store_true",
+                        help="Dry-run mode for cleanup: report what would be deleted")
     args = parser.parse_args()
 
     tickers = args.ticker if args.ticker else NSE_STOCKS
     ledger = Ledger(args.db)  # None uses default data/stomar.db
+
+    # --- Cleanup-only mode ---
+    if args.cleanup or args.cleanup_dry_run:
+        from src.data.data_retention import DataRetentionPolicy, print_report
+        policy = DataRetentionPolicy()
+        report = policy.run_all(
+            active_tickers=tickers,
+            dry_run=args.cleanup_dry_run,
+        )
+        print_report(report)
+        ledger.close()
+        sys.exit(0)
 
     # --- Backfill mode ---
     if args.backfill:
@@ -289,6 +305,17 @@ def main():
     # Auto-execute paper trades if requested
     if not shutdown_requested and args.paper_trade and summary["decisions"]:
         run_paper_trades(summary["decisions"], ledger, capital=args.capital)
+
+    # Auto-cleanup after successful daily loop
+    if not shutdown_requested and (args.cleanup or not args.dry_run):
+        try:
+            from src.data.data_retention import DataRetentionPolicy, print_report
+            policy = DataRetentionPolicy()
+            cleanup_report = policy.run_all(active_tickers=tickers, dry_run=False)
+            if any(v for k, v in cleanup_report.items() if k != "timestamp" and k != "dry_run" and k != "disk_usage_before" and isinstance(v, (int, dict))):
+                print_report(cleanup_report)
+        except Exception as e:
+            logging.warning("Data retention cleanup failed: %s", e)
 
     ledger.close()
     sys.exit(0 if not summary["errors"] else 1)

@@ -15,6 +15,7 @@ PAPER_STATE_PATH = os.path.join(DATA_DIR, "paper_state.json")
 MF_STATE_PATH = os.path.join(DATA_DIR, "mf_state.json")
 MONITORING_DIR = os.path.join(DATA_DIR, "monitoring")
 FEATURE_VERSIONS_DIR = os.path.join(DATA_DIR, "feature_versions")
+ARCHIVE_DIR = os.path.join(DATA_DIR, "archive")
 
 # ─── Trading Costs (NSE India) — from settings ───
 BROKERAGE_RATE = settings.brokerage_rate

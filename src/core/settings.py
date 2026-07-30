@@ -87,6 +87,13 @@ if _HAS_PYDANTIC_SETTINGS:
         min_oos_sharpe: float = Field(default=0.0, description="Min out-of-sample Sharpe gate")
         max_drawdown_threshold: float = Field(default=0.30, description="Max drawdown gate for pipeline")
 
+        # ── Data Retention ─────────────────────────────────────────────────
+        cache_retention_days: int = Field(default=7, description="Days to keep stale cache files (parquet, pkl, json)")
+        ledger_retention_days: int = Field(default=90, description="Days to keep ledger rows before archival")
+        monitoring_retention_days: int = Field(default=30, description="Days to keep monitoring JSON files")
+        feature_versions_keep: int = Field(default=10, description="Number of recent feature version files to keep")
+        pipeline_logs_retention_days: int = Field(default=14, description="Days to keep pipeline log files")
+
 
     settings = Settings()
 else:
@@ -131,5 +138,11 @@ else:
             self.min_oos_accuracy = float(os.environ.get("STOMAR_MIN_OOS_ACCURACY", "0.50"))
             self.min_oos_sharpe = float(os.environ.get("STOMAR_MIN_OOS_SHARPE", "0.0"))
             self.max_drawdown_threshold = float(os.environ.get("STOMAR_MAX_DRAWDOWN_THRESHOLD", "0.30"))
+            # Data Retention
+            self.cache_retention_days = int(os.environ.get("STOMAR_CACHE_RETENTION_DAYS", "7"))
+            self.ledger_retention_days = int(os.environ.get("STOMAR_LEDGER_RETENTION_DAYS", "90"))
+            self.monitoring_retention_days = int(os.environ.get("STOMAR_MONITORING_RETENTION_DAYS", "30"))
+            self.feature_versions_keep = int(os.environ.get("STOMAR_FEATURE_VERSIONS_KEEP", "10"))
+            self.pipeline_logs_retention_days = int(os.environ.get("STOMAR_PIPELINE_LOGS_RETENTION_DAYS", "14"))
 
     settings = _FallbackSettings()

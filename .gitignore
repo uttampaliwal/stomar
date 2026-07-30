@@ -41,6 +41,7 @@ data/*.json
 data/feature_versions/
 data/pipeline_logs/
 data/monitoring/
+data/archive/
 src/data/*.parquet
 src/data/*.pkl
 
