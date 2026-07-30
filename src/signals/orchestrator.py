@@ -168,9 +168,10 @@ class DailyOrchestrator:
                 return None
 
             side = OrderSide.BUY if result["action"] == "BUY" else OrderSide.SELL
-            order = trader.place_order(ticker, side, OrderType.MARKET, quantity, price=price)
+            # Use execute_market_trade for instant fill at live price
+            order = trader.execute_market_trade(ticker, side, quantity, price=price)
 
-            if order is None or order.status.value != "FILLED":
+            if order is None or order.status.name != "FILLED":
                 logger.warning(f"Order not filled for {ticker}: {order}")
                 return None
 

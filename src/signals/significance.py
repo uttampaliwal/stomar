@@ -304,18 +304,20 @@ def backtest_predictions_to_sharpe(predictions, actuals, returns,
     return float(sharpe)
 
 
-def calculate_quant_stats(returns, benchmark_returns=None, risk_free_rate=0.07, periods_per_year=252) -> dict:
+def calculate_quant_stats(returns, benchmark_returns=None, risk_free_rate=None, periods_per_year=252) -> dict:
     """Calculate institutional quantitative statistics (QuantStats standard).
 
     Args:
         returns: Array or Series of strategy daily returns (e.g. 0.01 for 1%)
         benchmark_returns: Optional array or Series of benchmark daily returns
-        risk_free_rate: Annualized risk free rate (default 0.07 for 7% in India)
+        risk_free_rate: Annualized risk free rate. Defaults to RISK_FREE_RATE from constants.
         periods_per_year: Trading days per year (default 252)
 
     Returns:
         Dict with full institutional quant metrics tear sheet
     """
+    if risk_free_rate is None:
+        risk_free_rate = RISK_FREE_RATE
     returns = np.asarray(returns, dtype=float)
     returns = returns[~np.isnan(returns)]
 

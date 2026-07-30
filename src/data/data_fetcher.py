@@ -98,7 +98,17 @@ def get_live_price(ticker: str) -> float:
 
 
 def get_market_status() -> str:
-    now = datetime.now()
+    """Check NSE market status. Uses IST timezone to be server-agnostic."""
+    try:
+        from zoneinfo import ZoneInfo
+        ist = ZoneInfo("Asia/Kolkata")
+        now = datetime.now(ist)
+    except Exception:
+        # Fallback for environments without zoneinfo (add offset manually)
+        from datetime import timezone, timedelta
+        ist = timezone(timedelta(hours=5, minutes=30))
+        now = datetime.now(ist)
+
     if now.weekday() >= 5:
         return "Closed (Weekend)"
     market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
