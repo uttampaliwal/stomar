@@ -48,9 +48,15 @@ META_CONTROLLER_C = 0.1
 class MetaController:
     """Combines signal modules into one decision via regularized regression."""
 
+    # Discount applied to confidence when model lacks calibration.
+    # Uncalibrated logistic regression probabilities tend to be overconfident
+    # near the decision boundary; this penalty compensates.
+    UNCALIBRATED_CONFIDENCE_DISCOUNT = 0.7
+
     def __init__(self):
         self.model = None
         self.weights = None
+        self.is_calibrated = False
         self._load_settings()
 
     def _load_settings(self):
@@ -70,6 +76,22 @@ class MetaController:
             self.min_confidence_to_trade = MIN_CONFIDENCE_TO_TRADE
             self.min_samples_to_train = MIN_SAMPLES_TO_TRAIN
             self.meta_controller_c = META_CONTROLLER_C
+
+    @staticmethod
+    def _can_calibrate(y: np.ndarray, min_cv: int = 3) -> int:
+        """Return the maximum safe cv value for CalibratedClassifierCV.
+
+        Calibration requires enough samples of each class in every fold.
+        Returns 0 if calibration is not feasible, otherwise returns the
+        largest cv <= min_cv that the class distribution supports.
+        """
+        if len(y) < min_cv * 2:
+            return 0
+        class_counts = np.bincount(y.astype(int))
+        min_class_count = int(class_counts.min())
+        if min_class_count < 2:
+            return 0
+        return min(min_cv, min_class_count)
 
     @staticmethod
     def _to_float(val, default=0.0) -> float:
@@ -127,6 +149,11 @@ class MetaController:
             return self._rule_based_decide(signals)
         prob = proba[0, 1]
         confidence = round(abs(prob - 0.5) * 2, 4)
+
+        # Discount confidence when model lacks calibration to avoid
+        # overconfident position sizing from raw logistic probabilities.
+        if not self.is_calibrated:
+            confidence = round(confidence * self.UNCALIBRATED_CONFIDENCE_DISCOUNT, 4)
 
         if confidence < self.min_confidence_to_trade:
             return {
@@ -202,6 +229,11 @@ class MetaController:
         Uses TimeSeriesSplit to prevent look-ahead bias and provide robust
         out-of-sample estimates. The final model is trained on all data
         with the regularization strength found by cross-validation.
+
+        Calibration is attempted with an adaptive cv value. If the data
+        is too small or imbalanced for reliable calibration, the model
+        is stored as uncalibrated and confidence is discounted at
+        decision time.
         """
         decisions = ledger.get_decisions()
         resolved = [d for d in decisions if d["actual_direction"] is not None]
@@ -232,6 +264,7 @@ class MetaController:
         tscv = TimeSeriesSplit(n_splits=n_splits)
 
         fold_accuracies = []
+        fold_calibrated = []
         fold_models = []
 
         for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
@@ -250,18 +283,29 @@ class MetaController:
             )
             base.fit(X_train, y_train)
 
-            try:
-                calibrated = CalibratedClassifierCV(base, cv=3)
-                calibrated.fit(X_train, y_train)
-                acc = calibrated.score(X_test, y_test)
-                fold_models.append(calibrated)
-            except Exception:
+            fold_cv = self._can_calibrate(y_train, min_cv=3)
+            if fold_cv >= 2:
+                try:
+                    calibrated = CalibratedClassifierCV(base, cv=fold_cv)
+                    calibrated.fit(X_train, y_train)
+                    acc = calibrated.score(X_test, y_test)
+                    fold_models.append(calibrated)
+                    fold_calibrated.append(True)
+                except Exception as e:
+                    logger.warning("Fold %d calibration failed (cv=%d): %s — using uncalibrated",
+                                   fold_idx, fold_cv, e)
+                    acc = base.score(X_test, y_test)
+                    fold_models.append(base)
+                    fold_calibrated.append(False)
+            else:
                 acc = base.score(X_test, y_test)
                 fold_models.append(base)
+                fold_calibrated.append(False)
+                logger.debug("Fold %d: skipped calibration (min_class_count too low)", fold_idx)
 
             fold_accuracies.append(acc)
-            logger.debug("Fold %d: accuracy=%.3f (train=%d, test=%d)",
-                         fold_idx, acc, len(train_idx), len(test_idx))
+            logger.debug("Fold %d: accuracy=%.3f calibrated=%s (train=%d, test=%d)",
+                         fold_idx, acc, fold_calibrated[-1], len(train_idx), len(test_idx))
 
         if not fold_accuracies:
             return {
@@ -272,6 +316,7 @@ class MetaController:
 
         mean_acc = np.mean(fold_accuracies)
         std_acc = np.std(fold_accuracies)
+        n_calibrated = sum(fold_calibrated)
 
         # ── Train final model on all data ─────────────────────────────────
         final_model = LogisticRegression(
@@ -282,18 +327,29 @@ class MetaController:
         )
         final_model.fit(X, y)
 
-        try:
-            self.model = CalibratedClassifierCV(final_model, cv=3)
-            self.model.fit(X, y)
-            self.weights = dict(zip(SIGNAL_NAMES, self.model.calibrated_classifiers_[0].estimator.coef_[0]))
-        except Exception:
+        final_cv = self._can_calibrate(y, min_cv=3)
+        self.is_calibrated = False
+
+        if final_cv >= 2:
+            try:
+                self.model = CalibratedClassifierCV(final_model, cv=final_cv)
+                self.model.fit(X, y)
+                self.weights = dict(zip(SIGNAL_NAMES, self.model.calibrated_classifiers_[0].estimator.coef_[0]))
+                self.is_calibrated = True
+            except Exception as e:
+                logger.warning("Final calibration failed (cv=%d): %s — using uncalibrated model", final_cv, e)
+                self.model = final_model
+                self.weights = dict(zip(SIGNAL_NAMES, final_model.coef_[0]))
+        else:
+            logger.info("Skipping calibration: insufficient class samples (min_cv=%d)", final_cv)
             self.model = final_model
             self.weights = dict(zip(SIGNAL_NAMES, final_model.coef_[0]))
 
         logger.info(
             "Meta-controller trained: cv_accuracy=%.3f (+/- %.3f), n_samples=%d, "
-            "folds=%d, C=%.2f",
-            mean_acc, std_acc, len(X), len(fold_accuracies), self.meta_controller_c,
+            "folds=%d (calibrated=%d/%d), C=%.2f, model_calibrated=%s",
+            mean_acc, std_acc, len(X), len(fold_accuracies), n_calibrated,
+            len(fold_accuracies), self.meta_controller_c, self.is_calibrated,
         )
 
         return {
@@ -303,6 +359,8 @@ class MetaController:
             "n_samples": len(X),
             "n_folds": len(fold_accuracies),
             "fold_accuracies": [round(float(a), 4) for a in fold_accuracies],
+            "fold_calibrated": fold_calibrated,
+            "is_calibrated": self.is_calibrated,
             "C": self.meta_controller_c,
         }
 
@@ -319,8 +377,12 @@ class MetaController:
             path = META_CONTROLLER_PATH
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         import joblib
-        joblib.dump({"model": self.model, "weights": self.weights}, path)
-        logger.info("Meta-controller saved to %s", path)
+        joblib.dump({
+            "model": self.model,
+            "weights": self.weights,
+            "is_calibrated": self.is_calibrated,
+        }, path)
+        logger.info("Meta-controller saved to %s (calibrated=%s)", path, self.is_calibrated)
 
     def load(self, path: str = None) -> bool:
         """Load trained model from disk. Returns True if loaded."""
@@ -335,7 +397,8 @@ class MetaController:
             state = joblib.load(path)
             self.model = state.get("model")
             self.weights = state.get("weights")
-            logger.info("Meta-controller loaded from %s", path)
+            self.is_calibrated = state.get("is_calibrated", False)
+            logger.info("Meta-controller loaded from %s (calibrated=%s)", path, self.is_calibrated)
             return True
         except Exception as e:
             logger.warning("Failed to load meta-controller: %s", e)
