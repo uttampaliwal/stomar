@@ -61,7 +61,10 @@ async def cache_middleware(request: Request, call_next):
     path = request.url.path
 
     if request.method == "GET" and any(path.startswith(p) for p in _CACHEABLE_PREFIXES):
-        cached = _response_cache.get(path)
+        cache_key = path
+        if request.url.query:
+            cache_key += "?" + request.url.query
+        cached = _response_cache.get(cache_key)
         if cached:
             ts, body = cached
             if time.time() - ts < _CACHE_TTL:
@@ -70,10 +73,13 @@ async def cache_middleware(request: Request, call_next):
     response = await call_next(request)
 
     if request.method == "GET" and any(path.startswith(p) for p in _CACHEABLE_PREFIXES):
+        cache_key = path
+        if request.url.query:
+            cache_key += "?" + request.url.query
         body = b""
         async for chunk in response.body_iterator:
             body += chunk if isinstance(chunk, bytes) else chunk.encode()
-        _response_cache[path] = (time.time(), body)
+        _response_cache[cache_key] = (time.time(), body)
         # Evict stale entries periodically
         if len(_response_cache) > 50:
             now = time.time()
