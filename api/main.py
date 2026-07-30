@@ -18,6 +18,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 _STOMAR_API_KEY = os.environ.get("STOMAR_API_KEY", "")
+_STOMAR_ENV = os.environ.get("STOMAR_ENV", "dev")
 
 # Mutable endpoints on these prefixes require a valid API key via X-API-Key header.
 _PROTECTED_PREFIXES = [
@@ -55,12 +56,25 @@ from api.routers import (
 
 app = FastAPI(title="StoMar API", version="0.0.3")
 
+if _STOMAR_ENV == "production":
+    _cors_origins = [
+        o.strip()
+        for o in os.environ.get("STOMAR_CORS_ORIGINS", "").split(",")
+        if o.strip()
+    ]
+    _cors_methods = ["GET", "POST"]
+    _cors_headers = ["Authorization", "Content-Type", "X-API-Key"]
+else:
+    _cors_origins = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+    _cors_methods = ["*"]
+    _cors_headers = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=_cors_methods,
+    allow_headers=_cors_headers,
 )
 
 
