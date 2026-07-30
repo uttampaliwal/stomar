@@ -14,11 +14,9 @@ try:
 except ImportError:
     pass
 
+from src.core.settings import settings
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-
-_STOMAR_API_KEY = os.environ.get("STOMAR_API_KEY", "")
-_STOMAR_ENV = os.environ.get("STOMAR_ENV", "dev")
 
 # Mutable endpoints on these prefixes require a valid API key via X-API-Key header.
 _PROTECTED_PREFIXES = [
@@ -56,10 +54,10 @@ from api.routers import (
 
 app = FastAPI(title="StoMar API", version="0.0.3")
 
-if _STOMAR_ENV == "production":
+if settings.env == "production":
     _cors_origins = [
         o.strip()
-        for o in os.environ.get("STOMAR_CORS_ORIGINS", "").split(",")
+        for o in settings.cors_origins.split(",")
         if o.strip()
     ]
     _cors_methods = ["GET", "POST"]
@@ -80,11 +78,11 @@ app.add_middleware(
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    if _STOMAR_API_KEY and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+    if settings.api_key and request.method in ("POST", "PUT", "PATCH", "DELETE"):
         path = request.url.path
         if any(path.startswith(p) for p in _PROTECTED_PREFIXES):
             provided = request.headers.get("x-api-key", "")
-            if not hmac.compare_digest(provided, _STOMAR_API_KEY):
+            if not hmac.compare_digest(provided, settings.api_key):
                 return Response(
                     content='{"detail":"Invalid or missing API key"}',
                     status_code=401,
@@ -93,7 +91,7 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 _response_cache: OrderedDict[str, tuple[float, bytes]] = {}
-_CACHE_TTL = 30  # seconds — short TTL for near-realtime feel
+_CACHE_TTL = settings.cache_ttl
 
 # Endpoints that are expensive and safe to cache briefly
 _CACHEABLE_PREFIXES = [
@@ -128,7 +126,7 @@ async def cache_middleware(request: Request, call_next):
             body += chunk if isinstance(chunk, bytes) else chunk.encode()
         _response_cache[cache_key] = (time.time(), body)
         # Evict stale entries periodically
-        if len(_response_cache) > 50:
+        if len(_response_cache) > settings.cache_max_entries:
             now = time.time()
             stale = [k for k, (ts, _) in _response_cache.items() if now - ts > _CACHE_TTL * 2]
             for k in stale:

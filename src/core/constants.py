@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+from src.core.settings import settings
+
 # ─── Paths ───
 PROJECT_ROOT = str(Path(__file__).resolve().parent.parent.parent)
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
@@ -14,27 +16,27 @@ MF_STATE_PATH = os.path.join(DATA_DIR, "mf_state.json")
 MONITORING_DIR = os.path.join(DATA_DIR, "monitoring")
 FEATURE_VERSIONS_DIR = os.path.join(DATA_DIR, "feature_versions")
 
-# ─── Trading Costs (NSE India) ───
-BROKERAGE_RATE = 0.0003          # 0.03% per side (Zerodha delivery)
-SLIPPAGE_RATE = 0.001            # 0.1% slippage estimate
-STT_RATE = 0.001                 # 0.1% Securities Transaction Tax (both buy & sell for delivery)
-EXCHANGE_CHARGE_RATE = 0.0000345 # NSE exchange transaction charges
-SEBI_FEES_RATE = 0.000001        # SEBI turnover fees
-STAMP_DUTY_BUY_RATE = 0.00015   # Stamp duty (buy side)
-GST_RATE = 0.18                  # 18% GST on brokerage + exchange charges
+# ─── Trading Costs (NSE India) — from settings ───
+BROKERAGE_RATE = settings.brokerage_rate
+SLIPPAGE_RATE = settings.slippage_rate
+STT_RATE = settings.stt_rate
+EXCHANGE_CHARGE_RATE = settings.exchange_charge_rate
+SEBI_FEES_RATE = settings.sebi_fees_rate
+STAMP_DUTY_BUY_RATE = settings.stamp_duty_buy_rate
+GST_RATE = settings.gst_rate
 
-# ─── Risk Parameters ───
-RISK_FREE_RATE = 0.065           # 6.5% Indian 10-Year G-Sec yield
+# ─── Risk Parameters — from settings ───
+RISK_FREE_RATE = settings.risk_free_rate
 MIN_DENOMINATOR = 0.001          # Guard against division by zero
 
 # ─── Trading Days ───
 TRADING_DAYS_PER_YEAR = 252      # Approximate NSE trading days per year
 
-# ─── Model Training ───
-DEFAULT_SEQ_LENGTH = 60          # LSTM/GRU/Transformer sequence length
-DEFAULT_EPOCHS = 40              # Training epochs
-DEFAULT_BATCH_SIZE = 32          # Training batch size
-DEFAULT_LEARNING_RATE = 0.001    # Adam learning rate
+# ─── Model Training — from settings ───
+DEFAULT_SEQ_LENGTH = settings.default_seq_length
+DEFAULT_EPOCHS = settings.default_epochs
+DEFAULT_BATCH_SIZE = settings.default_batch_size
+DEFAULT_LEARNING_RATE = settings.default_learning_rate
 
 # ─── Ensemble Weights (Equal by default) ───
 DEFAULT_ENSEMBLE_WEIGHTS = {
