@@ -506,22 +506,21 @@ class AutoPipeline:
         return result
 
     def _auto_install_scheduler(self) -> dict:
-        """Auto-install Windows Task Scheduler if not already present."""
+        """Auto-install cross-platform scheduler if not already present."""
         result = {"status": "skipped"}
         try:
-            import subprocess
-            TASK_NAME = "StoMar_Daily_Signal"
-            cmd = ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST"]
-            check = subprocess.run(cmd, capture_output=True, text=True)
+            from schedule_pipeline import check_status, install_task
 
-            if check.returncode == 0:
+            ret = check_status()
+            if ret == 0:
                 self._log("Scheduler already installed")
                 result["status"] = "already_installed"
                 return result
 
             # Not installed - install it
-            self._log("Installing Windows Task Scheduler (daily 4 PM)...")
-            from schedule_pipeline import install_task
+            import platform
+            scheduler_name = "Windows Task Scheduler" if platform.system() == "Windows" else "crontab"
+            self._log(f"Installing {scheduler_name} (daily 4 PM)...")
             ret = install_task("16:00")
             result["status"] = "installed" if ret == 0 else "failed"
             result["returncode"] = ret
@@ -532,7 +531,7 @@ class AutoPipeline:
         return result
 
     def install_scheduler(self) -> dict:
-        """Install Windows Task Scheduler for daily 4 PM run."""
+        """Install cross-platform scheduler for daily 4 PM run."""
         try:
             from schedule_pipeline import install_task
             result = install_task()
