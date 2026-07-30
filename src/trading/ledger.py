@@ -107,9 +107,10 @@ class Ledger:
             from src.core.constants import LEDGER_DB
             db_path = LEDGER_DB
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path)
+        self.conn = sqlite3.connect(db_path, timeout=10)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA busy_timeout = 10000")
         self._create_tables()
 
     def __enter__(self):
