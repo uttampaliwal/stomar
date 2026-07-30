@@ -2,7 +2,7 @@
 
 An autonomous quantitative trading system for the Indian NSE market. 5-model ML ensemble, meta-controller combining 14 signal modules, persistent SQLite ledger, paper trading with short selling, model interpretability, and a React dashboard with FastAPI backend.
 
-[![CI](https://github.com/uttamkumar66/stomar/actions/workflows/ci.yml/badge.svg)](https://github.com/uttamkumar66/stomar/actions/workflows/ci.yml)
+[![CI](https://github.com/uttampaliwal/stomar/actions/workflows/ci.yml/badge.svg)](https://github.com/uttampaliwal/stomar/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ---

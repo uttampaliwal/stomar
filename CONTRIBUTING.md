@@ -23,7 +23,7 @@ Thank you for your interest in contributing to StoMar! This document provides gu
    ```
 3. **Add upstream remote**:
    ```bash
-   git remote add upstream https://github.com/anomalyco/stomar.git
+   git remote add upstream https://github.com/uttampaliwal/stomar.git
    ```
 4. **Create a branch** for your feature/fix:
    ```bash
