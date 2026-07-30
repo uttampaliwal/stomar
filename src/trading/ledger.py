@@ -17,7 +17,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-SCHEMA = """
+SCHEMA_VERSION = 2
+
+SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS decisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL,
@@ -69,11 +71,23 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshots (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER NOT NULL
+);
+
+INSERT INTO schema_version (version) VALUES (1);
+
 CREATE INDEX IF NOT EXISTS idx_decisions_date ON decisions(date);
 CREATE INDEX IF NOT EXISTS idx_decisions_ticker ON decisions(ticker);
 CREATE INDEX IF NOT EXISTS idx_trades_ticker ON paper_trades(ticker);
 CREATE INDEX IF NOT EXISTS idx_trades_decision ON paper_trades(decision_id);
 """
+
+_MIGRATIONS: dict[int, str] = {
+    # Add new migrations here. Each key is the target version.
+    # Example for version 2:
+    # 2: "ALTER TABLE decisions ADD COLUMN new_signal REAL;",
+}
 
 SIGNAL_COLUMNS = [
     "ensemble_direction", "ensemble_confidence",
@@ -106,8 +120,26 @@ class Ledger:
         return False
 
     def _create_tables(self):
-        self.conn.executescript(SCHEMA)
+        cursor = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
+        )
+        if cursor.fetchone() is None:
+            self.conn.executescript(SCHEMA_V1)
+        self._migrate()
         self.conn.commit()
+
+    def _get_version(self) -> int:
+        row = self.conn.execute("SELECT version FROM schema_version").fetchone()
+        return row[0] if row else 0
+
+    def _migrate(self):
+        current = self._get_version()
+        for target in sorted(_MIGRATIONS):
+            if target <= current:
+                continue
+            logger.info(f"Migrating ledger schema: {current} -> {target}")
+            self.conn.executescript(_MIGRATIONS[target])
+            self.conn.execute("UPDATE schema_version SET version = ?", (target,))
 
     # --- Write operations ---
 

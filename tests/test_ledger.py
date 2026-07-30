@@ -59,6 +59,24 @@ def test_creates_indexes(ledger):
     assert "idx_decisions_ticker" in index_names
 
 
+def test_creates_schema_version(ledger):
+    row = ledger.conn.execute("SELECT version FROM schema_version").fetchone()
+    assert row is not None
+    assert row["version"] == 1
+
+
+def test_reopen_existing_db_preserves_version(ledger, sample_signals):
+    ledger.log_decision("2025-01-15", "RELIANCE.NS", sample_signals, "BUY", 0.05, 0.7)
+    db_path = ledger.db_path
+    ledger.close()
+    lg2 = Ledger(db_path)
+    row = lg2.conn.execute("SELECT version FROM schema_version").fetchone()
+    assert row["version"] == 1
+    decisions = lg2.get_decisions()
+    assert len(decisions) == 1
+    lg2.close()
+
+
 # --- log_decision ---
 
 def test_log_decision_returns_id(ledger, sample_signals):
