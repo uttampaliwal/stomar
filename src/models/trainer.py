@@ -14,7 +14,7 @@ from src.models.model import (
     build_lstm, build_gru, build_transformer,
     build_xgb_model, build_lgb_model, save_models, DEVICE,
 )
-from src.core.constants import DEFAULT_SEQ_LENGTH, DEFAULT_EPOCHS, DEFAULT_BATCH_SIZE, DEFAULT_LEARNING_RATE
+from src.core.constants import DEFAULT_SEQ_LENGTH, DEFAULT_EPOCHS, DEFAULT_BATCH_SIZE, DEFAULT_LEARNING_RATE, MODELS_DIR
 from src.core.logging_config import get_logger
 
 warnings.filterwarnings("ignore", category=UserWarning, module="torch")
@@ -342,13 +342,12 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
         # Save tree models and scaler only (no DL models)
         import joblib
         ticker_clean = ticker.replace(".", "_")
-        models_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
-        os.makedirs(models_dir, exist_ok=True)
-        joblib.dump(xgb_model, os.path.join(models_dir, f"{ticker_clean}_xgb.pkl"))
+        os.makedirs(MODELS_DIR, exist_ok=True)
+        joblib.dump(xgb_model, os.path.join(MODELS_DIR, f"{ticker_clean}_xgb.pkl"))
         if lgb_model is not None:
-            joblib.dump(lgb_model, os.path.join(models_dir, f"{ticker_clean}_lgb.pkl"))
-        joblib.dump(scaler, os.path.join(models_dir, f"{ticker_clean}_scaler.pkl"))
-        joblib.dump(lstm_features, os.path.join(models_dir, f"{ticker_clean}_features.pkl"))
+            joblib.dump(lgb_model, os.path.join(MODELS_DIR, f"{ticker_clean}_lgb.pkl"))
+        joblib.dump(scaler, os.path.join(MODELS_DIR, f"{ticker_clean}_scaler.pkl"))
+        joblib.dump(lstm_features, os.path.join(MODELS_DIR, f"{ticker_clean}_features.pkl"))
 
     logger.info("training_complete ticker=%s xgb=%.4f lgb=%.4f lstm=%.4f gru=%.4f tf=%.4f ensemble=%.4f",
                 ticker, xgb_acc, lgb_acc, lstm_acc, gru_acc, tf_acc, ensemble_acc)
@@ -365,7 +364,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
             X_meta, y_meta = meta_features
             if len(X_meta) >= 50:
                 meta_model = train_meta_learner(X_meta, y_meta)
-                meta_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", f"meta_{ticker.replace('.', '_')}.pkl")
+                meta_path = os.path.join(MODELS_DIR, f"meta_{ticker.replace('.', '_')}.pkl")
                 save_meta_model(meta_model, meta_path)
                 logger.info("meta_learner_trained ticker=%s samples=%d", ticker, len(X_meta))
     except Exception as e:

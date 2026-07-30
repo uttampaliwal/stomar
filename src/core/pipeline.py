@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import Optional
 
 from src.core.pipeline_state import PipelineCheckpoint
+from src.data.data_fetcher import NSE_STOCKS
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +28,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PipelineConfig:
     """Configuration for the retraining pipeline."""
-    tickers: list = field(default_factory=lambda: [
-        "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS",
-    ])
+    tickers: list = field(default_factory=lambda: list(NSE_STOCKS))
     lookback_period: str = "3y"
     min_oos_accuracy: float = 0.50
     min_oos_sharpe: float = 0.0
