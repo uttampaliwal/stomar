@@ -4,6 +4,7 @@ import sys
 import os
 import hmac
 import time
+import uuid
 from collections import OrderedDict
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -15,6 +16,9 @@ except ImportError:
     pass
 
 from src.core.settings import settings
+from src.core.logging_config import (
+    metrics, set_request_id, get_request_id, set_pipeline_context, clear_pipeline_context,
+)
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -77,6 +81,44 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Assign a correlation ID to every request for distributed tracing."""
+    request_id = request.headers.get("x-request-id", uuid.uuid4().hex[:16])
+    set_request_id(request_id)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    """Collect request metrics for Prometheus export."""
+    start = time.time()
+    response = await call_next(request)
+    duration = time.time() - start
+
+    path = request.url.path
+    # Normalize path to avoid high-cardinality labels (skip IDs, query params)
+    if path.startswith("/api/"):
+        parts = path.split("/")
+        normalized = "/".join(parts[:4]) if len(parts) > 4 else path
+    else:
+        normalized = path
+
+    metrics.inc("http_requests_total", {
+        "method": request.method,
+        "path": normalized,
+        "status": str(response.status_code),
+    })
+    metrics.observe("http_request_duration_seconds", duration, {
+        "method": request.method,
+        "path": normalized,
+    })
+
+    return response
+
+
+@app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     if settings.api_key and request.method in ("POST", "PUT", "PATCH", "DELETE"):
         path = request.url.path
@@ -113,6 +155,7 @@ async def cache_middleware(request: Request, call_next):
         if cached:
             ts, body = cached
             if time.time() - ts < _CACHE_TTL:
+                metrics.inc("cache_hits_total")
                 return Response(content=body, media_type="application/json", headers={"X-Cache": "HIT"})
 
     response = await call_next(request)
@@ -131,6 +174,7 @@ async def cache_middleware(request: Request, call_next):
             stale = [k for k, (ts, _) in _response_cache.items() if now - ts > _CACHE_TTL * 2]
             for k in stale:
                 del _response_cache[k]
+        metrics.inc("cache_misses_total")
         return Response(content=body, media_type="application/json", headers={"X-Cache": "MISS"})
 
     return response
@@ -163,3 +207,12 @@ app.include_router(ledger.router, prefix="/api/ledger", tags=["Ledger"])
 @app.get("/api/health")
 def health():
     return {"status": "ok", "version": "0.0.3"}
+
+
+@app.get("/api/metrics")
+def metrics_endpoint():
+    """Prometheus-compatible metrics endpoint."""
+    return Response(
+        content=metrics.export_prometheus(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )

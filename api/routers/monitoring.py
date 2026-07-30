@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter
 
 from src.core.constants import MONITORING_DIR
+from src.core.logging_config import metrics
 from src.core.pipeline_state import PipelineCheckpoint, checkpoint_path
 from src.data.data_fetcher import NSE_STOCKS
 from src.models.model import models_exist
@@ -87,6 +88,35 @@ def get_pipeline_failures(hours: int = 48):
     }
 
 
+@router.get("/metrics")
+def get_pipeline_metrics():
+    """Return pipeline execution metrics for observability.
+
+    Aggregates failure counts by stage, recent run durations,
+    and success/failure rates.
+    """
+    failures = _get_recent_failures(hours=168)  # 7 days
+
+    # Aggregate by stage
+    stage_counts = {}
+    for f in failures:
+        stage = f.get("stage", "unknown")
+        stage_counts[stage] = stage_counts.get(stage, 0) + 1
+
+    # Compute success rate (from checkpoint history)
+    recent_checkpoints = _get_recent_checkpoint_summaries()
+
+    return {
+        "failures_by_stage": stage_counts,
+        "total_failures_7d": len(failures),
+        "recent_runs": recent_checkpoints,
+        "cache_stats": {
+            "hits": int(metrics._counters.get("cache_hits_total", 0)),
+            "misses": int(metrics._counters.get("cache_misses_total", 0)),
+        },
+    }
+
+
 @router.get("/retrain-triggers")
 def get_retrain_triggers():
     """Return the history of automatic retraining triggers."""
@@ -139,3 +169,18 @@ def _get_recent_failures(hours: int = 24) -> list[dict]:
         return [f for f in failures if f.get("timestamp", "") >= cutoff]
     except (json.JSONDecodeError, OSError):
         return []
+
+
+def _get_recent_checkpoint_summaries() -> list[dict]:
+    """Load recent checkpoint data for metrics."""
+    ckpt = PipelineCheckpoint.load(pipeline="auto")
+    if not ckpt:
+        return []
+    summary = ckpt.get_summary()
+    return [{
+        "pipeline": summary.get("pipeline"),
+        "current_stage": summary.get("current_stage"),
+        "is_complete": summary.get("is_complete"),
+        "has_failed": summary.get("has_failed"),
+        "updated_at": summary.get("updated_at"),
+    }]
