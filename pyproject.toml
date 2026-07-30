@@ -19,6 +19,7 @@ dependencies = [
     "requests>=2.31",
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.30.0",
+    "gunicorn>=22.0",
     "pydantic>=2.0",
 ]
 
