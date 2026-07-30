@@ -1,3 +1,9 @@
+"""Simple signal-scoring recommendation builder.
+
+Combines trend, momentum, sentiment, and volatility signals into a single
+BUY/SELL/HOLD recommendation with confidence and risk assessment.
+"""
+
 from dataclasses import dataclass
 from typing import Optional
 

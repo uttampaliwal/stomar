@@ -1,9 +1,6 @@
 import json
-import sys
-from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parent))
-from engine import build_recommendation
+from src.trading.recommendation import build_recommendation
 
 
 def main() -> None:
