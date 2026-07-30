@@ -2,13 +2,31 @@
 
 import sys
 import os
+import hmac
 import time
 from collections import OrderedDict
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+except ImportError:
+    pass
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+
+_STOMAR_API_KEY = os.environ.get("STOMAR_API_KEY", "")
+
+# Mutable endpoints on these prefixes require a valid API key via X-API-Key header.
+_PROTECTED_PREFIXES = [
+    "/api/paper-trading/",
+    "/api/automation/",
+    "/api/pipeline/train/",
+    "/api/pipeline/run",
+    "/api/ledger/",
+]
 
 from api.routers import (
     market,
@@ -44,6 +62,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if _STOMAR_API_KEY and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        path = request.url.path
+        if any(path.startswith(p) for p in _PROTECTED_PREFIXES):
+            provided = request.headers.get("x-api-key", "")
+            if not hmac.compare_digest(provided, _STOMAR_API_KEY):
+                return Response(
+                    content='{"detail":"Invalid or missing API key"}',
+                    status_code=401,
+                    media_type="application/json",
+                )
+    return await call_next(request)
 
 _response_cache: OrderedDict[str, tuple[float, bytes]] = {}
 _CACHE_TTL = 30  # seconds — short TTL for near-realtime feel
