@@ -1,0 +1,11 @@
+# PyTorch model weights
+*.pt filter=lfs diff=lfs merge=lfs -text
+
+# Pickle / joblib serialized objects
+*.pkl filter=lfs diff=lfs merge=lfs -text
+
+# Parquet data files
+*.parquet filter=lfs diff=lfs merge=lfs -text
+
+# SQLite databases
+*.db filter=lfs diff=lfs merge=lfs -text
