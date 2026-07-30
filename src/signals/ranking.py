@@ -13,6 +13,8 @@ import threading
 import numpy as np
 import pandas as pd
 
+from src.data.resilience import retry_with_backoff, yf_breaker
+
 logger = logging.getLogger(__name__)
 
 # Fundamental data cache (in-memory, per-session)
@@ -20,6 +22,7 @@ _fundamental_cache: dict[str, dict] = {}
 _fundamental_lock = threading.Lock()
 
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 def fetch_fundamentals(ticker: str) -> dict:
     """Fetch fundamental data for a stock via yfinance.
 
@@ -41,7 +44,7 @@ def fetch_fundamentals(ticker: str) -> dict:
     try:
         import yfinance as yf
         stock = yf.Ticker(ticker)
-        info = stock.info
+        info = yf_breaker.call(getattr, stock, "info", {})
 
         result = {
             "pe_ratio": float(info.get("trailingPE", 0.0) or 0.0),

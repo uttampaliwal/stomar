@@ -7,6 +7,7 @@ import logging
 import threading
 
 from src.core.constants import DATA_DIR
+from src.data.resilience import nse_breaker
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ def _get_session():
     session = requests.Session()
     session.headers.update(HEADERS)
     try:
-        session.get("https://www.nseindia.com", timeout=10)
+        nse_breaker.call(session.get, "https://www.nseindia.com", timeout=10)
         time.sleep(0.3)
     except Exception:
         pass
@@ -44,7 +45,7 @@ def fetch_fii_dii() -> pd.DataFrame:
 
     try:
         session = _get_session()
-        resp = session.get("https://www.nseindia.com/api/fiidiiTradeReact", timeout=15)
+        resp = nse_breaker.call(session.get, "https://www.nseindia.com/api/fiidiiTradeReact", timeout=15)
         resp.raise_for_status()
         data = resp.json()
 
@@ -112,7 +113,7 @@ def fetch_options_pcr() -> dict:
         try:
             session = _get_session()
             url = f"https://www.nseindia.com/api/option-chain-indices?symbol={symbol}"
-            resp = session.get(url, timeout=15)
+            resp = nse_breaker.call(session.get, url, timeout=15)
             if resp.status_code != 200:
                 continue
             data = resp.json()

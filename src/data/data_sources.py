@@ -18,6 +18,7 @@ import pandas as pd
 import yfinance as yf
 
 from src.data.data_validation import validate_data
+from src.data.resilience import retry_with_backoff, yf_breaker, nse_breaker
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,10 @@ class DataSource(ABC):
 class YFinanceSource(DataSource):
     """Primary source: yfinance."""
 
+    @retry_with_backoff(max_retries=2, base_delay=1.0)
     def fetch(self, ticker: str, period: str = "2y", interval: str = "1d") -> pd.DataFrame:
         stock = yf.Ticker(ticker)
-        df = stock.history(period=period, interval=interval)
+        df = yf_breaker.call(stock.history, period=period, interval=interval)
 
         if df.empty:
             raise ValueError(f"yfinance returned empty data for {ticker}")
@@ -64,6 +66,7 @@ class NSEArchiveSource(DataSource):
     This is best-effort and may break if NSE changes their website.
     """
 
+    @retry_with_backoff(max_retries=2, base_delay=2.0)
     def fetch(self, ticker: str, period: str = "2y", interval: str = "1d") -> pd.DataFrame:
         import requests
 
@@ -78,7 +81,7 @@ class NSEArchiveSource(DataSource):
         })
 
         try:
-            resp = session.get(url, timeout=15)
+            resp = nse_breaker.call(session.get, url, timeout=15)
             resp.raise_for_status()
         except Exception as e:
             raise ValueError(f"NSE archive fetch failed for {symbol}: {e}")

@@ -6,6 +6,7 @@ import time
 import logging
 
 from src.data.free_data import fetch_free_historical_data
+from src.data.resilience import retry_with_backoff, yf_breaker
 
 from src.core.constants import DATA_DIR
 
@@ -76,7 +77,7 @@ def fetch_stock_data(
         df = df[[c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]]
     except Exception:
         stock = yf.Ticker(ticker)
-        df = stock.history(period=period, interval=interval)
+        df = yf_breaker.call(stock.history, period=period, interval=interval)
         if df.empty:
             raise ValueError(f"No data found for ticker: {ticker}")
         df.columns = [c.lower() for c in df.columns]
@@ -88,9 +89,10 @@ def fetch_stock_data(
     return df
 
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 def get_live_price(ticker: str) -> float:
     stock = yf.Ticker(ticker)
-    data = stock.history(period="1d", interval="1m")
+    data = yf_breaker.call(stock.history, period="1d", interval="1m")
     if data.empty or "Close" not in data.columns:
         logger.warning("No live price data for %s", ticker)
         return 0.0

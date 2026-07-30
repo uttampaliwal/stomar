@@ -21,6 +21,7 @@ import requests
 import yfinance as yf
 
 from src.core.constants import DATA_DIR
+from src.data.resilience import retry_with_backoff, yf_breaker
 
 # Only suppress specific known noisy warnings, not all warnings
 warnings.filterwarnings("ignore", message=".*token.*")
@@ -80,12 +81,13 @@ def get_finbert():
 # Source fetchers
 # ---------------------------------------------------------------------------
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 def _fetch_yahoo_news(ticker: str, max_articles: int = 15) -> list:
     """Fetch from yfinance news endpoint."""
     articles = []
     try:
         stock = yf.Ticker(ticker)
-        news = stock.news
+        news = yf_breaker.call(getattr, stock, "news", [])
         if news:
             for item in news[:max_articles]:
                 title = item.get("title", "")
@@ -104,6 +106,7 @@ def _fetch_yahoo_news(ticker: str, max_articles: int = 15) -> list:
     return articles
 
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 def _fetch_google_news(ticker: str, max_articles: int = 15) -> list:
     """Fetch from Google News RSS."""
     articles = []
@@ -129,6 +132,7 @@ def _fetch_google_news(ticker: str, max_articles: int = 15) -> list:
     return articles
 
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 def _fetch_moneycontrol(ticker: str, max_articles: int = 10) -> list:
     """Fetch from MoneyControl news page."""
     articles = []
@@ -177,6 +181,7 @@ def _fetch_moneycontrol(ticker: str, max_articles: int = 10) -> list:
     return articles
 
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 def _fetch_economic_times(ticker: str, max_articles: int = 10) -> list:
     """Fetch from Economic Times search."""
     articles = []
@@ -208,6 +213,7 @@ def _fetch_economic_times(ticker: str, max_articles: int = 10) -> list:
     return articles
 
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 def _fetch_screener(ticker: str, max_articles: int = 10) -> list:
     """Fetch from Screener.in news page."""
     articles = []
