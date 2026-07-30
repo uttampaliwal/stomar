@@ -208,30 +208,35 @@ class Ledger:
     # --- Read operations ---
 
     def get_decisions(self, ticker: str = None, start_date: str = None,
-                      end_date: str = None) -> list[dict]:
+                      end_date: str = None, limit: int = None) -> list[dict]:
         """Query historical decisions."""
-        query = "SELECT * FROM decisions WHERE 1=1"
-        params = []
+        conditions = ["1=1"]
+        params: list = []
         if ticker:
-            query += " AND ticker = ?"
+            conditions.append("ticker = ?")
             params.append(ticker)
         if start_date:
-            query += " AND date >= ?"
+            conditions.append("date >= ?")
             params.append(start_date)
         if end_date:
-            query += " AND date <= ?"
+            conditions.append("date <= ?")
             params.append(end_date)
+        query = "SELECT * FROM decisions WHERE " + " AND ".join(conditions)
         query += " ORDER BY date DESC, id DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(int(limit))
         rows = self.conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
     def get_trades(self, ticker: str = None) -> list[dict]:
         """Query historical trades."""
-        query = "SELECT * FROM paper_trades WHERE 1=1"
-        params = []
+        conditions = ["1=1"]
+        params: list = []
         if ticker:
-            query += " AND ticker = ?"
+            conditions.append("ticker = ?")
             params.append(ticker)
+        query = "SELECT * FROM paper_trades WHERE " + " AND ".join(conditions)
         query += " ORDER BY created_at DESC"
         rows = self.conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
@@ -246,6 +251,14 @@ class Ledger:
     def get_performance(self, start_date: str = None,
                         end_date: str = None) -> dict:
         """Aggregate performance metrics from logged decisions."""
+        conditions = ["1=1"]
+        params: list = []
+        if start_date:
+            conditions.append("date >= ?")
+            params.append(start_date)
+        if end_date:
+            conditions.append("date <= ?")
+            params.append(end_date)
         query = """
             SELECT COUNT(*) as total_decisions,
                    SUM(CASE WHEN actual_return IS NOT NULL THEN 1 ELSE 0 END) as resolved,
@@ -254,15 +267,7 @@ class Ledger:
                    SUM(CASE WHEN action = 'BUY' THEN 1 ELSE 0 END) as buys,
                    SUM(CASE WHEN action = 'SELL' THEN 1 ELSE 0 END) as sells,
                    SUM(CASE WHEN action = 'HOLD' THEN 1 ELSE 0 END) as holds
-            FROM decisions WHERE 1=1
-        """
-        params = []
-        if start_date:
-            query += " AND date >= ?"
-            params.append(start_date)
-        if end_date:
-            query += " AND date <= ?"
-            params.append(end_date)
+            FROM decisions WHERE """ + " AND ".join(conditions)
         row = self.conn.execute(query, params).fetchone()
         d = dict(row)
         d["accuracy"] = (d["correct_predictions"] / d["resolved"]) if d["resolved"] and d["resolved"] > 0 else None
