@@ -16,6 +16,7 @@ Usage:
 import json
 import logging
 import os
+import signal
 import sys
 import tempfile
 import time
@@ -29,7 +30,7 @@ from src.core.constants import (
 from src.data.data_fetcher import NSE_STOCKS
 from src.trading.ledger import Ledger
 from src.core.logging_config import get_logger
-from src.core.pipeline_state import PipelineCheckpoint, StageInfo
+from src.core.pipeline_state import PipelineCheckpoint, StageInfo, StageStatus
 
 logger = get_logger("auto_pipeline")
 
@@ -65,6 +66,40 @@ class AutoPipeline:
         self._last_run_date = None
         self._status = "idle"
         self._log_lines = []
+        self._shutdown_requested = False
+        self._ckpt = None
+
+    def _setup_signal_handlers(self):
+        """Register signal handlers for graceful shutdown."""
+        def _handle_shutdown(signum, frame):
+            sig_name = signal.Signals(signum).name
+            logger.warning("Received %s — initiating graceful shutdown", sig_name)
+            self._log(f"Shutdown signal received ({sig_name})")
+            self._shutdown_requested = True
+            self._finalize_checkpoint_on_shutdown()
+
+        signal.signal(signal.SIGTERM, _handle_shutdown)
+        signal.signal(signal.SIGINT, _handle_shutdown)
+
+    def _finalize_checkpoint_on_shutdown(self):
+        """Save checkpoint with any RUNNING stages marked as failed."""
+        if self._ckpt is None:
+            return
+        try:
+            for stage_name, info in self._ckpt.stages.items():
+                if info.status == StageStatus.RUNNING:
+                    self._ckpt.fail(stage_name, "interrupted by signal")
+            self._ckpt.save()
+            logger.info("Checkpoint finalized on shutdown")
+        except Exception as e:
+            logger.error("Failed to finalize checkpoint on shutdown: %s", e)
+
+    def _check_shutdown(self) -> bool:
+        """Return True if shutdown was requested, logging the message."""
+        if self._shutdown_requested:
+            self._log("Shutdown requested — stopping pipeline")
+            return True
+        return False
 
     @property
     def status(self) -> str:
@@ -144,6 +179,7 @@ class AutoPipeline:
             self._log("Pipeline already running, skipping")
             return {"status": "already_running"}
 
+        self._setup_signal_handlers()
         self._running = True
         self._status = "running"
         result = {
@@ -168,6 +204,7 @@ class AutoPipeline:
         else:
             ckpt = PipelineCheckpoint(pipeline="auto")
             PipelineCheckpoint.clear()
+        self._ckpt = ckpt
 
         try:
             self.ledger = Ledger()
@@ -190,6 +227,9 @@ class AutoPipeline:
                     return result
 
             # Step 1: Detect and backfill missed days
+            if self._check_shutdown():
+                result["status"] = "interrupted"
+                return result
             if ckpt.stage_status("FETCH") not in ("completed", "skipped"):
                 ckpt.advance("FETCH")
                 backfill_result = self._backfill_missed_days(today, last_date)
@@ -208,6 +248,9 @@ class AutoPipeline:
                 result["backfill"] = ckpt.stages.get("FETCH", StageInfo()).result or {"days_backfilled": 0}
 
             # Step 2: Train meta-controller if needed
+            if self._check_shutdown():
+                result["status"] = "interrupted"
+                return result
             if ckpt.stage_status("TRAIN") not in ("completed", "skipped"):
                 ckpt.advance("TRAIN")
                 mc_result = self._ensure_meta_controller()
@@ -226,6 +269,9 @@ class AutoPipeline:
                 result["meta_controller"] = {"status": "skipped"}
 
             # Step 3: Run daily orchestrator
+            if self._check_shutdown():
+                result["status"] = "interrupted"
+                return result
             if ckpt.stage_status("DAILY") not in ("completed", "skipped"):
                 ckpt.advance("DAILY")
                 daily_result = self._run_daily(today)
@@ -241,6 +287,9 @@ class AutoPipeline:
                 result["daily"] = {"decisions": 0, "skipped": True}
 
             # Step 4: Auto-execute paper trades
+            if self._check_shutdown():
+                result["status"] = "interrupted"
+                return result
             if ckpt.stage_status("PAPER") not in ("completed", "skipped"):
                 ckpt.advance("PAPER")
                 paper_result = self._run_paper_trades()
@@ -286,6 +335,7 @@ class AutoPipeline:
                 pass
         finally:
             self._running = False
+            self._ckpt = None
             if self.ledger:
                 self.ledger.close()
 

@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import logging
+import signal
 import sys
 import os
 import time
@@ -119,6 +120,17 @@ def main():
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+    shutdown_requested = False
+
+    def _handle_shutdown(signum, frame):
+        nonlocal shutdown_requested
+        sig_name = signal.Signals(signum).name
+        logging.warning("Received %s — shutting down gracefully", sig_name)
+        shutdown_requested = True
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
 
     parser = argparse.ArgumentParser(description="StoMar Daily Signal Loop")
     parser.add_argument("--ticker", nargs="+", metavar="TICKER",
@@ -233,7 +245,7 @@ def main():
     )
 
     if args.schedule_hours > 0:
-        while True:
+        while not shutdown_requested:
             summary = orchestrator.run(dry_run=args.dry_run)
             print(f"\n=== Summary ===")
             print(f"Decisions: {len(summary['decisions'])}")
@@ -246,12 +258,20 @@ def main():
             for e in summary["errors"]:
                 print(f"  [ERR]  {e['ticker']:15s} {e['error']}")
 
+            if shutdown_requested:
+                break
             if args.paper_trade and summary["decisions"]:
                 run_paper_trades(summary["decisions"], ledger, capital=args.capital)
 
+            if shutdown_requested:
+                break
             ledger.close()
             print(f"\nSleeping for {args.schedule_hours:.2f} hours...")
-            time.sleep(args.schedule_hours * 3600)
+            # Sleep in small increments so we can react to shutdown signals
+            sleep_end = time.time() + args.schedule_hours * 3600
+            while time.time() < sleep_end and not shutdown_requested:
+                time.sleep(1)
+            ledger = Ledger(args.db)  # Re-open after sleep
 
     summary = orchestrator.run(dry_run=args.dry_run)
 
@@ -267,7 +287,7 @@ def main():
         print(f"  [ERR]  {e['ticker']:15s} {e['error']}")
 
     # Auto-execute paper trades if requested
-    if args.paper_trade and summary["decisions"]:
+    if not shutdown_requested and args.paper_trade and summary["decisions"]:
         run_paper_trades(summary["decisions"], ledger, capital=args.capital)
 
     ledger.close()
