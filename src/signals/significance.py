@@ -302,3 +302,108 @@ def backtest_predictions_to_sharpe(predictions, actuals, returns,
     daily_rf = risk_free_rate / 252
     sharpe = (mean_ret - daily_rf) / std_ret * np.sqrt(252)
     return float(sharpe)
+
+
+def calculate_quant_stats(returns, benchmark_returns=None, risk_free_rate=0.07, periods_per_year=252) -> dict:
+    """Calculate institutional quantitative statistics (QuantStats standard).
+
+    Args:
+        returns: Array or Series of strategy daily returns (e.g. 0.01 for 1%)
+        benchmark_returns: Optional array or Series of benchmark daily returns
+        risk_free_rate: Annualized risk free rate (default 0.07 for 7% in India)
+        periods_per_year: Trading days per year (default 252)
+
+    Returns:
+        Dict with full institutional quant metrics tear sheet
+    """
+    returns = np.asarray(returns, dtype=float)
+    returns = returns[~np.isnan(returns)]
+
+    if len(returns) == 0:
+        return {
+            "total_return": 0.0, "cagr": 0.0, "volatility": 0.0,
+            "sharpe": 0.0, "sortino": 0.0, "calmar": 0.0, "max_drawdown": 0.0,
+            "win_rate": 0.0, "profit_factor": 0.0, "expectancy": 0.0,
+            "var_95": 0.0, "cvar_95": 0.0, "omega": 0.0, "tail_ratio": 0.0,
+            "alpha": 0.0, "beta": 0.0, "n_periods": 0,
+        }
+
+    cum_returns = np.cumprod(1.0 + returns)
+    total_return = float(cum_returns[-1] - 1.0) if len(cum_returns) > 0 else 0.0
+
+    n_periods = len(returns)
+    years = max(n_periods / periods_per_year, 1.0 / periods_per_year)
+    cagr = float((1.0 + total_return) ** (1.0 / years) - 1.0) if (1.0 + total_return) > 0 else 0.0
+
+    volatility = float(returns.std() * np.sqrt(periods_per_year))
+    rf_daily = risk_free_rate / periods_per_year
+
+    excess_returns = returns - rf_daily
+    mean_excess = excess_returns.mean()
+    sharpe = float((mean_excess / returns.std()) * np.sqrt(periods_per_year)) if returns.std() > 0 else 0.0
+
+    downside_returns = returns[returns < 0]
+    downside_std = downside_returns.std() * np.sqrt(periods_per_year) if len(downside_returns) > 0 else 0.0
+    sortino = float((mean_excess * np.sqrt(periods_per_year)) / downside_std) if downside_std > 0 else 0.0
+
+    peak = np.maximum.accumulate(cum_returns)
+    drawdowns = (cum_returns - peak) / peak
+    max_drawdown = float(abs(drawdowns.min())) if len(drawdowns) > 0 else 0.0
+
+    calmar = float(cagr / max_drawdown) if max_drawdown > 0 else 0.0
+
+    wins = returns[returns > 0]
+    losses = returns[returns < 0]
+    win_rate = float(len(wins) / n_periods) if n_periods > 0 else 0.0
+    gross_profits = wins.sum() if len(wins) > 0 else 0.0
+    gross_losses = abs(losses.sum()) if len(losses) > 0 else 0.0
+    profit_factor = float(gross_profits / gross_losses) if gross_losses > 0 else (10.0 if gross_profits > 0 else 0.0)
+
+    avg_win = float(wins.mean()) if len(wins) > 0 else 0.0
+    avg_loss = float(abs(losses.mean())) if len(losses) > 0 else 0.0
+    expectancy = float((win_rate * avg_win) - ((1.0 - win_rate) * avg_loss))
+
+    var_95 = float(np.percentile(returns, 5))
+    cvar_95 = float(returns[returns <= var_95].mean()) if len(returns[returns <= var_95]) > 0 else var_95
+
+    # Omega ratio
+    pos_sum = np.sum(np.maximum(returns - rf_daily, 0))
+    neg_sum = np.sum(np.maximum(rf_daily - returns, 0))
+    omega = float(pos_sum / neg_sum) if neg_sum > 0 else 1.0
+
+    # Tail ratio (95th percentile / abs(5th percentile))
+    p95 = np.percentile(returns, 95)
+    p5 = abs(np.percentile(returns, 5))
+    tail_ratio = float(p95 / p5) if p5 > 0 else 1.0
+
+    alpha, beta = 0.0, 0.0
+    if benchmark_returns is not None:
+        bm = np.asarray(benchmark_returns, dtype=float)[:n_periods]
+        if len(bm) == n_periods and bm.std() > 0:
+            cov = np.cov(returns, bm)[0][1]
+            beta = float(cov / np.var(bm))
+            strat_ann = cagr
+            bm_cum = np.cumprod(1.0 + bm)[-1] - 1.0
+            bm_ann = (1.0 + bm_cum) ** (1.0 / years) - 1.0
+            alpha = float(strat_ann - (risk_free_rate + beta * (bm_ann - risk_free_rate)))
+
+    return {
+        "total_return": round(total_return, 4),
+        "cagr": round(cagr, 4),
+        "volatility": round(volatility, 4),
+        "sharpe": round(sharpe, 2),
+        "sortino": round(sortino, 2),
+        "calmar": round(calmar, 2),
+        "max_drawdown": round(max_drawdown, 4),
+        "win_rate": round(win_rate, 4),
+        "profit_factor": round(profit_factor, 2),
+        "expectancy": round(expectancy, 4),
+        "var_95": round(var_95, 4),
+        "cvar_95": round(cvar_95, 4),
+        "omega": round(omega, 2),
+        "tail_ratio": round(tail_ratio, 2),
+        "alpha": round(alpha, 4),
+        "beta": round(beta, 2),
+        "n_periods": n_periods,
+    }
+

@@ -23,6 +23,9 @@ def risk_analysis(ticker: str):
         report = generate_risk_report(returns, equity_curve)
         regime = detect_regime(df["close"])
 
+        from src.signals.significance import calculate_quant_stats
+        quant_tearsheet = calculate_quant_stats(returns)
+
         wins = returns[returns > 0]
         losses = returns[returns < 0]
         win_rate = len(wins) / len(returns) if len(returns) > 0 else 0
@@ -34,6 +37,7 @@ def risk_analysis(ticker: str):
             "ticker": ticker,
             "report": report,
             "regime": regime,
+            "quant_stats": quant_tearsheet,
             "kelly": {
                 "optimal_fraction": round(kelly, 4),
                 "win_rate": round(win_rate, 4),

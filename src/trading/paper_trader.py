@@ -99,10 +99,17 @@ class PaperTrader:
                            self._estimate_price(ticker, side) * quantity)
         holdings_value = sum(p.market_value for p in self.positions.values())
 
+        is_closing = False
+        if ticker in self.positions:
+            pos = self.positions[ticker]
+            if (side == OrderSide.SELL and pos.quantity > 0) or (side == OrderSide.BUY and pos.quantity < 0):
+                is_closing = True
+
         risk = self.risk_controller.check_order(
             order_value=estimated_value,
             current_holdings_value=holdings_value,
             ticker=ticker, holdings=self.positions,
+            is_closing=is_closing,
         )
 
         if not risk["approved"]:
@@ -112,11 +119,29 @@ class PaperTrader:
 
         return self.engine.submit_order(order)
 
+    def execute_market_trade(self, ticker: str, side: OrderSide, quantity: int, price: float) -> Order:
+        """Submit and immediately fill a market order using specified live price."""
+        order = self.place_order(ticker, side, OrderType.MARKET, quantity, price=price)
+        if order.status == OrderStatus.REJECTED:
+            return order
+        
+        # Immediate bar execution
+        self.on_bar(ticker, o=price, h=price, low=price, c=price, volume=1_000_000)
+        try:
+            self.save_state()
+        except Exception as e:
+            logger.warning("Failed to auto-save paper trading state: %s", e)
+        return order
+
+
     def on_bar(self, ticker: str, o: float, h: float, low: float, c: float,
                volume: int = 1_000_000) -> list[PaperTradeRecord]:
         """Process a bar through the engine and record fills."""
         from src.trading.engine import Bar
         bar = Bar(ticker, datetime.now().isoformat(), o, h, low, c, volume)
+        if ticker in self.positions:
+            self.positions[ticker].current_price = c
+
         filled_orders = self.engine.on_bar(bar)
 
         records = []
@@ -126,6 +151,8 @@ class PaperTrader:
 
             # Update position
             self._update_position(order)
+            if ticker in self.positions:
+                self.positions[ticker].current_price = order.filled_price
 
             # Update risk equity
             equity = self.get_equity()
@@ -176,7 +203,8 @@ class PaperTrader:
                 # Covering a short position
                 pos = self.positions[ticker]
                 cover_qty = min(order.filled_quantity, abs(pos.quantity))
-                realized = (pos.avg_cost - order.filled_price) * cover_qty
+                trade_costs = max(0.0, order.fill_cost - order.filled_price * order.filled_quantity)
+                realized = (pos.avg_cost - order.filled_price) * cover_qty - trade_costs
                 self.closed_positions.append({
                     "ticker": ticker,
                     "avg_cost": pos.avg_cost,
@@ -217,14 +245,16 @@ class PaperTrader:
             elif ticker in self.positions and self.positions[ticker].quantity > 0:
                 # Closing/reducing long position
                 pos = self.positions[ticker]
-                realized = (order.filled_price - pos.avg_cost) * min(order.filled_quantity, pos.quantity)
+                close_qty = min(order.filled_quantity, pos.quantity)
+                trade_costs = max(0.0, order.fill_cost - order.filled_price * order.filled_quantity)
+                realized = (order.filled_price - pos.avg_cost) * close_qty - trade_costs
                 net_proceeds = order.filled_price * order.filled_quantity - (order.fill_cost - order.filled_price * order.filled_quantity)
                 self.cash += net_proceeds
                 self.closed_positions.append({
                     "ticker": ticker,
                     "avg_cost": pos.avg_cost,
                     "sell_price": order.filled_price,
-                    "quantity": min(order.filled_quantity, pos.quantity),
+                    "quantity": close_qty,
                     "pnl": realized,
                 })
                 if order.filled_quantity >= pos.quantity:

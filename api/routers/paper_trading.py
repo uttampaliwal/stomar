@@ -45,20 +45,50 @@ def place_order(data: dict = Body(...)):
         side_str = data.get("side", "BUY").upper()
         quantity = int(data.get("quantity", 0))
 
+        if quantity <= 0:
+            return {"error": "Quantity must be greater than 0"}
+
         side = OrderSide.BUY if side_str == "BUY" else OrderSide.SELL
 
         from src.data.data_fetcher import get_live_price
-        price = get_live_price(ticker)
+        price = data.get("price")
+        if not price or float(price) <= 0:
+            price = get_live_price(ticker)
+        else:
+            price = float(price)
+
         if price is None or price <= 0:
             return {"error": f"Cannot get price for {ticker}"}
 
-        order = trader.place_order(ticker, side, OrderType.MARKET, quantity)
-        if order is None:
-            return {"order_id": None, "status": "rejected", "price": price}
+        order = trader.execute_market_trade(ticker, side, quantity, price=price)
+        if order is None or order.status.name == "REJECTED":
+            return {"order_id": order.order_id if order else None, "status": "rejected", "price": price}
+        
         return {
             "order_id": order.order_id,
             "status": order.status.value.lower() if hasattr(order.status, 'value') else str(order.status).lower(),
             "price": price,
+            "filled_quantity": order.filled_quantity,
+            "filled_price": order.filled_price,
+            "summary": trader.get_summary(),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/reset")
+def reset_paper_trading(data: dict = Body(default={})):
+    try:
+        trader = get_trader()
+        capital = float(data.get("capital", 200000))
+        trader.initial_capital = capital
+        trader.reset()
+        state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "paper_state.json")
+        trader.save_state(state_path)
+        return {
+            "status": "success",
+            "message": f"Paper trader reset with capital {capital}",
+            "state": trader.get_summary()
         }
     except Exception as e:
         return {"error": str(e)}
@@ -96,6 +126,8 @@ def trade_log():
                 "side": t.side,
                 "quantity": t.quantity,
                 "price": round(t.fill_price, 2),
+                "fill_cost": round(t.fill_cost, 2),
+                "pnl": round(t.pnl, 2),
                 "date": str(t.timestamp),
             })
         return {"trades": trades}
@@ -106,3 +138,4 @@ def trade_log():
 @router.get("/stocks")
 def available_stocks():
     return {"stocks": NSE_STOCKS}
+

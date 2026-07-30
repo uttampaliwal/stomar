@@ -61,7 +61,7 @@ class RiskController:
 
     def check_order(self, order_value: float, current_holdings_value: float,
                     ticker: str = "", holdings: dict = None,
-                    prices: dict = None) -> dict:
+                    prices: dict = None, is_closing: bool = False) -> dict:
         """Check if an order passes all risk controls.
 
         Returns:
@@ -75,9 +75,9 @@ class RiskController:
 
         total_equity = self.current_equity
 
-        # 1. Position concentration
+        # 1. Position concentration (skip if closing/reducing existing position)
         position_pct = order_value / max(total_equity, 1)
-        if position_pct > self.limits.max_position_pct:
+        if not is_closing and position_pct > self.limits.max_position_pct:
             max_value = total_equity * self.limits.max_position_pct
             checks.append({
                 "passed": False, "check": "position_concentration",
@@ -122,10 +122,10 @@ class RiskController:
         else:
             checks.append({"passed": True, "check": "max_drawdown"})
 
-        # 5. Total exposure
+        # 5. Total exposure (skip if closing/reducing existing position)
         total_exposure = current_holdings_value + order_value
         exposure_pct = total_exposure / max(self.current_equity, 1)
-        if exposure_pct > self.limits.max_total_exposure_pct:
+        if not is_closing and exposure_pct > self.limits.max_total_exposure_pct:
             checks.append({
                 "passed": False, "check": "total_exposure",
                 "message": (f"Total exposure {exposure_pct:.1%} > "

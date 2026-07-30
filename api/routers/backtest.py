@@ -43,13 +43,18 @@ def run_backtest(ticker: str):
         response = {
             "ticker": ticker,
             "ensemble_accuracy": stats.get("ensemble_accuracy", 0),
-            "annual_return": stats.get("annual_return", 0),
-            "sharpe": stats.get("sharpe", 0),
-            "sortino": stats.get("sortino", 0),
+            "annual_return": stats.get("annualized_return", stats.get("annual_return", 0)),
+            "sharpe": stats.get("sharpe_ratio", stats.get("sharpe", 0)),
+            "sortino": stats.get("sortino_ratio", stats.get("sortino", 0)),
+            "calmar": stats.get("calmar_ratio", stats.get("calmar", 0)),
             "max_drawdown": stats.get("max_drawdown", 0),
+            "volatility": stats.get("annualized_volatility", stats.get("volatility", 0)),
+            "var_95": stats.get("var_95", 0),
+            "cvar_95": stats.get("cvar_95", 0),
             "total_return": stats.get("total_return", 0),
             "total_trades": stats.get("total_trades", 0),
             "win_rate": stats.get("win_rate", 0),
+            "profit_factor": stats.get("profit_factor", 0),
         }
 
         if test_results:
