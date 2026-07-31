@@ -54,6 +54,7 @@ from api.routers import (
     paper_trading,
     mf_tracker,
     ledger,
+    wealth,
 )
 
 app = FastAPI(title="StoMar API", version="0.0.3")
@@ -205,6 +206,7 @@ app.include_router(correlation.router, prefix="/api/correlation", tags=["Correla
 app.include_router(paper_trading.router, prefix="/api/paper-trading", tags=["Paper Trading"])
 app.include_router(mf_tracker.router, prefix="/api/mf-tracker", tags=["MF Tracker"])
 app.include_router(ledger.router, prefix="/api/ledger", tags=["Ledger"])
+app.include_router(wealth.router, prefix="/api/wealth", tags=["Wealth"])
 
 
 @app.get("/api/health")
