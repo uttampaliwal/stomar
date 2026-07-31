@@ -57,7 +57,7 @@ _PROTECTED_PREFIXES = [
     "/api/ledger/",
 ]
 
-app = FastAPI(title="StoMar API", version="0.0.4")
+app = FastAPI(title="StoMar API", version="0.0.5")
 
 if settings.env == "production":
     _cors_origins = [
@@ -211,7 +211,7 @@ app.include_router(wealth.router, prefix="/api/wealth", tags=["Wealth"])
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "0.0.4"}
+    return {"status": "ok", "version": "0.0.5"}
 
 
 @app.get("/api/metrics")
@@ -219,5 +219,5 @@ def metrics_endpoint():
     """Prometheus-compatible metrics endpoint."""
     return Response(
         content=metrics.export_prometheus(),
-        media_type="text/plain; version=0.0.4; charset=utf-8",
+        media_type="text/plain; version=0.0.5; charset=utf-8",
     )
