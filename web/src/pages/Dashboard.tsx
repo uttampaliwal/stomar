@@ -3,7 +3,24 @@ import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader } from '@/
 import { useApi, usePostApi } from '@/hooks/useApi'
 import { Brain, TrendingUp, Shield, Zap, Activity, Target } from 'lucide-react'
 import { SimpleRecommendationCard } from '@/components/SimpleRecommendationCard'
-import type { PipelineStatusResponse, MonitoringResponse, RecommendationResponse, EnrichmentResponse, AutomationDecisionsResponse, AutomationRunResponse, PaperPositionSummary } from '../lib/api-types'
+import {
+  StatusPill,
+  RiskGauge,
+  ConsensusCard,
+  MLConsensusCard,
+  PortfolioHealthCard,
+  Sparkline,
+} from '@/components/TerminalComponents'
+import type {
+  PipelineStatusResponse,
+  MonitoringResponse,
+  RecommendationResponse,
+  EnrichmentResponse,
+  AutomationDecisionsResponse,
+  AutomationRunResponse,
+  PaperPositionSummary,
+  ConsensusResponse,
+} from '../lib/api-types'
 
 export default function Dashboard() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
@@ -15,6 +32,7 @@ export default function Dashboard() {
   const enrichment = useApi<EnrichmentResponse>(`/api/insights/enrichment/${ticker}`)
   const automation = useApi<AutomationDecisionsResponse>('/api/automation/decisions')
   const paperState = useApi<PaperPositionSummary>('/api/paper-trading/state')
+  const consensus = useApi<ConsensusResponse>('/api/consensus/')
   const runAutomation = usePostApi<AutomationRunResponse>('/api/automation/run')
 
   const quickSummary = useMemo(() => {
@@ -30,237 +48,277 @@ export default function Dashboard() {
     return `The system sees mixed conditions for ${ticker}. A cautious stance is recommended until the signal becomes clearer.`
   }, [recommendation.data, ticker])
 
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Command Center"
-        description="Quantitative intelligence terminal for NSE markets"
-        badge={marketStatus.data?.status === 'Open' ? 'Live' : 'Warm-up'}
-      >
-        <div className="flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1.5">
-          <div className={`h-2 w-2 rounded-full ${marketStatus.data?.status === 'Open' ? 'bg-emerald animate-pulse' : 'bg-rose'}`} />
-          <span className="font-mono text-xs text-muted-foreground">{marketStatus.data?.status || 'Loading...'}</span>
-        </div>
-      </PageHeader>
+  const modelVotes = useMemo(() => {
+    const pred = recommendation.data
+    if (!pred || !('details' in pred)) return []
+    const d = pred.details as Record<string, unknown>
+    return [
+      { name: 'LSTM', direction: d.lstm_dir === 1 ? 'UP' as const : 'DN' as const, confidence: (d.lstm_prob as number) || 0 },
+      { name: 'GRU', direction: d.gru_dir === 1 ? 'UP' as const : 'DN' as const, confidence: (d.gru_prob as number) || 0 },
+      { name: 'Transformer', direction: d.transformer_dir === 1 ? 'UP' as const : 'DN' as const, confidence: (d.transformer_prob as number) || 0 },
+      { name: 'XGBoost', direction: d.xgb_dir === 1 ? 'UP' as const : 'DN' as const, confidence: (d.xgb_prob_up as number) || 0 },
+      { name: 'LightGBM', direction: d.lgb_dir === 1 ? 'UP' as const : 'DN' as const, confidence: (d.lgb_prob_up as number) || 0 },
+    ]
+  }, [recommendation.data])
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+  const riskScore = useMemo(() => {
+    const alerts = monitoring.data?.alerts
+    if (!alerts) return 50
+    const critical = alerts.critical?.length || 0
+    const warning = alerts.warning?.length || 0
+    return Math.min(100, critical * 30 + warning * 10)
+  }, [monitoring.data])
+
+  const marketIsOpen = marketStatus.data?.status === 'Open'
+
+  return (
+    <div className="space-y-4 grid-lines min-h-screen">
+      {/* Terminal Status Bar */}
+      <div className="flex flex-wrap items-center gap-2 py-1">
+        <StatusPill
+          label="LIVE FEED"
+          value={marketIsOpen ? 'ONLINE' : 'OFFLINE'}
+          status={marketIsOpen ? 'active' : 'offline'}
+        />
+        <StatusPill
+          label="RISK ENGINE"
+          value={riskScore < 40 ? 'PASSED' : riskScore < 70 ? 'CAUTION' : 'HALT'}
+          status={riskScore < 40 ? 'online' : riskScore < 70 ? 'warning' : 'offline'}
+        />
+        <StatusPill
+          label="REGIME"
+          value="BULL MARKET"
+          status="online"
+        />
+        <StatusPill
+          label="MODELS"
+          value={`${pipeline.data?.trained || 0}/${pipeline.data?.total || 20}`}
+          status={(pipeline.data?.trained || 0) > 10 ? 'online' : 'warning'}
+        />
+        <StatusPill
+          label="SYSTEM"
+          value="ACTIVE"
+          status="online"
+        />
+      </div>
+
+      {/* Dense Stats Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
         <Stat
-          label="Stocks Tracked"
+          label="Stocks"
           value={pipeline.data?.total || '—'}
           sub={`${pipeline.data?.trained || 0} trained`}
           trend="up"
+          className="!p-2"
         />
         <Stat
-          label="Models Ready"
+          label="Models"
           value={pipeline.data?.trained || '—'}
           sub={`of ${pipeline.data?.total || 20}`}
           trend={(pipeline.data?.trained || 0) > 0 ? 'up' : 'neutral'}
+          className="!p-2"
         />
         <Stat
-          label="Critical Alerts"
+          label="Alerts"
           value={monitoring.data?.alerts?.critical?.length || 0}
-          sub={monitoring.data?.alerts?.warning?.length ? `${monitoring.data.alerts.warning.length} warnings` : 'All clear'}
+          sub={monitoring.data?.alerts?.warning?.length ? `${monitoring.data.alerts.warning.length} warn` : 'Clear'}
           trend={(monitoring.data?.alerts?.critical?.length || 0) > 0 ? 'down' : 'up'}
+          className="!p-2"
         />
         <Stat
-          label="System Status"
-          value="Active"
-          sub="FastAPI + React"
+          label="BUY"
+          value={consensus.data?.buy_count || 0}
+          sub="signals"
           trend="up"
+          className="!p-2"
+        />
+        <Stat
+          label="SELL"
+          value={consensus.data?.sell_count || 0}
+          sub="signals"
+          trend="down"
+          className="!p-2"
+        />
+        <Stat
+          label="HOLD"
+          value={consensus.data?.hold_count || 0}
+          sub="signals"
+          trend="neutral"
+          className="!p-2"
         />
       </div>
 
-      <Card className="border-l-4 border-l-cyan bg-cyan/5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm font-semibold">Automation is wired to both the UI and the CLI</p>
-            <p className="text-sm text-muted-foreground">Use the dashboard for instant decisions, or run the same workflow from the terminal with the commands below.</p>
+      {/* Main 3-Column Dashboard Grid */}
+      <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr_0.8fr]">
+        {/* Left Column: Decision + ML Consensus */}
+        <div className="space-y-4">
+          <SectionHeader title="Signal Analysis" />
+          <SimpleRecommendationCard data={recommendation.data ?? undefined} loading={recommendation.loading} />
+
+          {/* Stock selector */}
+          <Card className="!p-3">
+            <label className="text-[0.6rem] font-mono uppercase tracking-widest text-muted-foreground mb-1 block">Target Stock</label>
+            <select
+              value={ticker}
+              onChange={(e) => setTicker(e.target.value)}
+              className="w-full rounded border border-border bg-background/70 px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan"
+            >
+              {stocks.data?.stocks?.map((s: string) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <p className="mt-2 text-[0.65rem] text-muted-foreground leading-relaxed">{quickSummary}</p>
+          </Card>
+
+          {modelVotes.length > 0 && (
+            <MLConsensusCard
+              modelVotes={modelVotes}
+              ensembleDirection={recommendation.data?.action || 'HOLD'}
+              ensembleConfidence={recommendation.data?.confidence || 0}
+            />
+          )}
+        </div>
+
+        {/* Center Column: Quick Access + Consensus Grid */}
+        <div className="space-y-4">
+          <SectionHeader title="Quick Access" />
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { icon: Brain, label: 'Predictions', desc: 'ML signals', path: '/predictions', color: 'text-violet' },
+              { icon: Target, label: 'Consensus', desc: '14-signal', path: '/consensus', color: 'text-cyan' },
+              { icon: Shield, label: 'Risk', desc: 'VaR, Kelly', path: '/risk', color: 'text-rose' },
+              { icon: Activity, label: 'Market Pulse', desc: 'FII/DII', path: '/market-pulse', color: 'text-emerald' },
+              { icon: TrendingUp, label: 'Optimizer', desc: 'Allocation', path: '/optimizer', color: 'text-amber' },
+              { icon: Zap, label: 'Paper', desc: 'Simulate', path: '/paper-trading', color: 'text-cyan' },
+            ].map((item) => (
+              <a
+                key={item.path}
+                href={item.path}
+                className="group flex flex-col items-center gap-1.5 rounded-lg border border-border bg-card/40 p-3 transition-all hover:border-cyan/30 hover:bg-accent/50 text-center"
+              >
+                <item.icon className={`h-5 w-5 ${item.color} opacity-70 group-hover:opacity-100 transition-opacity`} />
+                <p className="text-xs font-semibold">{item.label}</p>
+                <p className="text-[0.55rem] text-muted-foreground">{item.desc}</p>
+              </a>
+            ))}
           </div>
-          <div className="rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs text-muted-foreground">
-            python run_daily.py --paper-trade
+
+          {/* Consensus Grid */}
+          <SectionHeader title="Consensus Signals" />
+          <div className="space-y-1 max-h-64 overflow-y-auto">
+            {consensus.data?.results?.slice(0, 10).map((r) => (
+              <ConsensusCard
+                key={r.ticker}
+                ticker={r.ticker}
+                signal={r.consensus}
+                confidence={r.ensemble_confidence}
+                regime={r.regime}
+              />
+            ))}
+            {consensus.loading && <Spinner size="sm" />}
           </div>
         </div>
-      </Card>
 
-      <SectionHeader title="Simple Decision Guide" />
-      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <SimpleRecommendationCard data={recommendation.data ?? undefined} loading={recommendation.loading} />
-        <Card className="space-y-3">
-          <label className="text-sm font-medium">Choose a stock to review</label>
-          <select
-            value={ticker}
-            onChange={(e) => setTicker(e.target.value)}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-cyan"
-          >
-            {stocks.data?.stocks?.map((s: string) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-          <p className="text-sm text-muted-foreground">{quickSummary}</p>
-          <div className="rounded-xl border border-emerald/20 bg-emerald/10 p-3 text-sm text-emerald">
-            Tip: use the backtest page to see how this signal behaved over historical data before taking any action.
-          </div>
-        </Card>
-      </div>
+        {/* Right Column: Risk + Portfolio + Automation */}
+        <div className="space-y-4">
+          <SectionHeader title="Risk & Portfolio" />
 
-      {/* Automation panel */}
-      <SectionHeader title="Automation & Journal" />
-      <div className="grid gap-4 lg:grid-cols-[1fr_0.9fr]">
-        <Card className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold">Run the daily signal loop</p>
-              <p className="text-xs text-muted-foreground">Generate fresh decisions, log them, and keep the journal current.</p>
-            </div>
-            <button
-              onClick={() => runAutomation.post({})}
-              className="rounded-lg bg-cyan px-3 py-2 text-sm font-semibold text-background transition hover:opacity-90"
-            >
-              {runAutomation.loading ? 'Running…' : 'Run Now'}
-            </button>
-          </div>
-          {runAutomation.data?.ok ? (
-            <div className="rounded-lg border border-emerald/20 bg-emerald/10 p-3 text-sm text-emerald">
-              Daily cycle completed with {runAutomation.data.summary?.decisions?.length || 0} decisions.
-            </div>
-          ) : runAutomation.error ? (
-            <div className="rounded-lg border border-rose/20 bg-rose/10 p-3 text-sm text-rose">{runAutomation.error}</div>
-          ) : null}
-        </Card>
-        <Card className="space-y-3">
-          <p className="text-sm font-semibold">Recent journal entries</p>
-          {automation.loading && <Spinner />}
-          {automation.error && <ErrorDisplay message={automation.error} />}
-          <div className="space-y-2">
-            {(automation.data?.decisions || []).slice(0, 6).map((entry, index) => (
-              <div key={`${entry.id || index}-${entry.ticker}`} className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2 text-sm">
-                <div>
-                  <p className="font-mono text-xs text-muted-foreground">{entry.ticker}</p>
-                  <p className="font-medium">{entry.action}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">{entry.date}</p>
-                  <p className="text-xs text-cyan">{entry.confidence?.toFixed(2) || '—'}</p>
-                </div>
-              </div>
-            ))}
-            {(automation.data?.decisions || []).length === 0 && !automation.loading && (
-              <p className="text-sm text-muted-foreground">No decisions have been logged yet.</p>
-            )}
-          </div>
-        </Card>
-      </div>
+          {/* Risk Gauges */}
+          <Card className="!p-3 space-y-3">
+            <RiskGauge value={riskScore} label="System Risk" size="sm" />
+            <RiskGauge value={35} label="Portfolio VaR" size="sm" />
+            <RiskGauge value={20} label="Drawdown" size="sm" />
+          </Card>
 
-      {/* Live context and automation snapshot */}
-      <SectionHeader title="Live Market Context" />
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <Card className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold">News & intraday enrichment</p>
-              <p className="text-xs text-muted-foreground">Price, momentum, and headline sentiment for {ticker}</p>
-            </div>
-            <Activity className="h-4 w-4 text-cyan" />
-          </div>
-          {enrichment.loading && <Spinner />}
-          {enrichment.error && <ErrorDisplay message={enrichment.error} />}
-          {enrichment.data && !('error' in enrichment.data) && (
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                <span className="text-muted-foreground">Price</span>
-                <span className="font-mono font-semibold">₹{enrichment.data.price?.toLocaleString() || '—'}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                <span className="text-muted-foreground">Change</span>
-                <span className={`font-mono font-semibold ${enrichment.data.change_pct >= 0 ? 'text-emerald' : 'text-rose'}`}>
-                  {enrichment.data.change_pct >= 0 ? '+' : ''}{enrichment.data.change_pct}%
-                </span>
-              </div>
-              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                <span className="text-muted-foreground">Sentiment</span>
-                <span className="font-medium">{enrichment.data.sentiment_label || 'Neutral'}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                <span className="text-muted-foreground">Headlines</span>
-                <span className="font-medium">{enrichment.data.headline_count || 0}</span>
-              </div>
-            </div>
-          )}
-        </Card>
-        <Card className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold">Paper trading snapshot</p>
-              <p className="text-xs text-muted-foreground">Risk-aware simulated account state</p>
-            </div>
-            <Shield className="h-4 w-4 text-amber" />
-          </div>
-          {paperState.loading && <Spinner />}
-          {paperState.error && <ErrorDisplay message={paperState.error} />}
+          {/* Portfolio Health */}
           {paperState.data && !('error' in paperState.data) && (
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                <span className="text-muted-foreground">Equity</span>
-                <span className="font-mono font-semibold">₹{Math.round(paperState.data.current_equity || 0).toLocaleString()}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                <span className="text-muted-foreground">Cash</span>
-                <span className="font-mono font-semibold">₹{Math.round(paperState.data.cash || 0).toLocaleString()}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
-                <span className="text-muted-foreground">Risk</span>
-                <span className={`font-medium ${paperState.data.risk_status?.halted ? 'text-rose' : 'text-emerald'}`}>
-                  {paperState.data.risk_status?.halted ? 'Halted' : 'Active'}
-                </span>
-              </div>
-            </div>
+            <PortfolioHealthCard
+              equity={paperState.data.current_equity || 0}
+              cash={paperState.data.cash || 0}
+              pnl={(paperState.data.current_equity || 0) - (paperState.data.initial_capital || 100000)}
+              riskStatus={paperState.data.risk_status?.halted ? 'HALTED' : 'Active'}
+            />
           )}
-        </Card>
-      </div>
 
-      {/* Quick Access Grid */}
-      <SectionHeader title="Quick Access" />
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        {[
-          { icon: Brain, label: 'Predictions', desc: 'ML ensemble signals', path: '/predictions', color: 'text-violet' },
-          { icon: Target, label: 'Consensus', desc: '14-signal consensus', path: '/consensus', color: 'text-cyan' },
-          { icon: Shield, label: 'Risk Analysis', desc: 'VaR, Kelly, drawdown', path: '/risk', color: 'text-rose' },
-          { icon: Activity, label: 'Market Pulse', desc: 'FII/DII flows, PCR', path: '/market-pulse', color: 'text-emerald' },
-          { icon: TrendingUp, label: 'Optimizer', desc: 'Portfolio allocation', path: '/optimizer', color: 'text-amber' },
-          { icon: Zap, label: 'Paper Trading', desc: 'Simulated execution', path: '/paper-trading', color: 'text-cyan' },
-        ].map((item) => (
-          <a
-            key={item.path}
-            href={item.path}
-            className="group flex items-center gap-3 rounded-xl border border-border bg-card/50 p-4 transition-all hover:border-cyan/30 hover:bg-accent/50"
-          >
-            <item.icon className={`h-8 w-8 ${item.color} opacity-70 group-hover:opacity-100 transition-opacity`} />
-            <div>
-              <p className="text-sm font-semibold">{item.label}</p>
-              <p className="text-xs text-muted-foreground">{item.desc}</p>
+          {/* Enrichment Quick View */}
+          {enrichment.data && !('error' in enrichment.data) && (
+            <Card className="!p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-mono text-[0.6rem] uppercase tracking-widest text-muted-foreground">{ticker}</span>
+                <Activity className="h-3 w-3 text-cyan" />
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[0.65rem] font-mono">
+                <div>
+                  <span className="text-muted-foreground">Price</span>
+                  <p className="font-bold">₹{enrichment.data.price?.toLocaleString() || '—'}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Change</span>
+                  <p className={`font-bold ${enrichment.data.change_pct >= 0 ? 'text-emerald' : 'text-rose'}`}>
+                    {enrichment.data.change_pct >= 0 ? '+' : ''}{enrichment.data.change_pct}%
+                  </p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Sentiment</span>
+                  <p className="font-bold">{enrichment.data.sentiment_label || 'Neutral'}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Headlines</span>
+                  <p className="font-bold">{enrichment.data.headline_count || 0}</p>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Automation */}
+          <Card className="!p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-mono text-[0.6rem] uppercase tracking-widest text-muted-foreground">Automation</span>
+              <button
+                onClick={() => runAutomation.post({})}
+                className="rounded bg-cyan px-2 py-1 text-[0.6rem] font-mono font-bold text-black transition hover:opacity-90"
+              >
+                {runAutomation.loading ? '...' : 'RUN'}
+              </button>
             </div>
-          </a>
-        ))}
+            {runAutomation.data?.ok && (
+              <p className="text-[0.6rem] text-emerald font-mono">
+                {runAutomation.data.summary?.decisions?.length || 0} decisions logged
+              </p>
+            )}
+            <div className="space-y-1 mt-1">
+              {(automation.data?.decisions || []).slice(0, 4).map((entry, index) => (
+                <div key={`${entry.id || index}-${entry.ticker}`} className="flex items-center justify-between text-[0.6rem] font-mono border-b border-border/50 pb-1">
+                  <span className="font-bold">{entry.ticker.replace('.NS', '')}</span>
+                  <span className={entry.action === 'BUY' ? 'text-emerald' : entry.action === 'SELL' ? 'text-rose' : 'text-amber'}>
+                    {entry.action}
+                  </span>
+                  <span className="text-muted-foreground">{entry.confidence?.toFixed(2) || '—'}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
       </div>
 
-      {/* Models Status */}
-      <SectionHeader title="Model Pipeline Status" />
-      <Card>
-        {pipeline.loading && <Spinner />}
-        {pipeline.error && <ErrorDisplay message={pipeline.error} />}
+      {/* Model Pipeline */}
+      <SectionHeader title="Model Pipeline" />
+      <Card className="!p-3">
+        {pipeline.loading && <Spinner size="sm" />}
         {pipeline.data && (
-          <div className="space-y-3">
-            <div className="flex gap-4 text-sm">
-              <span className="text-emerald font-mono">{pipeline.data.trained} trained</span>
-              <span className="text-amber font-mono">{pipeline.data.missing} pending</span>
+          <div className="space-y-2">
+            <div className="flex gap-3 text-xs font-mono">
+              <span className="text-emerald">{pipeline.data.trained} trained</span>
+              <span className="text-amber">{pipeline.data.missing} pending</span>
+              <span className="text-muted-foreground">|</span>
+              <span className="text-muted-foreground">{pipeline.data.total} total</span>
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1">
               {pipeline.data.trained_tickers?.map((t: string) => (
-                <span key={t} className="rounded-md bg-emerald/10 px-2 py-0.5 text-xs font-mono text-emerald border border-emerald/20">{t}</span>
+                <span key={t} className="rounded bg-emerald/10 px-1.5 py-0.5 text-[0.6rem] font-mono text-emerald border border-emerald/20">{t.replace('.NS', '')}</span>
               ))}
               {pipeline.data.missing_tickers?.map((t: string) => (
-                <span key={t} className="rounded-md bg-muted px-2 py-0.5 text-xs font-mono text-muted-foreground">{t}</span>
+                <span key={t} className="rounded bg-muted/30 px-1.5 py-0.5 text-[0.6rem] font-mono text-muted-foreground">{t.replace('.NS', '')}</span>
               ))}
             </div>
           </div>

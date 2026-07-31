@@ -12,7 +12,7 @@ import { useTheme } from './ThemeProvider'
 
 const navSections = [
   {
-    title: 'Core',
+    title: 'CORE',
     items: [
       { path: '/', label: 'Dashboard', icon: LayoutDashboard },
       { path: '/wealth-goals', label: 'Wealth Goals', icon: Coins },
@@ -22,7 +22,7 @@ const navSections = [
     ],
   },
   {
-    title: 'Intelligence',
+    title: 'INTELLIGENCE',
     items: [
       { path: '/predictions', label: 'Predictions', icon: Brain },
       { path: '/scanner', label: 'Scanner', icon: ScanSearch },
@@ -33,7 +33,7 @@ const navSections = [
     ],
   },
   {
-    title: 'Risk & Analytics',
+    title: 'RISK & ANALYTICS',
     items: [
       { path: '/risk', label: 'Risk', icon: Shield },
       { path: '/optimizer', label: 'Optimizer', icon: SlidersHorizontal },
@@ -44,7 +44,7 @@ const navSections = [
     ],
   },
   {
-    title: 'Operations',
+    title: 'OPERATIONS',
     items: [
       { path: '/backtest', label: 'Backtest', icon: FlaskConical },
       { path: '/mf-tracker', label: 'MF Tracker', icon: PieChart },
@@ -71,27 +71,28 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { theme, toggle } = useTheme()
 
   return (
-    <aside className={`fixed left-0 top-0 z-40 h-screen border-r border-border bg-card/80 backdrop-blur-xl transition-all duration-300 ${collapsed ? 'w-16' : 'w-56'}`}>
+    <aside className={`fixed left-0 top-0 z-40 h-screen border-r border-border bg-card/90 backdrop-blur-xl transition-all duration-300 ${collapsed ? 'w-14' : 'w-52'}`}>
       <div className="flex h-full flex-col">
         {/* Logo */}
-        <div className="flex h-14 items-center justify-between border-b border-border px-3">
+        <div className="flex h-12 items-center justify-between border-b border-border px-2.5">
           {!collapsed && (
             <div className="flex items-center gap-2">
-              <Zap className="h-5 w-5 text-cyan" />
-              <span className="font-mono text-sm font-bold tracking-wider text-foreground">STOMAR</span>
+              <Zap className="h-4 w-4 text-cyan" />
+              <span className="font-mono text-xs font-bold tracking-[0.25em] text-foreground">STOMAR</span>
             </div>
           )}
-          <button onClick={onToggle} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
-            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          {collapsed && <Zap className="h-4 w-4 text-cyan mx-auto" />}
+          <button onClick={onToggle} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+            {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
           </button>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-2 px-2">
+        <nav className="flex-1 overflow-y-auto py-2 px-1.5">
           {navSections.map((section) => (
             <div key={section.title} className="mb-3">
               {!collapsed && (
-                <p className="px-2.5 py-1 text-[10px] uppercase font-mono font-semibold tracking-wider text-muted-foreground/70">
+                <p className="px-2 py-1 text-[9px] uppercase font-mono font-bold tracking-[0.2em] text-muted-foreground/50">
                   {section.title}
                 </p>
               )}
@@ -100,15 +101,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   key={item.path}
                   to={item.path}
                   className={({ isActive }) =>
-                    `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all duration-150 ${
+                    `flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-all duration-150 ${
                       isActive
-                        ? 'bg-accent text-cyan font-medium'
-                        : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                        ? 'bg-cyan/10 text-cyan font-medium border-l-2 border-cyan'
+                        : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground border-l-2 border-transparent'
                     } ${collapsed ? 'justify-center' : ''}`
                   }
                 >
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  {!collapsed && <span>{item.label}</span>}
+                  <item.icon className="h-3.5 w-3.5 shrink-0" />
+                  {!collapsed && <span className="font-mono">{item.label}</span>}
                 </NavLink>
               ))}
             </div>
@@ -116,13 +117,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-border p-2">
+        <div className="border-t border-border p-1.5">
           <button
             onClick={toggle}
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
           >
-            <span className="text-base">{theme === 'dark' ? '☀️' : '🌙'}</span>
-            {!collapsed && <span>{theme === 'dark' ? 'Light' : 'Dark'} Mode</span>}
+            <span className="text-sm">{theme === 'dark' ? '☀' : '☽'}</span>
+            {!collapsed && <span className="font-mono">{theme === 'dark' ? 'Light' : 'Dark'}</span>}
           </button>
         </div>
       </div>

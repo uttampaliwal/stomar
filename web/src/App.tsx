@@ -33,7 +33,7 @@ export default function App() {
       <BrowserRouter>
         <div className="min-h-screen bg-background">
           <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
-          <main className={`transition-all duration-300 ${collapsed ? 'ml-16' : 'ml-56'} p-6`}>
+          <main className={`transition-all duration-300 ${collapsed ? 'ml-14' : 'ml-52'} p-4`}>
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/predictions" element={<Predictions />} />
@@ -58,11 +58,11 @@ export default function App() {
               <Route path="/wealth-goals" element={<WealthGoals />} />
             </Routes>
             {/* Footer */}
-            <div className="mt-12 border-t border-border pt-4 text-center">
-              <p className="text-xs text-muted-foreground">
-                StoMar v0.0.4 — 5-Model Ensemble • Walk-Forward Backtest • Black-Litterman Optimizer
+            <div className="mt-8 border-t border-border pt-3 text-center">
+              <p className="text-[0.6rem] font-mono text-muted-foreground">
+                STOMAR v0.0.4 — 5-Model Ensemble • Walk-Forward Backtest • Black-Litterman Optimizer
               </p>
-              <p className="text-[0.6rem] text-muted-foreground mt-1 opacity-50">
+              <p className="text-[0.55rem] text-muted-foreground mt-0.5 opacity-40">
                 Educational purposes only — not financial advice.
               </p>
             </div>
