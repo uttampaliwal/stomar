@@ -12,7 +12,7 @@ export default function PaperTrading() {
   const { post: closePosition, loading: closing } = usePostApi<any>('/api/paper-trading/close-position')
   const { post: resetAccount, loading: resetting } = usePostApi<any>('/api/paper-trading/reset')
 
-  const [form, setForm] = useState({ ticker: 'RELIANCE.NS', side: 'BUY', quantity: 1 })
+  const [form, setForm] = useState({ ticker: 'RELIANCE.NS', side: 'BUY', quantity: 1, order_type: 'MARKET', limit_price: '' })
   const [resetCapital, setResetCapital] = useState(200000)
 
   const handleOrder = async () => {
@@ -154,6 +154,29 @@ export default function PaperTrading() {
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono"
                 />
               </div>
+              <div className="w-full md:w-32">
+                <label className="text-xs text-muted-foreground block mb-1">Order Type</label>
+                <select
+                  value={form.order_type}
+                  onChange={(e) => setForm({ ...form, order_type: e.target.value })}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono"
+                >
+                  <option value="MARKET">MARKET</option>
+                  <option value="LIMIT">LIMIT</option>
+                </select>
+              </div>
+              {form.order_type === 'LIMIT' && (
+                <div className="w-full md:w-32">
+                  <label className="text-xs text-muted-foreground block mb-1">Limit Price (₹)</label>
+                  <input
+                    type="number"
+                    value={form.limit_price}
+                    onChange={(e) => setForm({ ...form, limit_price: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono"
+                  />
+                </div>
+              )}
               <button
                 onClick={handleOrder}
                 disabled={ordering}

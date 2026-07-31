@@ -49,6 +49,7 @@ def place_order(data: dict = Body(...)):
         ticker = data.get("ticker", "")
         side_str = data.get("side", "BUY").upper()
         quantity = int(data.get("quantity", 0))
+        order_type_str = data.get("order_type", "MARKET").upper()
 
         if not _TICKER_RE.match(ticker):
             return {"error": f"Invalid ticker format: {ticker!r} (expected e.g. RELIANCE.NS)"}
@@ -57,6 +58,7 @@ def place_order(data: dict = Body(...)):
             return {"error": "Quantity must be greater than 0"}
 
         side = OrderSide.BUY if side_str == "BUY" else OrderSide.SELL
+        order_type = OrderType.MARKET if order_type_str == "MARKET" else OrderType.LIMIT
 
         from src.data.data_fetcher import get_live_price
         price = data.get("price")
@@ -68,10 +70,25 @@ def place_order(data: dict = Body(...)):
         if price is None or price <= 0:
             return {"error": f"Cannot get price for {ticker}"}
 
+        limit_price = data.get("limit_price")
+        if order_type == OrderType.LIMIT:
+            if not limit_price or float(limit_price) <= 0:
+                return {"error": "Limit price is required for LIMIT orders"}
+            limit_price = float(limit_price)
+
         with _operation_lock:
-            order = trader.execute_market_trade(ticker, side, quantity, price=price)
+            order = trader.place_order(ticker, side, order_type, quantity, price=price,
+                                       stop_price=limit_price or 0)
             if order is None or order.status.name == "REJECTED":
                 return {"order_id": order.order_id if order else None, "status": "rejected", "price": price}
+
+            # For MARKET orders, fill immediately
+            if order_type == OrderType.MARKET:
+                trader.on_bar(ticker, o=price, h=price, low=price, c=price, volume=1_000_000)
+                try:
+                    trader.save_state()
+                except Exception:
+                    pass
 
             return {
                 "order_id": order.order_id,
