@@ -51,6 +51,10 @@ class DailyOrchestrator:
             logger.warning("No tickers configured for daily run")
             return {"date": date, "decisions": [], "trades": [], "errors": []}
 
+        # Pre-fetch market-wide signals (same for all tickers)
+        self._flow_signals = self._run_flow()
+        self._pcr_signals = self._run_pcr()
+
         summary = {"date": date, "decisions": [], "trades": [], "errors": []}
         trade_count = 0
         total_exposure = 0.0
@@ -249,8 +253,8 @@ class DailyOrchestrator:
 
         # 2. Collect auxiliary signals FIRST (needed as ensemble features)
         signals.update(self._run_sentiment(ticker))
-        signals.update(self._run_flow())
-        signals.update(self._run_pcr())
+        signals.update(getattr(self, "_flow_signals", {}))
+        signals.update(getattr(self, "_pcr_signals", {}))
         signals.update(self._run_mtf(ticker, df))
         signals.update(self._run_regime(close, df))
         signals.update(self._run_risk(returns))
@@ -470,15 +474,19 @@ class DailyOrchestrator:
 
     def _default_decision(self, signals: dict) -> dict:
         """Simple rule-based fallback when no meta-controller is available."""
+        from src.core.settings import settings
         ensemble_dir = signals.get("ensemble_direction")
         ensemble_conf = signals.get("ensemble_confidence", 0) or 0
+        buy_threshold = getattr(settings, "buy_threshold", 0.6)
+        sell_threshold = getattr(settings, "sell_threshold", 0.4)
+        max_pos = getattr(settings, "max_position_pct", 0.10)
 
-        if ensemble_dir == 1 and ensemble_conf > 0.55:
+        if ensemble_dir == 1 and ensemble_conf > buy_threshold:
             action = "BUY"
-            size = min(0.05, (ensemble_conf - 0.5) * 0.5)
-        elif ensemble_dir == 0 and ensemble_conf > 0.55:
+            size = min(max_pos, (ensemble_conf - 0.5) * 0.5)
+        elif ensemble_dir == 0 and ensemble_conf > sell_threshold:
             action = "SELL"
-            size = min(0.05, (ensemble_conf - 0.5) * 0.5)
+            size = min(max_pos, (ensemble_conf - 0.5) * 0.5)
         else:
             action = "HOLD"
             size = 0.0

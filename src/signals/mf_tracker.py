@@ -35,6 +35,8 @@ class MFHolding:
 class MFTracker:
     """Mutual fund portfolio tracker with NAV history and factor analysis."""
 
+    _NAV_CACHE_MAX = 50  # Max cached fund histories
+
     def __init__(self):
         self.holdings: dict[str, MFHolding] = {}
         self.nav_cache: dict[str, pd.Series] = {}
@@ -69,6 +71,9 @@ class MFTracker:
                 logger.warning("No NAV data for %s", ticker)
                 return pd.Series(dtype=float)
             nav = data["Close"].dropna()
+            if len(self.nav_cache) >= self._NAV_CACHE_MAX:
+                oldest = next(iter(self.nav_cache))
+                del self.nav_cache[oldest]
             self.nav_cache[ticker] = nav
             return nav
         except Exception as e:

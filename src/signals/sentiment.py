@@ -33,6 +33,7 @@ _finbert_pipeline = None
 _finbert_lock = threading.Lock()
 _sentiment_cache_lock = threading.Lock()
 _sentiment_cache_dir = DATA_DIR
+_sentiment_in_progress: set[str] = set()  # Track in-flight fetches to prevent duplicate work
 
 # Source weights: more authoritative sources get higher weight
 SOURCE_WEIGHTS = {
@@ -284,12 +285,18 @@ _POSITIVE_WORDS = {
     "dividend", "expansion", "recovery", "optimism", "beat", "exceed",
     "ebitda", "revenue", "margin", "upside",
     "breakout", "momentum", "accumulate", "inflow",
+    # Hindi positive keywords
+    "तेजी", "बढ़ोतरी", "मुनाफ़ा", "तगड़ा", "रैली", "बुल", "उछाल",
+    "बिक्री", "लाभ", "वृद्धि", "मजबूत", "सकारात्मक", "निवेश",
 }
 _NEGATIVE_WORDS = {
     "crash", "loss", "bear", "fall", "drop", "decline", "plunge", "low",
     "weak", "downgrade", "underperform", "sell", "fear", "risk", "debt",
     "recession", "slowdown", "warning", "miss", "lawsuit", "fraud",
     "impairment", "restructure", "outflow",
+    # Hindi negative keywords
+    "गिरावट", "नुकसान", "मंदी", "बिकवाली", "घबराहट", "जोखिम", "कर्ज़",
+    "मंदा", "कमज़ोर", "नकारात्मक", "धोखा", "घाटा",
 }
 
 
@@ -457,14 +464,23 @@ def get_stock_sentiment(ticker: str) -> dict:
                 import json
                 with open(cache_file) as f:
                     return json.load(f)
+        if ticker in _sentiment_in_progress:
+            return {"score": 0.0, "weighted_score": 0.0, "label": "Neutral",
+                    "positive": 0, "negative": 0, "neutral": 0,
+                    "source_breakdown": {}, "note": "fetch in progress"}
+        _sentiment_in_progress.add(ticker)
 
-    articles = fetch_news_headlines(ticker)
-    result = analyze_sentiment(articles)
-    result["ticker"] = ticker
-    result["articles"] = [
-        {"title": a["title"], "source": a["source"]}
-        for a in articles[:8]
-    ]
+    try:
+        articles = fetch_news_headlines(ticker)
+        result = analyze_sentiment(articles)
+        result["ticker"] = ticker
+        result["articles"] = [
+            {"title": a["title"], "source": a["source"]}
+            for a in articles[:8]
+        ]
+    finally:
+        with _sentiment_cache_lock:
+            _sentiment_in_progress.discard(ticker)
 
     # Persist cache (thread-safe)
     try:
