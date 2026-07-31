@@ -1,8 +1,7 @@
-import { Card, SectionHeader, Spinner, ErrorDisplay, PageHeader, EmptyState } from '@/components/UI'
+import { Card, Spinner, ErrorDisplay, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 function getCorrelationColor(val: number): string {
-  const abs = Math.abs(val)
   if (val === 1) return 'bg-cyan/20'
   if (val > 0.7) return 'bg-emerald/40'
   if (val > 0.5) return 'bg-emerald/30'

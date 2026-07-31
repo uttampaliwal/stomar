@@ -14,7 +14,6 @@ export default function Regime() {
   const recommendation = data?.recommendation
   const performance = data?.performance
 
-  const regimeColor = regime === 'Bull' ? 'text-emerald' : regime === 'Bear' ? 'text-rose' : 'text-muted-foreground'
   const regimeBadge = regime === 'Bull' ? 'success' : regime === 'Bear' ? 'danger' : 'warning'
 
   return (

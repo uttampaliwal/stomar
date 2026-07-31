@@ -36,7 +36,7 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
     trader = PaperTrader(initial_capital=capital)
     trader.load_state(state_path)
 
-    print(f"\n=== Paper Trading ===")
+    print("\n=== Paper Trading ===")
     print(f"Capital:    Rs. {trader.initial_capital:,.0f}")
     print(f"Cash:       Rs. {trader.cash:,.0f}")
     print(f"Equity:     Rs. {trader.get_equity():,.0f}")
@@ -184,7 +184,7 @@ def main():
         backfill = HistoricalBackfill(ledger)
         bf_summary = backfill.run(tickers=tickers, lookback_days=args.days)
 
-        print(f"\n=== Backfill Summary ===")
+        print("\n=== Backfill Summary ===")
         print(f"Total decisions: {bf_summary['total_decisions']}")
         print(f"Total outcomes:  {bf_summary['total_outcomes']}")
         for ticker, result in bf_summary["tickers"].items():
@@ -194,7 +194,7 @@ def main():
                 print(f"  [OK]   {ticker}: {result['decisions']} decisions, {result['outcomes']} outcomes")
 
         # Auto-train meta-controller after backfill
-        print(f"\n=== Training Meta-Controller ===")
+        print("\n=== Training Meta-Controller ===")
         mc = MetaController()
         result = mc.train(ledger)
         print(f"Status: {result['status']}")
@@ -219,7 +219,7 @@ def main():
         sys.exit(0)
 
     # --- Normal daily mode ---
-    print(f"=== StoMar Daily Signal Loop ===")
+    print("=== StoMar Daily Signal Loop ===")
     print(f"Date:     {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}")
     print(f"Tickers:  {len(tickers)}")
     print(f"Ledger:   {args.db}")
@@ -263,7 +263,7 @@ def main():
     if args.schedule_hours > 0:
         while not shutdown_requested:
             summary = orchestrator.run(dry_run=args.dry_run)
-            print(f"\n=== Summary ===")
+            print("\n=== Summary ===")
             print(f"Decisions: {len(summary['decisions'])}")
             print(f"Errors:    {len(summary['errors'])}")
 
@@ -291,7 +291,7 @@ def main():
 
     summary = orchestrator.run(dry_run=args.dry_run)
 
-    print(f"\n=== Summary ===")
+    print("\n=== Summary ===")
     print(f"Decisions: {len(summary['decisions'])}")
     print(f"Errors:    {len(summary['errors'])}")
 

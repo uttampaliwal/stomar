@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Cell, Area, LineChart, BarChart
@@ -55,7 +55,6 @@ function CandlestickChart({ data }: { data: any[] }) {
 
 export default function Predictions() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
-  const [period, setPeriod] = useState('2y')
   const [training, setTraining] = useState(false)
   const [trainResult, setTrainResult] = useState<any>(null)
   const debouncedTicker = useDebouncedValue(ticker, 400)
@@ -63,7 +62,6 @@ export default function Predictions() {
   const { data, loading, error, refetch } = useApi<any>(`/api/predictions/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
   const { data: featureImp } = useApi<any>(`/api/predictions/${debouncedTicker}/feature-importance`)
-  const { data: pipeStatus } = useApi<any>('/api/pipeline/status')
 
   const pred = data?.prediction
   const metrics = data?.metrics

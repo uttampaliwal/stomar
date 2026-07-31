@@ -5,7 +5,6 @@ import { useApi } from '@/hooks/useApi'
 export default function Ledger() {
   const { data, loading, error, refetch } = useApi<any>('/api/ledger/summary')
   const { data: decisionsData } = useApi<any>('/api/ledger/decisions')
-  const { data: performance } = useApi<any>('/api/ledger/performance')
   const [running, setRunning] = useState(false)
   const [runResult, setRunResult] = useState<string | null>(null)
 

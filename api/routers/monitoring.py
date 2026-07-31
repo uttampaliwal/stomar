@@ -8,7 +8,7 @@ from fastapi import APIRouter
 
 from src.core.constants import MONITORING_DIR
 from src.core.logging_config import metrics
-from src.core.pipeline_state import PipelineCheckpoint, checkpoint_path
+from src.core.pipeline_state import PipelineCheckpoint
 from src.data.data_fetcher import NSE_STOCKS
 from src.models.model import models_exist
 from src.signals.monitoring import ModelMonitor

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
+import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 type SortKey = 'ticker' | 'signal' | 'confidence' | 'price' | 'chg_5d' | 'rsi'

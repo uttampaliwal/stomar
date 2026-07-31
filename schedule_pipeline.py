@@ -104,7 +104,7 @@ def _cron_entry(run_time: str) -> str:
     """Build a cron line like '0 16 * * 1-5 ...'."""
     hour, minute = run_time.split(":")[:2]
     python_path = _python_path()
-    log_file = os.path.join(LOG_DIR, f"daily_$(date +\\%Y\\%m\\%d).log")
+    log_file = os.path.join(LOG_DIR, "daily_$(date +\\%Y\\%m\\%d).log")
     # Run Mon-Fri (1-5)
     return f"{minute} {hour} * * 1-5 {python_path} {DAILY_SCRIPT} >> {log_file} 2>&1 {_CRON_COMMENT}"
 
@@ -215,7 +215,7 @@ def check_status() -> int:
 
 def run_now() -> int:
     """Run the daily loop immediately."""
-    print(f"Running daily signal loop now...")
+    print("Running daily signal loop now...")
     result = subprocess.run(
         [_python_path(), DAILY_SCRIPT],
         capture_output=False,

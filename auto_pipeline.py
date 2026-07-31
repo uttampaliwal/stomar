@@ -19,13 +19,12 @@ import os
 import signal
 import sys
 import tempfile
-import time
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 from src.core.constants import (
-    DATA_DIR, MODELS_DIR, LEDGER_DB, META_CONTROLLER_PATH, MONITORING_DIR,
+    MODELS_DIR, META_CONTROLLER_PATH, MONITORING_DIR,
 )
 from src.data.data_fetcher import NSE_STOCKS
 from src.trading.ledger import Ledger
@@ -427,7 +426,6 @@ class AutoPipeline:
         try:
             import joblib
             from src.signals.orchestrator import DailyOrchestrator
-            from src.models.meta_controller import MetaController
 
             meta_controller = None
             if os.path.exists(META_CONTROLLER_PATH):

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader } from '@/components/UI'
 import { useApi, usePostApi } from '@/hooks/useApi'
-import { formatCurrency, formatPercent } from '@/lib/utils'
 import { Brain, TrendingUp, Shield, Zap, Activity, Target } from 'lucide-react'
 import { SimpleRecommendationCard } from '@/components/SimpleRecommendationCard'
 

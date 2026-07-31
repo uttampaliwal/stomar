@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader, Badge } from '@/components/UI'
+import { Card, Stat, SectionHeader, PageHeader, Badge } from '@/components/UI'
 import { useApi, usePostApi } from '@/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Coins, Target, TrendingUp, Shield, Sparkles } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 
 export default function WealthGoals() {
   const { data: strategies } = useApi<any>('/api/wealth/strategies')

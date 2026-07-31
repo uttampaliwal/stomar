@@ -17,19 +17,10 @@ except ImportError:
 
 from src.core.settings import settings
 from src.core.logging_config import (
-    metrics, set_request_id, get_request_id, set_pipeline_context, clear_pipeline_context,
+    metrics, set_request_id,
 )
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-
-# Mutable endpoints on these prefixes require a valid API key via X-API-Key header.
-_PROTECTED_PREFIXES = [
-    "/api/paper-trading/",
-    "/api/automation/",
-    "/api/pipeline/train/",
-    "/api/pipeline/run",
-    "/api/ledger/",
-]
 
 from api.routers import (
     market,
@@ -56,6 +47,15 @@ from api.routers import (
     ledger,
     wealth,
 )
+
+# Mutable endpoints on these prefixes require a valid API key via X-API-Key header.
+_PROTECTED_PREFIXES = [
+    "/api/paper-trading/",
+    "/api/automation/",
+    "/api/pipeline/train/",
+    "/api/pipeline/run",
+    "/api/ledger/",
+]
 
 app = FastAPI(title="StoMar API", version="0.0.3")
 

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
+import { Card, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 
 type SortKey = 'rank' | 'composite_score' | 'momentum_score' | 'volatility_score' | 'technical_score' | 'ml_score'
