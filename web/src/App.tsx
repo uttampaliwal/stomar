@@ -23,6 +23,7 @@ import PaperTrading from '@/pages/PaperTrading'
 import MFTracker from '@/pages/MFTracker'
 import Ledger from '@/pages/Ledger'
 import Portfolio from '@/pages/Portfolio'
+import WealthGoals from '@/pages/WealthGoals'
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false)
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="/mf-tracker" element={<MFTracker />} />
               <Route path="/ledger" element={<Ledger />} />
               <Route path="/portfolio" element={<Portfolio />} />
+              <Route path="/wealth-goals" element={<WealthGoals />} />
             </Routes>
             {/* Footer */}
             <div className="mt-12 border-t border-border pt-4 text-center">

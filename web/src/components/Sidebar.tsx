@@ -2,7 +2,7 @@ import React from 'react'
 import { NavLink } from 'react-router-dom'
 import {
   Activity, BarChart3, Brain, Briefcase,
-  ChevronLeft, ChevronRight, FileText,
+  ChevronLeft, ChevronRight, Coins, FileText,
   FlaskConical, Gauge, Heart, Layers,
   Network, PieChart, RefreshCcw,
   ScanSearch, Shield, SlidersHorizontal, Sparkles, Target,
@@ -15,6 +15,7 @@ const navSections = [
     title: 'Core',
     items: [
       { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/wealth-goals', label: 'Wealth Goals', icon: Coins },
       { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
       { path: '/paper-trading', label: 'Paper Trading', icon: FileText },
       { path: '/ledger', label: 'Ledger', icon: BookOpen },
