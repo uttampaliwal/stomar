@@ -1,6 +1,7 @@
 """Paper trading endpoint."""
 
 import os
+import re
 import threading
 from fastapi import APIRouter, Body
 from src.trading.paper_trader import PaperTrader
@@ -8,6 +9,9 @@ from src.trading.engine import OrderSide, OrderType
 from src.data.data_fetcher import NSE_STOCKS
 
 router = APIRouter()
+
+# Ticker must match NSE format: uppercase letters/digits, ending with .NS
+_TICKER_RE = re.compile(r"^[A-Z0-9]{1,20}\.NS$")
 
 _trader = None
 _trader_lock = threading.Lock()
@@ -45,6 +49,9 @@ def place_order(data: dict = Body(...)):
         ticker = data.get("ticker", "")
         side_str = data.get("side", "BUY").upper()
         quantity = int(data.get("quantity", 0))
+
+        if not _TICKER_RE.match(ticker):
+            return {"error": f"Invalid ticker format: {ticker!r} (expected e.g. RELIANCE.NS)"}
 
         if quantity <= 0:
             return {"error": "Quantity must be greater than 0"}

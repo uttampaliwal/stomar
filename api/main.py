@@ -168,12 +168,15 @@ async def cache_middleware(request: Request, call_next):
         async for chunk in response.body_iterator:
             body += chunk if isinstance(chunk, bytes) else chunk.encode()
         _response_cache[cache_key] = (time.time(), body)
-        # Evict stale entries periodically
+        # Evict stale entries, then LRU if still over limit
         if len(_response_cache) > settings.cache_max_entries:
             now = time.time()
             stale = [k for k, (ts, _) in _response_cache.items() if now - ts > _CACHE_TTL * 2]
             for k in stale:
                 del _response_cache[k]
+            # If still over limit, evict oldest (LRU) entries
+            while len(_response_cache) > settings.cache_max_entries:
+                _response_cache.popitem(last=False)
         metrics.inc("cache_misses_total")
         return Response(content=body, media_type="application/json", headers={"X-Cache": "MISS"})
 
