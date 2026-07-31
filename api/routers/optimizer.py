@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 from src.data.data_fetcher import fetch_stock_data, NSE_STOCKS
 from src.trading.optimizer import optimize_portfolio
+from src.trading.optimizer_advanced import optimize_portfolio_advanced
 from api.utils import parallel_fetch
 
 router = APIRouter()
@@ -18,6 +19,7 @@ def _fetch_close(ticker):
 def _sanitize(obj):
     """Convert numpy types to Python native types for JSON serialization."""
     import numpy as np
+
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     if isinstance(obj, (np.integer,)):
@@ -41,8 +43,32 @@ def optimize():
             return {"error": "Not enough stocks with data"}
 
         import pandas as pd
+
         prices_df = pd.DataFrame(prices)
         result = optimize_portfolio(prices_df)
+
+        if result is None:
+            return {"error": "Optimization failed"}
+
+        return _sanitize(result)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/advanced")
+def optimize_advanced():
+    """Institutional-grade optimization with Black-Litterman, Mean-CVaR, and NSE costs."""
+    try:
+        raw = parallel_fetch(_fetch_close, NSE_STOCKS, max_workers=8)
+        prices = {k: v for k, v in raw.items() if v is not None}
+
+        if len(prices) < 3:
+            return {"error": "Not enough stocks with data"}
+
+        import pandas as pd
+
+        prices_df = pd.DataFrame(prices)
+        result = optimize_portfolio_advanced(prices_df)
 
         if result is None:
             return {"error": "Optimization failed"}
