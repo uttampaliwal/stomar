@@ -11,6 +11,7 @@ router = APIRouter()
 
 _trader = None
 _trader_lock = threading.Lock()
+_operation_lock = threading.Lock()  # Serializes order placement and reset
 
 
 def get_trader():
@@ -60,18 +61,19 @@ def place_order(data: dict = Body(...)):
         if price is None or price <= 0:
             return {"error": f"Cannot get price for {ticker}"}
 
-        order = trader.execute_market_trade(ticker, side, quantity, price=price)
-        if order is None or order.status.name == "REJECTED":
-            return {"order_id": order.order_id if order else None, "status": "rejected", "price": price}
-        
-        return {
-            "order_id": order.order_id,
-            "status": order.status.value.lower() if hasattr(order.status, 'value') else str(order.status).lower(),
-            "price": price,
-            "filled_quantity": order.filled_quantity,
-            "filled_price": order.filled_price,
-            "summary": trader.get_summary(),
-        }
+        with _operation_lock:
+            order = trader.execute_market_trade(ticker, side, quantity, price=price)
+            if order is None or order.status.name == "REJECTED":
+                return {"order_id": order.order_id if order else None, "status": "rejected", "price": price}
+
+            return {
+                "order_id": order.order_id,
+                "status": order.status.value.lower() if hasattr(order.status, 'value') else str(order.status).lower(),
+                "price": price,
+                "filled_quantity": order.filled_quantity,
+                "filled_price": order.filled_price,
+                "summary": trader.get_summary(),
+            }
     except Exception as e:
         return {"error": str(e)}
 
@@ -81,10 +83,11 @@ def reset_paper_trading(data: dict = Body(default={})):
     try:
         trader = get_trader()
         capital = float(data.get("capital", 200000))
-        trader.initial_capital = capital
-        trader.reset()
-        state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "paper_state.json")
-        trader.save_state(state_path)
+        with _operation_lock:
+            trader.initial_capital = capital
+            trader.reset()
+            state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "paper_state.json")
+            trader.save_state(state_path)
         return {
             "status": "success",
             "message": f"Paper trader reset with capital {capital}",

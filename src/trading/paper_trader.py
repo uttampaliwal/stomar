@@ -239,7 +239,7 @@ class PaperTrader:
                 old_qty = abs(pos.quantity)
                 total_cost = pos.avg_cost * old_qty + order.filled_price * order.filled_quantity
                 pos.quantity -= order.filled_quantity
-                pos.avg_cost = total_cost / abs(pos.quantity)
+                pos.avg_cost = total_cost / abs(pos.quantity) if pos.quantity != 0 else 0
                 trade_costs = max(0.0, order.fill_cost - order.filled_price * order.filled_quantity)
                 net_proceeds = order.filled_price * order.filled_quantity - trade_costs
                 self.cash += net_proceeds
@@ -249,7 +249,6 @@ class PaperTrader:
                 close_qty = min(order.filled_quantity, pos.quantity)
                 trade_costs = max(0.0, order.fill_cost - order.filled_price * order.filled_quantity)
                 realized = (order.filled_price - pos.avg_cost) * close_qty - trade_costs
-                trade_costs = max(0.0, order.fill_cost - order.filled_price * order.filled_quantity)
                 net_proceeds = order.filled_price * order.filled_quantity - trade_costs
                 self.cash += net_proceeds
                 self.closed_positions.append({
