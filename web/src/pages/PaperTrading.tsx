@@ -2,15 +2,16 @@ import { useState } from 'react'
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi, usePostApi } from '@/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
+import type { PaperPositionSummary, PaperPositionsResponse, PaperTradesResponse, PaperOrderResponse, PaperCloseResponse, PaperResetResponse } from '../lib/api-types'
 
 export default function PaperTrading() {
-  const { data: state, loading, error, refetch } = useApi<any>('/api/paper-trading/state')
-  const { data: positions, refetch: refetchPositions } = useApi<any>('/api/paper-trading/positions')
-  const { data: trades } = useApi<any>('/api/paper-trading/trades')
+  const { data: state, loading, error, refetch } = useApi<PaperPositionSummary>('/api/paper-trading/state')
+  const { data: positions, refetch: refetchPositions } = useApi<PaperPositionsResponse>('/api/paper-trading/positions')
+  const { data: trades } = useApi<PaperTradesResponse>('/api/paper-trading/trades')
   const { data: stocks } = useApi<{ stocks: string[] }>('/api/paper-trading/stocks')
-  const { post: placeOrder, loading: ordering } = usePostApi<any>('/api/paper-trading/order')
-  const { post: closePosition, loading: closing } = usePostApi<any>('/api/paper-trading/close-position')
-  const { post: resetAccount, loading: resetting } = usePostApi<any>('/api/paper-trading/reset')
+  const { post: placeOrder, loading: ordering } = usePostApi<PaperOrderResponse>('/api/paper-trading/order')
+  const { post: closePosition, loading: closing } = usePostApi<PaperCloseResponse>('/api/paper-trading/close-position')
+  const { post: resetAccount, loading: resetting } = usePostApi<PaperResetResponse>('/api/paper-trading/reset')
 
   const [form, setForm] = useState({ ticker: 'RELIANCE.NS', side: 'BUY', quantity: 1, order_type: 'MARKET', limit_price: '' })
   const [resetCapital, setResetCapital] = useState(200000)
@@ -56,11 +57,11 @@ export default function PaperTrading() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {state && !state.error && (
+      {state && !('error' in state) && (
         <>
           {/* Account Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat label="Equity" value={formatCurrency(state.current_equity || state.equity || 0)} trend="up" />
+            <Stat label="Equity" value={formatCurrency(state.current_equity || 0)} trend="up" />
             <Stat label="Cash" value={formatCurrency(state.cash || 0)} />
             <Stat label="Realized P&L" value={formatCurrency(state.realized_pnl || 0)} trend={state.realized_pnl >= 0 ? 'up' : 'down'} />
             <Stat label="Unrealized P&L" value={formatCurrency(state.unrealized_pnl || 0)} trend={state.unrealized_pnl >= 0 ? 'up' : 'down'} />
@@ -188,7 +189,7 @@ export default function PaperTrading() {
           </Card>
 
           {/* Positions */}
-          {positions?.positions?.length > 0 ? (
+          {positions && positions.positions.length > 0 ? (
             <>
               <SectionHeader title="Open Positions" />
               <Card className="overflow-x-auto">
@@ -205,7 +206,7 @@ export default function PaperTrading() {
                     </tr>
                   </thead>
                   <tbody>
-                    {positions.positions.map((p: any) => (
+                    {positions.positions.map((p) => (
                       <tr key={p.ticker} className="border-b border-border/50 hover:bg-accent/30">
                         <td className="py-2.5 font-mono font-semibold">{p.ticker}</td>
                         <td className="py-2.5 text-right font-mono">{p.quantity}</td>
@@ -237,7 +238,7 @@ export default function PaperTrading() {
           )}
 
           {/* Trade Log */}
-          {trades?.trades?.length > 0 ? (
+          {trades && trades.trades.length > 0 ? (
             <>
               <SectionHeader title="Recent Trades" />
               <Card className="overflow-x-auto">
@@ -252,7 +253,7 @@ export default function PaperTrading() {
                     </tr>
                   </thead>
                   <tbody>
-                    {trades.trades.slice().reverse().slice(0, 20).map((t: any, i: number) => (
+                    {trades.trades.slice().reverse().slice(0, 20).map((t, i) => (
                       <tr key={i} className="border-b border-border/50 hover:bg-accent/30">
                         <td className="py-2.5 font-mono text-xs text-muted-foreground">{t.date}</td>
                         <td className="py-2.5 font-mono font-semibold">{t.ticker}</td>

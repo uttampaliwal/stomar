@@ -4,25 +4,26 @@ import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader, EmptySta
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatPercent } from '@/lib/utils'
+import type { ScenariosResponse, ScenarioResult } from '../lib/api-types'
 
 const COLORS = ['#06b6d4', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16', '#a855f7']
 
 export default function Scenarios() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
   const debouncedTicker = useDebouncedValue(ticker, 400)
-  const { data, loading, error } = useApi<any>(`/api/scenarios/${debouncedTicker}`)
+  const { data, loading, error } = useApi<ScenariosResponse>(`/api/scenarios/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
 
   const scenarios = data?.scenarios || []
-  const chartData = scenarios.map((s: any) => ({
+  const chartData = scenarios.map((s) => ({
     name: s.name,
     return: (s.annualized_return || 0) * 100,
     sharpe: s.sharpe || 0,
     vol: (s.annualized_vol || 0) * 100,
   }))
 
-  const bestScenario = scenarios.reduce((best: any, s: any) => (s.sharpe || 0) > (best?.sharpe || -Infinity) ? s : best, null)
-  const worstScenario = scenarios.reduce((worst: any, s: any) => (s.sharpe || 0) < (worst?.sharpe || Infinity) ? s : worst, null)
+  const bestScenario = scenarios.reduce<ScenarioResult | null>((best, s) => (s.sharpe || 0) > (best?.sharpe || -Infinity) ? s : best, null)
+  const worstScenario = scenarios.reduce<ScenarioResult | null>((worst, s) => (s.sharpe || 0) < (worst?.sharpe || Infinity) ? s : worst, null)
 
   return (
     <div className="space-y-6">
@@ -45,7 +46,7 @@ export default function Scenarios() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error ? (
+      {data && !('error' in data) ? (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {bestScenario && (
@@ -73,7 +74,7 @@ export default function Scenarios() {
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} width={100} />
                 <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '11px' }} />
                 <Bar dataKey="sharpe" radius={[0, 4, 4, 0]}>
-                  {chartData.map((_: any, i: number) => (
+                  {chartData.map((_, i: number) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} fillOpacity={0.8} />
                   ))}
                 </Bar>
@@ -110,7 +111,7 @@ export default function Scenarios() {
                 </tr>
               </thead>
               <tbody>
-                {scenarios.map((s: any) => (
+                {scenarios.map((s) => (
                   <tr key={s.name} className="border-b border-border/50 hover:bg-accent/30">
                     <td className="py-2.5 font-mono font-semibold">{s.name}</td>
                     <td className={`py-2.5 text-right font-mono ${(s.total_return || 0) >= 0 ? 'text-emerald' : 'text-rose'}`}>

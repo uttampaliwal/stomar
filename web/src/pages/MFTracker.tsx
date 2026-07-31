@@ -1,9 +1,10 @@
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
+import type { MfPortfolioResponse } from '../lib/api-types'
 
 export default function MFTracker() {
-  const { data, loading, error } = useApi<any>('/api/mf-tracker/portfolio')
+  const { data, loading, error } = useApi<MfPortfolioResponse>('/api/mf-tracker/portfolio')
 
   return (
     <div className="space-y-6">
@@ -20,7 +21,7 @@ export default function MFTracker() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error ? (
+      {data && !('error' in data) ? (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat label="Invested" value={formatCurrency(data.invested || 0)} />
@@ -46,7 +47,7 @@ export default function MFTracker() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.holdings.map((h: any, i: number) => (
+                    {data.holdings.map((h, i) => (
                       <tr key={i} className="border-b border-border/50 hover:bg-accent/30">
                         <td className="py-2.5 font-semibold">{h.fund_name || h.ticker}</td>
                         <td className="py-2.5 text-right font-mono">{h.units?.toFixed(2)}</td>
@@ -70,9 +71,9 @@ export default function MFTracker() {
           {data.concentration_risk?.length > 0 && (
             <>
               <SectionHeader title="Concentration Risk" />
-              {data.concentration_risk.map((r: any, i: number) => (
+              {data.concentration_risk.map((r, i) => (
                 <Card key={i} className="border-amber/30 bg-amber/5">
-                  <p className="text-sm text-amber">{r.message || `${r.fund_name || r.ticker}: ${(r.weight * 100).toFixed(1)}%`}</p>
+                  <p className="text-sm text-amber">{`${r.fund_name || r.ticker}: ${(r.weight * 100).toFixed(1)}%`}</p>
                 </Card>
               ))}
             </>

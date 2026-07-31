@@ -1,5 +1,6 @@
 import { Card, Spinner, ErrorDisplay, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import type { CorrelationResponse } from '../lib/api-types'
 
 function getCorrelationColor(val: number): string {
   if (val === 1) return 'bg-cyan/20'
@@ -14,7 +15,7 @@ function getCorrelationColor(val: number): string {
 }
 
 export default function Correlation() {
-  const { data, loading, error } = useApi<any>('/api/correlation/')
+  const { data, loading, error } = useApi<CorrelationResponse & { diversification_score?: number }>('/api/correlation/')
 
   return (
     <div className="space-y-6">

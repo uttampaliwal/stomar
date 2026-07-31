@@ -1,29 +1,30 @@
 import { useState, useMemo } from 'react'
 import { Card, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import type { RankingResponse, RankingResult } from '../lib/api-types'
 
 type SortKey = 'rank' | 'composite_score' | 'momentum_score' | 'volatility_score' | 'technical_score' | 'ml_score'
 type SortDir = 'asc' | 'desc'
 
 export default function Ranking() {
-  const { data, loading, error, refetch } = useApi<any>('/api/ranking/')
+  const { data, loading, error, refetch } = useApi<RankingResponse>('/api/ranking/')
   const [sortKey, setSortKey] = useState<SortKey>('rank')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   const sortedRankings = useMemo(() => {
     if (!data?.rankings?.length) return []
     const rankings = [...data.rankings]
-    rankings.sort((a: any, b: any) => {
-      let av: any, bv: any
+    rankings.sort((a, b) => {
+      let av: string | number, bv: string | number
       if (sortKey === 'rank') { av = a.rank; bv = b.rank }
       else if (sortKey === 'composite_score') { av = a.composite_score; bv = b.composite_score }
       else if (sortKey === 'momentum_score') { av = a.momentum?.momentum_combined || 0; bv = b.momentum?.momentum_combined || 0 }
       else if (sortKey === 'volatility_score') { av = a.volatility?.vol_score || 0; bv = b.volatility?.vol_score || 0 }
       else if (sortKey === 'technical_score') { av = a.technical?.technical_combined || 0; bv = b.technical?.technical_combined || 0 }
       else if (sortKey === 'ml_score') { av = a.ml_score || 0; bv = b.ml_score || 0 }
-      else { av = a[sortKey] || 0; bv = b[sortKey] || 0 }
-      if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
-      return sortDir === 'asc' ? av - bv : bv - av
+      else { av = (a as RankingResult & Record<string, string | number>)[sortKey] || 0; bv = (b as RankingResult & Record<string, string | number>)[sortKey] || 0 }
+      if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv as string) : (bv as string).localeCompare(av)
+      return sortDir === 'asc' ? av - (bv as number) : (bv as number) - av
     })
     return rankings
   }, [data?.rankings, sortKey, sortDir])
@@ -84,7 +85,7 @@ export default function Ranking() {
                 </tr>
               </thead>
               <tbody>
-                {sortedRankings.map((r: any) => (
+                {sortedRankings.map((r) => (
                   <tr key={r.ticker} className="border-b border-border/50 hover:bg-accent/30">
                     <td className="py-2.5 font-mono text-muted-foreground">#{r.rank}</td>
                     <td className="py-2.5 font-mono font-semibold">{r.ticker}</td>

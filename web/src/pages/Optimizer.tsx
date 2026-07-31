@@ -2,12 +2,23 @@ import { useMemo } from 'react'
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot } from 'recharts'
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import type { OptimizerResponse } from '../lib/api-types'
+
+type StrategyData = {
+  weights?: number[] | Record<string, number>
+  tickers?: string[]
+  return?: number
+  expected_return?: number
+  volatility?: number
+  sharpe?: number
+}
+type FrontierPoint = OptimizerResponse['efficient_frontier'][number] & { sharpe?: number }
 
 export default function Optimizer() {
-  const { data, loading, error } = useApi<any>('/api/optimizer/')
+  const { data, loading, error } = useApi<OptimizerResponse>('/api/optimizer/')
 
   const frontierData = useMemo(() => {
-    return data?.efficient_frontier?.map((p: any) => ({
+    return data?.efficient_frontier?.map((p: FrontierPoint) => ({
       return: (p.return || 0) * 100,
       vol: (p.volatility || 0) * 100,
       sharpe: p.sharpe || 0,
@@ -18,7 +29,7 @@ export default function Optimizer() {
     { key: 'max_sharpe', label: 'Max Sharpe', color: 'text-emerald' },
     { key: 'min_variance', label: 'Min Variance', color: 'text-cyan' },
     { key: 'black_litterman', label: 'Black-Litterman', color: 'text-amber' },
-  ]
+  ] as const
 
   return (
     <div className="space-y-6">
@@ -35,7 +46,7 @@ export default function Optimizer() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error && (
+      {data && !('error' in data) && (
         <>
           {/* Efficient Frontier */}
           {frontierData.length > 0 && (
@@ -51,7 +62,7 @@ export default function Optimizer() {
                     <Scatter data={frontierData} fill="#06b6d4" fillOpacity={0.6} />
                     {/* Mark optimal portfolios */}
                     {strategies.map(s => {
-                      const p = data[s.key]
+                      const p = data[s.key] as unknown as StrategyData
                       if (!p) return null
                       return (
                         <ReferenceDot
@@ -80,7 +91,7 @@ export default function Optimizer() {
           )}
 
           {strategies.map(({ key, label }) => {
-            const p = data[key]
+            const p = data[key] as unknown as StrategyData
             if (!p) return null
             const weights: Record<string, number> = {}
             if (p.weights && p.tickers) {

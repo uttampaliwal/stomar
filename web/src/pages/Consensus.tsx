@@ -1,11 +1,13 @@
 import { useState, useMemo } from 'react'
 import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import type { ConsensusResponse } from '../lib/api-types'
 
 type SortKey = 'ticker' | 'ensemble_confidence' | 'meta_confidence' | 'consensus'
 type SortDir = 'asc' | 'desc'
+type BadgeVariant = 'default' | 'success' | 'danger' | 'warning' | 'info' | 'outline'
 
-const CONSENSUS_VARIANT: Record<string, string> = {
+const CONSENSUS_VARIANT: Record<string, BadgeVariant> = {
   'STRONG BUY': 'success',
   'BUY': 'success',
   'STRONG SELL': 'danger',
@@ -24,23 +26,23 @@ const SIGNAL_EMOJI: Record<string, string> = {
 }
 
 export default function Consensus() {
-  const { data, loading, error, refetch } = useApi<any>('/api/consensus/')
+  const { data, loading, error, refetch } = useApi<ConsensusResponse>('/api/consensus/')
   const [sortKey, setSortKey] = useState<SortKey>('consensus')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   const sortedResults = useMemo(() => {
     if (!data?.results?.length) return []
     const results = [...data.results]
-    results.sort((a: any, b: any) => {
-      let av: any, bv: any
+    results.sort((a, b) => {
+      let av: string | number, bv: string | number
       if (sortKey === 'ticker') { av = a.ticker; bv = b.ticker }
       else if (sortKey === 'consensus') {
         const order: Record<string, number> = { 'STRONG BUY': 0, 'BUY': 1, 'HOLD': 2, 'CONFLICTED': 3, 'SELL': 4, 'STRONG SELL': 5 }
         av = order[a.consensus] ?? 6; bv = order[b.consensus] ?? 6
       }
       else { av = a[sortKey] || 0; bv = b[sortKey] || 0 }
-      if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
-      return sortDir === 'asc' ? av - bv : bv - av
+      if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv as string) : (bv as string).localeCompare(av)
+      return sortDir === 'asc' ? av - (bv as number) : (bv as number) - av
     })
     return results
   }, [data?.results, sortKey, sortDir])
@@ -74,7 +76,7 @@ export default function Consensus() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error && (
+      {data && !('error' in data) && (
         <>
           {/* Summary Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -129,7 +131,7 @@ export default function Consensus() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedResults.map((r: any) => (
+                  {sortedResults.map((r) => (
                     <tr key={r.ticker} className="border-b border-border/50 hover:bg-accent/30">
                       <td className="py-2.5 font-mono font-semibold">{r.ticker}</td>
                       <td className="py-2.5 text-center">
@@ -151,7 +153,7 @@ export default function Consensus() {
                         {r.meta_confidence > 0 ? `${(r.meta_confidence * 100).toFixed(0)}%` : '—'}
                       </td>
                       <td className="py-2.5 text-center">
-                        <Badge variant={CONSENSUS_VARIANT[r.consensus] as any || 'default'}>
+                        <Badge variant={CONSENSUS_VARIANT[r.consensus] || 'default'}>
                           {r.consensus}
                         </Badge>
                       </td>

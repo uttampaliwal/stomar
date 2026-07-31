@@ -1,8 +1,9 @@
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import type { PipelineStatusResponse } from '../lib/api-types'
 
 export default function Pipeline() {
-  const { data, loading, error } = useApi<any>('/api/pipeline/status')
+  const { data, loading, error } = useApi<PipelineStatusResponse>('/api/pipeline/status')
 
   return (
     <div className="space-y-6">

@@ -1,8 +1,11 @@
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import type { MonitoringResponse } from '../lib/api-types'
+
+type AlertHistoryEntry = { severity?: string; message?: string; timestamp?: string }
 
 export default function Monitoring() {
-  const { data, loading, error } = useApi<any>('/api/monitoring/')
+  const { data, loading, error } = useApi<MonitoringResponse>('/api/monitoring/')
 
   return (
     <div className="space-y-6">
@@ -31,7 +34,7 @@ export default function Monitoring() {
           {data.alerts?.critical?.length > 0 && (
             <>
               <SectionHeader title="Critical Alerts" />
-              {data.alerts.critical.map((a: any, i: number) => (
+              {data.alerts.critical.map((a, i: number) => (
                 <Card key={i} className="border-rose/30 bg-rose/5">
                   <Badge variant="danger" className="mb-2">CRITICAL</Badge>
                   <p className="text-sm">{a.message}</p>
@@ -43,7 +46,7 @@ export default function Monitoring() {
           {data.alerts?.warning?.length > 0 && (
             <>
               <SectionHeader title="Warnings" />
-              {data.alerts.warning.map((a: any, i: number) => (
+              {data.alerts.warning.map((a, i: number) => (
                 <Card key={i} className="border-amber/30 bg-amber/5">
                   <Badge variant="warning" className="mb-2">WARNING</Badge>
                   <p className="text-sm">{a.message}</p>
@@ -57,7 +60,7 @@ export default function Monitoring() {
             <>
               <SectionHeader title="Recent Alert History" />
               <div className="space-y-2">
-                {data.alert_history.map((a: any, i: number) => (
+                {data.alert_history.map((a: AlertHistoryEntry, i: number) => (
                   <Card key={i}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">

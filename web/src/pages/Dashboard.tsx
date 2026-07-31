@@ -3,21 +3,22 @@ import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader } from '@/
 import { useApi, usePostApi } from '@/hooks/useApi'
 import { Brain, TrendingUp, Shield, Zap, Activity, Target } from 'lucide-react'
 import { SimpleRecommendationCard } from '@/components/SimpleRecommendationCard'
+import type { PipelineStatusResponse, MonitoringResponse, RecommendationResponse, EnrichmentResponse, AutomationDecisionsResponse, AutomationRunResponse, PaperPositionSummary } from '../lib/api-types'
 
 export default function Dashboard() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
   const marketStatus = useApi<{ status: string }>('/api/market/status')
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
-  const pipeline = useApi<any>('/api/pipeline/status')
-  const monitoring = useApi<any>('/api/monitoring/')
-  const recommendation = useApi<any>(`/api/insights/recommend/${ticker}`)
-  const enrichment = useApi<any>(`/api/insights/enrichment/${ticker}`)
-  const automation = useApi<any>('/api/automation/decisions')
-  const paperState = useApi<any>('/api/paper-trading/state')
-  const runAutomation = usePostApi<any>('/api/automation/run')
+  const pipeline = useApi<PipelineStatusResponse>('/api/pipeline/status')
+  const monitoring = useApi<MonitoringResponse>('/api/monitoring/')
+  const recommendation = useApi<RecommendationResponse>(`/api/insights/recommend/${ticker}`)
+  const enrichment = useApi<EnrichmentResponse>(`/api/insights/enrichment/${ticker}`)
+  const automation = useApi<AutomationDecisionsResponse>('/api/automation/decisions')
+  const paperState = useApi<PaperPositionSummary>('/api/paper-trading/state')
+  const runAutomation = usePostApi<AutomationRunResponse>('/api/automation/run')
 
   const quickSummary = useMemo(() => {
-    if (!recommendation.data || recommendation.data.error) {
+    if (!recommendation.data || 'error' in recommendation.data) {
       return 'The recommendation engine is still warming up. Please wait a moment and try again.'
     }
     if (recommendation.data.action === 'BUY') {
@@ -54,13 +55,13 @@ export default function Dashboard() {
           label="Models Ready"
           value={pipeline.data?.trained || '—'}
           sub={`of ${pipeline.data?.total || 20}`}
-          trend={pipeline.data?.trained > 0 ? 'up' : 'neutral'}
+          trend={(pipeline.data?.trained || 0) > 0 ? 'up' : 'neutral'}
         />
         <Stat
           label="Critical Alerts"
           value={monitoring.data?.alerts?.critical?.length || 0}
           sub={monitoring.data?.alerts?.warning?.length ? `${monitoring.data.alerts.warning.length} warnings` : 'All clear'}
-          trend={monitoring.data?.alerts?.critical?.length > 0 ? 'down' : 'up'}
+          trend={(monitoring.data?.alerts?.critical?.length || 0) > 0 ? 'down' : 'up'}
         />
         <Stat
           label="System Status"
@@ -84,7 +85,7 @@ export default function Dashboard() {
 
       <SectionHeader title="Simple Decision Guide" />
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <SimpleRecommendationCard data={recommendation.data} loading={recommendation.loading} />
+        <SimpleRecommendationCard data={recommendation.data ?? undefined} loading={recommendation.loading} />
         <Card className="space-y-3">
           <label className="text-sm font-medium">Choose a stock to review</label>
           <select
@@ -132,7 +133,7 @@ export default function Dashboard() {
           {automation.loading && <Spinner />}
           {automation.error && <ErrorDisplay message={automation.error} />}
           <div className="space-y-2">
-            {(automation.data?.decisions || []).slice(0, 6).map((entry: any, index: number) => (
+            {(automation.data?.decisions || []).slice(0, 6).map((entry, index) => (
               <div key={`${entry.id || index}-${entry.ticker}`} className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2 text-sm">
                 <div>
                   <p className="font-mono text-xs text-muted-foreground">{entry.ticker}</p>
@@ -164,7 +165,7 @@ export default function Dashboard() {
           </div>
           {enrichment.loading && <Spinner />}
           {enrichment.error && <ErrorDisplay message={enrichment.error} />}
-          {enrichment.data && !enrichment.data.error && (
+          {enrichment.data && !('error' in enrichment.data) && (
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
                 <span className="text-muted-foreground">Price</span>
@@ -197,7 +198,7 @@ export default function Dashboard() {
           </div>
           {paperState.loading && <Spinner />}
           {paperState.error && <ErrorDisplay message={paperState.error} />}
-          {paperState.data && !paperState.data.error && (
+          {paperState.data && !('error' in paperState.data) && (
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2">
                 <span className="text-muted-foreground">Equity</span>

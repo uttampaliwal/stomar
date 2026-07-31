@@ -1,8 +1,12 @@
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import type { MarketPulseResponse } from '../lib/api-types'
+
+type TimeframeInfo = { direction: number; strength: number; signal: string; indicators: Record<string, string> }
+type OptionsPcrData = NonNullable<MarketPulseResponse['options_pcr']> & { pcr?: number }
 
 export default function MarketPulse() {
-  const { data, loading, error } = useApi<any>('/api/market/pulse')
+  const { data, loading, error } = useApi<MarketPulseResponse & { timeframes?: Record<string, TimeframeInfo> }>('/api/market/pulse')
 
   return (
     <div className="space-y-6">
@@ -21,7 +25,7 @@ export default function MarketPulse() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error ? (
+      {data && !('error' in data) ? (
         <>
           {/* FII/DII */}
           {data.fii_dii && (
@@ -54,7 +58,7 @@ export default function MarketPulse() {
             <>
               <SectionHeader title="Options PCR" />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <Stat label="PCR" value={data.options_pcr.pcr?.toFixed(3) || '—'} />
+                <Stat label="PCR" value={(data.options_pcr as OptionsPcrData).pcr?.toFixed(3) || '—'} />
                 <Stat label="Call OI" value={data.options_pcr.call_oi?.toLocaleString() || '—'} />
                 <Stat label="Put OI" value={data.options_pcr.put_oi?.toLocaleString() || '—'} />
               </div>
@@ -79,7 +83,7 @@ export default function MarketPulse() {
             <>
               <SectionHeader title="Timeframe Breakdown" />
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {Object.entries(data.timeframes).map(([tf, info]: [string, any]) => (
+                {Object.entries(data.timeframes).map(([tf, info]) => (
                   <Card key={tf}>
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">{tf}</p>
                     <p className="font-mono text-lg font-bold">{info.signal || '—'}</p>

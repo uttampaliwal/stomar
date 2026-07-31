@@ -6,6 +6,7 @@ import {
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import type { PredictionResponse, FeatureImportanceResponse, TrainResponse, Candle } from '../lib/api-types'
 
 function computeSMA(data: number[], period: number): (number | null)[] {
   return data.map((_, i) => {
@@ -15,10 +16,10 @@ function computeSMA(data: number[], period: number): (number | null)[] {
   })
 }
 
-function CandlestickChart({ data }: { data: any[] }) {
+function CandlestickChart({ data }: { data: Candle[] }) {
   if (!data.length) return null
   const recent = data.slice(-90)
-  const allVals = recent.flatMap((d: any) => [d.high, d.low])
+  const allVals = recent.flatMap((d) => [d.high, d.low])
   const yMin = Math.min(...allVals) * 0.998
   const yMax = Math.max(...allVals) * 1.002
   const barWidth = Math.max(1, Math.floor(600 / recent.length) - 1)
@@ -32,7 +33,7 @@ function CandlestickChart({ data }: { data: any[] }) {
             <stop offset="100%" stopColor="hsl(var(--cyan))" stopOpacity="0.05" />
           </linearGradient>
         </defs>
-        {recent.map((d: any, i: number) => {
+        {recent.map((d, i) => {
           const x = i * (barWidth + 2) + 20
           const green = d.close >= d.open
           const color = green ? 'hsl(152, 70%, 45%)' : 'hsl(350, 70%, 55%)'
@@ -56,12 +57,12 @@ function CandlestickChart({ data }: { data: any[] }) {
 export default function Predictions() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
   const [training, setTraining] = useState(false)
-  const [trainResult, setTrainResult] = useState<any>(null)
+  const [trainResult, setTrainResult] = useState<TrainResponse | null>(null)
   const debouncedTicker = useDebouncedValue(ticker, 400)
 
-  const { data, loading, error, refetch } = useApi<any>(`/api/predictions/${debouncedTicker}`)
+  const { data, loading, error, refetch } = useApi<PredictionResponse>(`/api/predictions/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
-  const { data: featureImp } = useApi<any>(`/api/predictions/${debouncedTicker}/feature-importance`)
+  const { data: featureImp } = useApi<FeatureImportanceResponse>(`/api/predictions/${debouncedTicker}/feature-importance`)
 
   const pred = data?.prediction
   const metrics = data?.metrics
@@ -70,10 +71,10 @@ export default function Predictions() {
 
   const enrichedChart = useMemo(() => {
     if (!chartData?.length) return []
-    const closes = chartData.map((d: any) => d.close)
+    const closes = chartData.map((d) => d.close)
     const sma20 = computeSMA(closes, 20)
     const sma50 = computeSMA(closes, 50)
-    return chartData.map((d: any, i: number) => ({
+    return chartData.map((d, i) => ({
       ...d,
       date: d.date?.slice(5, 10),
       sma20: sma20[i] ? Math.round(sma20[i]! * 100) / 100 : null,
@@ -84,10 +85,10 @@ export default function Predictions() {
 
   const longTermChart = useMemo(() => {
     if (!chartData?.length) return []
-    const closes = chartData.map((d: any) => d.close)
+    const closes = chartData.map((d) => d.close)
     const sma50 = computeSMA(closes, 50)
     const sma200 = computeSMA(closes, 200)
-    return chartData.map((d: any, i: number) => ({
+    return chartData.map((d, i) => ({
       date: d.date?.slice(0, 10),
       close: d.close,
       sma50: sma50[i] ? Math.round(sma50[i]! * 100) / 100 : null,
@@ -97,7 +98,7 @@ export default function Predictions() {
 
   const enrichedRecent = useMemo(() => {
     if (!recentData?.length) return []
-    return [...recentData].reverse().map((r: any, i: number, arr: any[]) => {
+    return [...recentData].reverse().map((r, i, arr) => {
       const prevClose = i > 0 ? arr[i - 1].close : r.open
       const chgPct = prevClose ? ((r.close - prevClose) / prevClose * 100) : 0
       return { ...r, chgPct: Math.round(chgPct * 100) / 100 }
@@ -120,7 +121,7 @@ export default function Predictions() {
             clearInterval(poll)
             refetch()
           } else if (status.status === 'error') {
-            setTrainResult({ error: status.error })
+            setTrainResult({ error: status.error } as TrainResponse)
             setTraining(false)
             clearInterval(poll)
           }
@@ -211,7 +212,7 @@ export default function Predictions() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error && (
+      {data && !('error' in data) && (
         <>
           {/* Hero Prediction */}
           <Card className="text-center py-6">
@@ -250,15 +251,15 @@ export default function Predictions() {
               <Stat label="Volume" value={`${(metrics.volume / 1_000_000).toFixed(1)}M`} />
               {pred?.details && (
                 <>
-                  <Stat label="LSTM" value={`${(pred.details.lstm_prob * 100).toFixed(1)}%`} sub={pred.details.lstm_dir === 1 ? '▲ UP' : '▼ DN'} trend={pred.details.lstm_dir === 1 ? 'up' : 'down'} />
-                  <Stat label="Transformer" value={`${(pred.details.transformer_prob * 100).toFixed(1)}%`} sub={pred.details.transformer_dir === 1 ? '▲ UP' : '▼ DN'} trend={pred.details.transformer_dir === 1 ? 'up' : 'down'} />
+                  <Stat label="LSTM" value={`${((pred.details.lstm_prob as number) * 100).toFixed(1)}%`} sub={pred.details.lstm_dir === 1 ? '▲ UP' : '▼ DN'} trend={pred.details.lstm_dir === 1 ? 'up' : 'down'} />
+                  <Stat label="Transformer" value={`${((pred.details.transformer_prob as number) * 100).toFixed(1)}%`} sub={pred.details.transformer_dir === 1 ? '▲ UP' : '▼ DN'} trend={pred.details.transformer_dir === 1 ? 'up' : 'down'} />
                 </>
               )}
             </div>
           )}
 
           {/* Candlestick Chart */}
-          {chartData?.length > 0 && (
+          {chartData && chartData.length > 0 && (
             <>
               <SectionHeader title="Price Action (90d Candlestick)" />
               <Card className="overflow-hidden">
@@ -364,8 +365,8 @@ export default function Predictions() {
                         formatter={(v: number) => [(v * 100).toFixed(2) + '%', 'Importance']}
                       />
                       <Bar dataKey="importance" radius={[0, 4, 4, 0]}>
-                        {featureImp.features.slice(0, 8).map((f: any, i: number) => {
-                          const avg = featureImp.features.reduce((a: number, b: any) => a + b.importance, 0) / featureImp.features.length
+                        {featureImp.features.slice(0, 8).map((f, i) => {
+                          const avg = featureImp.features.reduce((a, b) => a + b.importance, 0) / featureImp.features.length
                           return <Cell key={i} fill={f.importance > avg ? 'hsl(var(--cyan))' : 'hsl(var(--muted))'} />
                         })}
                       </Bar>
@@ -397,10 +398,10 @@ export default function Predictions() {
                           <div className="flex-1 h-2.5 rounded-full bg-muted overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all ${m.dir === 1 ? 'bg-emerald' : 'bg-rose'}`}
-                              style={{ width: `${(m.prob || 0) * 100}%` }}
+                              style={{ width: `${((m.prob as number) || 0) * 100}%` }}
                             />
                           </div>
-                          <span className="font-mono text-xs w-14 text-right">{((m.prob || 0) * 100).toFixed(1)}%</span>
+                          <span className="font-mono text-xs w-14 text-right">{(((m.prob as number) || 0) * 100).toFixed(1)}%</span>
                         </div>
                       )
                     })}
@@ -428,7 +429,7 @@ export default function Predictions() {
                     </tr>
                   </thead>
                   <tbody>
-                    {enrichedRecent.map((row: any, i: number) => (
+                    {enrichedRecent.map((row, i) => (
                       <tr key={i} className="border-b border-border/50 hover:bg-accent/30">
                         <td className="py-2.5 font-mono text-xs">{row.date?.slice(5, 10)}</td>
                         <td className="py-2.5 text-right font-mono">{row.open}</td>

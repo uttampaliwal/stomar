@@ -2,16 +2,17 @@ import { useState } from 'react'
 import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import type { SentimentResponse } from '../lib/api-types'
 
 export default function Sentiment() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
   const debouncedTicker = useDebouncedValue(ticker, 400)
-  const { data, loading, error } = useApi<any>(`/api/sentiment/${debouncedTicker}`)
+  const { data, loading, error } = useApi<SentimentResponse>(`/api/sentiment/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
 
   const score = data?.score ?? 0
   const label = data?.label || 'Neutral'
-  const headlines = data?.headlines || []
+  const headlines = (data?.headlines || []) as (string | { headline?: string; title?: string; source?: string; sentiment?: number })[]
   const sourceScores = data?.source_scores || {}
 
   return (
@@ -43,7 +44,7 @@ export default function Sentiment() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error && (
+      {data && !('error' in data) && (
         <>
           <Card className="text-center py-6">
             <Badge variant={
@@ -106,7 +107,7 @@ export default function Sentiment() {
             <>
               <SectionHeader title="Recent Headlines" />
               <div className="space-y-2">
-                {headlines.map((item: any, i: number) => (
+                {headlines.map((item, i: number) => (
                   <Card key={i} className="hover:ring-1 hover:ring-cyan/50 transition-all">
                     <div className="flex justify-between items-start gap-3">
                       <div className="flex-1 min-w-0">

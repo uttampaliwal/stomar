@@ -2,17 +2,18 @@ import { useState } from 'react'
 import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader, EmptyState } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import type { RegimeResponse } from '../lib/api-types'
 
 export default function Regime() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
   const debouncedTicker = useDebouncedValue(ticker, 400)
-  const { data, loading, error } = useApi<any>(`/api/regime/${debouncedTicker}`)
+  const { data, loading, error } = useApi<RegimeResponse>(`/api/regime/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
 
   const regime = data?.regime
   const indicators = data?.indicators || {}
   const recommendation = data?.recommendation
-  const performance = data?.performance
+  const performance = (data as RegimeResponse & { performance?: { returns?: Record<string, number>; volatility?: Record<string, number> } }).performance
 
   const regimeBadge = regime === 'Bull' ? 'success' : regime === 'Bear' ? 'danger' : 'warning'
 
@@ -37,7 +38,7 @@ export default function Regime() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error ? (
+      {data && !('error' in data) ? (
         <>
           {regime && (
             <Card className="text-center py-6">

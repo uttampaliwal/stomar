@@ -5,8 +5,8 @@ interface UseApiOptions {
   staleTime?: number
 }
 
-const _inflight = new Map<string, Promise<any>>()
-const _cache = new Map<string, { data: any; ts: number }>()
+const _inflight = new Map<string, Promise<unknown>>()
+const _cache = new Map<string, { data: unknown; ts: number }>()
 const DEFAULT_STALE_MS = 30_000
 
 export function useApi<T>(url: string, options: UseApiOptions = {}) {
@@ -37,7 +37,7 @@ export function useApi<T>(url: string, options: UseApiOptions = {}) {
       const json = await promise
       _inflight.delete(url)
       if (mountedRef.current) {
-        setData(json)
+        setData(json as T)
         _cache.set(url, { data: json, ts: Date.now() })
       }
     } catch (err) {
@@ -76,9 +76,9 @@ export function usePostApi<T>(url: string) {
         body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = await res.json()
-      setData(json)
-      return json
+      const json: unknown = await res.json()
+      setData(json as T)
+      return json as T
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
       return null

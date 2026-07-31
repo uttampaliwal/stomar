@@ -4,11 +4,12 @@ import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader } f
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatPercent } from '@/lib/utils'
+import type { RiskResponse } from '../lib/api-types'
 
 export default function Risk() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
   const debouncedTicker = useDebouncedValue(ticker, 400)
-  const { data, loading, error } = useApi<any>(`/api/risk/${debouncedTicker}`)
+  const { data, loading, error } = useApi<RiskResponse>(`/api/risk/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
 
   const report = data?.report
@@ -53,7 +54,7 @@ export default function Risk() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error && (
+      {data && !('error' in data) && (
         <>
           {regime && (
             <Card className="text-center py-4">

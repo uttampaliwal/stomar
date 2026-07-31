@@ -1,11 +1,12 @@
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader, EmptyState } from '@/components/UI'
 import { useApi, usePostApi } from '@/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
+import type { PortfolioStatsResponse, PortfolioTradesResponse, PaperCloseResponse } from '../lib/api-types'
 
 export default function Portfolio() {
-  const stats = useApi<any>('/api/portfolio/stats')
-  const trades = useApi<any>('/api/portfolio/trades')
-  const { post: closePosition, loading: closing } = usePostApi<any>('/api/paper-trading/close-position')
+  const stats = useApi<PortfolioStatsResponse>('/api/portfolio/stats')
+  const trades = useApi<PortfolioTradesResponse>('/api/portfolio/trades')
+  const { post: closePosition, loading: closing } = usePostApi<PaperCloseResponse>('/api/paper-trading/close-position')
 
   const handleExit = async (ticker: string) => {
     await closePosition({ ticker })
@@ -16,7 +17,7 @@ export default function Portfolio() {
   if (stats.loading || trades.loading) return <Spinner />
   if (stats.error) return <ErrorDisplay message={stats.error} />
 
-  const data = stats.data || {}
+  const data = stats.data || ({} as PortfolioStatsResponse)
   const tradeData = trades.data?.trades || []
 
   return (
@@ -85,7 +86,7 @@ export default function Portfolio() {
                 </tr>
               </thead>
               <tbody>
-                {data.positions.map((pos: any, i: number) => (
+                {data.positions.map((pos, i) => (
                   <tr key={i} className="border-b border-border/50 hover:bg-muted/50">
                     <td className="py-2 px-3 font-medium">{pos.ticker}</td>
                     <td className="py-2 px-3 text-right">{pos.quantity}</td>
@@ -132,7 +133,7 @@ export default function Portfolio() {
                 </tr>
               </thead>
               <tbody>
-                {tradeData.map((trade: any, i: number) => (
+                {tradeData.map((trade, i) => (
                   <tr key={i} className="border-b border-border/50 hover:bg-muted/50">
                     <td className="py-2 px-3 text-muted-foreground">{trade.date?.split('T')[0] || '—'}</td>
                     <td className="py-2 px-3 font-medium">{trade.ticker}</td>

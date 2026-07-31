@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import type { LedgerSummaryResponse, LedgerDecisionsResponse } from '../lib/api-types'
 
 export default function Ledger() {
-  const { data, loading, error, refetch } = useApi<any>('/api/ledger/summary')
-  const { data: decisionsData } = useApi<any>('/api/ledger/decisions')
+  const { data, loading, error, refetch } = useApi<LedgerSummaryResponse>('/api/ledger/summary')
+  const { data: decisionsData } = useApi<LedgerDecisionsResponse>('/api/ledger/decisions')
   const [running, setRunning] = useState(false)
   const [runResult, setRunResult] = useState<string | null>(null)
 
@@ -44,8 +45,8 @@ export default function Ledger() {
         setRunResult(JSON.stringify(data))
         setRunning(false)
       }
-    } catch (e: any) {
-      setRunResult(`Failed: ${e.message}`)
+    } catch (e) {
+      setRunResult(`Failed: ${e instanceof Error ? e.message : String(e)}`)
       setRunning(false)
     }
   }
@@ -84,7 +85,7 @@ export default function Ledger() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error && (
+      {data && !('error' in data) && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat label="Total Decisions" value={data.total_decisions || 0} />
@@ -99,7 +100,7 @@ export default function Ledger() {
               <SectionHeader title="Signal Module Accuracy" />
               <Card>
                 <div className="space-y-2">
-                  {Object.entries(data.signal_accuracy).map(([module, acc]: [string, any]) => (
+                  {Object.entries(data.signal_accuracy).map(([module, acc]) => (
                     <div key={module} className="flex items-center gap-3">
                       <span className="w-32 text-xs font-mono uppercase text-muted-foreground truncate">{module}</span>
                       <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
@@ -122,9 +123,9 @@ export default function Ledger() {
               <SectionHeader title="Portfolio Value Over Time" />
               <Card className="overflow-x-auto">
                 <div className="flex gap-1 items-end h-32">
-                  {data.snapshots.map((s: any, i: number) => {
+                  {data.snapshots.map((s, i) => {
                     const val = s.total_value || 0
-                    const maxVal = Math.max(...data.snapshots.map((x: any) => x.total_value || 0))
+                    const maxVal = Math.max(...data.snapshots.map((x) => x.total_value || 0))
                     const height = maxVal > 0 ? (val / maxVal) * 100 : 0
                     return (
                       <div
@@ -145,7 +146,7 @@ export default function Ledger() {
           )}
 
           {/* Decisions Table */}
-          {decisionsData?.decisions?.length > 0 ? (
+          {decisionsData && decisionsData.decisions.length > 0 ? (
             <>
               <SectionHeader title="Recent Decisions" />
               <Card className="overflow-x-auto">
@@ -161,7 +162,7 @@ export default function Ledger() {
                     </tr>
                   </thead>
                   <tbody>
-                    {decisionsData.decisions.slice(0, 20).map((d: any, i: number) => (
+                    {decisionsData.decisions.slice(0, 20).map((d, i) => (
                       <tr key={i} className="border-b border-border/50 hover:bg-muted/50">
                         <td className="py-2 px-3 font-mono text-xs">{d.date}</td>
                         <td className="py-2 px-3 font-mono text-xs">{d.ticker}</td>

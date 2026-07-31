@@ -4,11 +4,12 @@ import { useApi, usePostApi } from '@/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Sparkles } from 'lucide-react'
+import type { WealthStrategiesResponse, MonteCarloResponse, AdvisorResponse } from '../lib/api-types'
 
 export default function WealthGoals() {
-  const { data: strategies } = useApi<any>('/api/wealth/strategies')
-  const { post: runSimulation, loading: simulating, data: simResult } = usePostApi<any>('/api/wealth/monte-carlo')
-  const { post: getAdvisor, loading: advising, data: advisorResult } = usePostApi<any>('/api/wealth/wealth-advisor')
+  const { data: strategies } = useApi<WealthStrategiesResponse>('/api/wealth/strategies')
+  const { post: runSimulation, loading: simulating, data: simResult } = usePostApi<MonteCarloResponse>('/api/wealth/monte-carlo')
+  const { post: getAdvisor, loading: advising, data: advisorResult } = usePostApi<AdvisorResponse>('/api/wealth/wealth-advisor')
 
   const [form, setForm] = useState({
     target_corpus: 10000000,
@@ -36,9 +37,9 @@ export default function WealthGoals() {
 
   const chartData = simResult?.percentiles?.labels?.map((label: string, i: number) => ({
     name: label,
-    p10: simResult.percentiles.p10[i],
-    p50: simResult.percentiles.p50[i],
-    p90: simResult.percentiles.p90[i],
+    p10: simResult?.percentiles?.p10[i],
+    p50: simResult?.percentiles?.p50[i],
+    p90: simResult?.percentiles?.p90[i],
   })) || []
 
   return (
@@ -132,7 +133,7 @@ export default function WealthGoals() {
       </Card>
 
       {/* Simulation Results */}
-      {simResult && !simResult.error && (
+      {simResult && !('error' in simResult) && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat
@@ -216,7 +217,7 @@ export default function WealthGoals() {
         <>
           <SectionHeader title="Proven Quant Strategies" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {strategies.strategies.map((s: any, i: number) => (
+            {strategies.strategies.map((s, i: number) => (
               <Card key={i} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold">{s.name}</p>

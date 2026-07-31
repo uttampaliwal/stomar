@@ -4,18 +4,19 @@ import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader, Em
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatPercent } from '@/lib/utils'
+import type { VolatilityResponse } from '../lib/api-types'
 
 export default function Volatility() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
   const debouncedTicker = useDebouncedValue(ticker, 400)
-  const { data, loading, error } = useApi<any>(`/api/volatility/${debouncedTicker}`)
+  const { data, loading, error } = useApi<VolatilityResponse>(`/api/volatility/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
 
   const forecastData = data?.forecast?.forecast_vols?.map((v: number, i: number) => ({
     day: `Day ${i + 1}`,
     vol: Math.round(v * 10000) / 100,
-    current: data.forecast.current_vol ? Math.round(data.forecast.current_vol * 10000) / 100 : null,
-    longTerm: data.forecast.long_term_vol ? Math.round(data.forecast.long_term_vol * 10000) / 100 : null,
+    current: data?.forecast?.current_vol ? Math.round(data.forecast.current_vol * 10000) / 100 : null,
+    longTerm: data?.forecast?.long_term_vol ? Math.round(data.forecast.long_term_vol * 10000) / 100 : null,
   })) || []
 
   return (
@@ -39,7 +40,7 @@ export default function Volatility() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error ? (
+      {data && !('error' in data) ? (
         <>
           {data.regime && (
             <Card className="text-center py-4">

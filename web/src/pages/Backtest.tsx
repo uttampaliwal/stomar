@@ -4,6 +4,10 @@ import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, PageHeader } f
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatPercent } from '@/lib/utils'
+import type { BacktestResponse, BacktestWindow } from '../lib/api-types'
+
+type BacktestTestRow = BacktestWindow & { period?: string; accuracy?: number; annual_return?: number }
+type BacktestMonteCarlo = { prob_profit?: number; median_return?: number; worst_5pct?: number; max_drawdown?: number }
 
 export default function Backtest() {
   const [ticker, setTicker] = useState('RELIANCE.NS')
@@ -11,11 +15,11 @@ export default function Backtest() {
   const [stopLoss, setStopLoss] = useState(2)
   const [takeProfit, setTakeProfit] = useState(5)
   const debouncedTicker = useDebouncedValue(ticker, 400)
-  const { data, loading, error } = useApi<any>(`/api/backtest/${debouncedTicker}`)
+  const { data, loading, error } = useApi<BacktestResponse & { monte_carlo?: BacktestMonteCarlo }>(`/api/backtest/${debouncedTicker}`)
   const stocks = useApi<{ stocks: string[] }>('/api/market/stocks')
 
   const testResults = data?.test_results || []
-  const chartData = testResults.map((w: any) => ({
+  const chartData = testResults.map((w: BacktestTestRow) => ({
     window: w.window || w.period || '',
     return: ((w.total_return || w.annual_return || 0) * 100),
     trades: w.total_trades || 0,
@@ -80,7 +84,7 @@ export default function Backtest() {
       {loading && <Spinner />}
       {error && <ErrorDisplay message={error} />}
 
-      {data && !data.error && (
+      {data && !('error' in data) && (
         <>
           <SectionHeader title="Aggregate Metrics" />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -119,7 +123,7 @@ export default function Backtest() {
                     <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} width={40} />
                     <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '11px' }} />
                     <Bar dataKey="return" name="Return %" radius={[4, 4, 0, 0]}>
-                      {chartData.map((_: any, i: number) => (
+                      {chartData.map((_, i: number) => (
                         <Cell key={i} fill={chartData[i].return >= 0 ? '#10b981' : '#f43f5e'} fillOpacity={0.8} />
                       ))}
                     </Bar>
@@ -142,7 +146,7 @@ export default function Backtest() {
                   </tr>
                 </thead>
                 <tbody>
-                  {testResults.map((w: any, i: number) => (
+                  {testResults.map((w: BacktestTestRow, i: number) => (
                     <tr key={i} className="border-b border-border/50 hover:bg-accent/30">
                       <td className="py-2.5 font-mono">{w.window || w.period || `Window ${i + 1}`}</td>
                       <td className="py-2.5 text-right font-mono">

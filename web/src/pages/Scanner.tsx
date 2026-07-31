@@ -1,24 +1,25 @@
 import { useState, useMemo } from 'react'
 import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import type { ScannerResponse, PipelineStatusResponse } from '../lib/api-types'
 
 type SortKey = 'ticker' | 'signal' | 'confidence' | 'price' | 'chg_5d' | 'rsi'
 type SortDir = 'asc' | 'desc'
 
 export default function Scanner() {
-  const { data, loading, error, refetch } = useApi<any>('/api/scanner/')
-  const { data: pipeStatus } = useApi<any>('/api/pipeline/status')
+  const { data, loading, error, refetch } = useApi<ScannerResponse>('/api/scanner/')
+  const { data: pipeStatus } = useApi<PipelineStatusResponse>('/api/pipeline/status')
   const [sortKey, setSortKey] = useState<SortKey>('confidence')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   const sortedResults = useMemo(() => {
     if (!data?.results?.length) return []
     const results = [...data.results]
-    results.sort((a: any, b: any) => {
+    results.sort((a, b) => {
       let av = a[sortKey], bv = b[sortKey]
       if (sortKey === 'signal') { av = a.confidence; bv = b.confidence }
-      if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
-      return sortDir === 'asc' ? av - bv : bv - av
+      if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv as string) : (bv as string).localeCompare(av)
+      return sortDir === 'asc' ? av - (bv as number) : (bv as number) - av
     })
     return results
   }, [data?.results, sortKey, sortDir])
@@ -71,7 +72,7 @@ export default function Scanner() {
         </Card>
       )}
 
-      {data && !data.error && (
+      {data && !('error' in data) && (
         <>
           {/* Stats Row */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -128,7 +129,7 @@ export default function Scanner() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedResults.map((r: any) => (
+                  {sortedResults.map((r) => (
                     <tr key={r.ticker} className="border-b border-border/50 hover:bg-accent/30">
                       <td className="py-2.5 font-mono font-semibold">{r.ticker}</td>
                       <td className="py-2.5 text-center">
