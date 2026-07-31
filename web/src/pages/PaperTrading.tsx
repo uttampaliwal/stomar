@@ -10,8 +10,10 @@ export default function PaperTrading() {
   const { data: stocks } = useApi<{ stocks: string[] }>('/api/paper-trading/stocks')
   const { post: placeOrder, loading: ordering } = usePostApi<any>('/api/paper-trading/order')
   const { post: closePosition, loading: closing } = usePostApi<any>('/api/paper-trading/close-position')
+  const { post: resetAccount, loading: resetting } = usePostApi<any>('/api/paper-trading/reset')
 
   const [form, setForm] = useState({ ticker: 'RELIANCE.NS', side: 'BUY', quantity: 1 })
+  const [resetCapital, setResetCapital] = useState(200000)
 
   const handleOrder = async () => {
     await placeOrder(form)
@@ -21,6 +23,12 @@ export default function PaperTrading() {
 
   const handleClose = async (ticker: string) => {
     await closePosition({ ticker })
+    refetch()
+    refetchPositions()
+  }
+
+  const handleReset = async () => {
+    await resetAccount({ capital: resetCapital })
     refetch()
     refetchPositions()
   }
@@ -91,6 +99,22 @@ export default function PaperTrading() {
                   {state.risk_status?.consecutive_losses || 0} / 5
                 </p>
               </div>
+            </div>
+            <div className="flex items-center gap-2 pt-2 border-t border-border/50">
+              <label className="text-xs text-muted-foreground">Reset Capital (₹)</label>
+              <input
+                type="number"
+                value={resetCapital}
+                onChange={(e) => setResetCapital(parseInt(e.target.value) || 200000)}
+                className="w-28 rounded border border-border bg-background px-2 py-1 text-xs font-mono"
+              />
+              <button
+                onClick={handleReset}
+                disabled={resetting}
+                className="rounded bg-amber/10 text-amber border border-amber/20 px-2 py-1 text-xs hover:bg-amber/20 transition-colors disabled:opacity-50"
+              >
+                {resetting ? 'Resetting...' : 'Reset Account'}
+              </button>
             </div>
           </Card>
 
