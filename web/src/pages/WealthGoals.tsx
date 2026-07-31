@@ -3,11 +3,12 @@ import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader, Badge } f
 import { useApi, usePostApi } from '@/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Coins, Target, TrendingUp, Shield } from 'lucide-react'
+import { Coins, Target, TrendingUp, Shield, Sparkles } from 'lucide-react'
 
 export default function WealthGoals() {
   const { data: strategies } = useApi<any>('/api/wealth/strategies')
   const { post: runSimulation, loading: simulating, data: simResult } = usePostApi<any>('/api/wealth/monte-carlo')
+  const { post: getAdvisor, loading: advising, data: advisorResult } = usePostApi<any>('/api/wealth/wealth-advisor')
 
   const [form, setForm] = useState({
     target_corpus: 10000000,
@@ -21,6 +22,16 @@ export default function WealthGoals() {
 
   const handleSimulate = async () => {
     await runSimulation(form)
+  }
+
+  const handleAdvisor = async () => {
+    await getAdvisor({
+      target_corpus: form.target_corpus,
+      current_capital: form.current_capital,
+      monthly_sip: form.monthly_sip,
+      horizon_years: form.horizon_years,
+      expected_return: form.expected_return,
+    })
   }
 
   const chartData = simResult?.percentiles?.labels?.map((label: string, i: number) => ({
@@ -222,6 +233,57 @@ export default function WealthGoals() {
           </div>
         </>
       )}
+
+      {/* AI Wealth Advisor */}
+      <Card className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-violet" />
+            <p className="text-sm font-semibold">AI Wealth Advisor</p>
+          </div>
+          <button
+            onClick={handleAdvisor}
+            disabled={advising}
+            className="rounded-lg bg-violet/10 text-violet border border-violet/20 px-3 py-1.5 text-xs font-semibold hover:bg-violet/20 transition-colors disabled:opacity-50"
+          >
+            {advising ? 'Analyzing...' : 'Get AI Audit'}
+          </button>
+        </div>
+        {advisorResult?.advisor && (
+          <div className="space-y-3 text-sm">
+            {advisorResult.source && (
+              <Badge variant="outline">{advisorResult.source}</Badge>
+            )}
+            <p className="text-muted-foreground leading-relaxed">{advisorResult.advisor.executive_summary}</p>
+            {advisorResult.advisor.asset_allocation && (
+              <div className="flex gap-3 text-xs">
+                {Object.entries(advisorResult.advisor.asset_allocation).map(([k, v]) => (
+                  <span key={k} className="font-mono">
+                    {k.replace('_pct', '').toUpperCase()}: <span className="font-semibold">{v as number}%</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            {advisorResult.advisor.action_items && (
+              <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+                {advisorResult.advisor.action_items.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            )}
+            {advisorResult.advisor.risk_warnings && (
+              <div className="rounded-lg bg-amber/5 border border-amber/20 p-2 text-xs text-amber space-y-1">
+                {advisorResult.advisor.risk_warnings.map((w: string, i: number) => (
+                  <p key={i}>⚠ {w}</p>
+                ))}
+              </div>
+            )}
+            {advisorResult.note && (
+              <p className="text-[10px] text-muted-foreground italic">{advisorResult.note}</p>
+            )}
+          </div>
+        )}
+      </Card>
     </div>
   )
 }

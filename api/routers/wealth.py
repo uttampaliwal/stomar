@@ -1,9 +1,22 @@
 """Wealth goal planning endpoints — Monte Carlo simulation and strategies."""
 
+import os
+import logging
 import numpy as np
 from fastapi import APIRouter, Body
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Try to load Gemini AI SDK
+_genai = None
+try:
+    from google import genai as _genai_sdk
+    _api_key = os.environ.get("GEMINI_API_KEY")
+    if _api_key:
+        _genai = _genai_sdk.Client(api_key=_api_key)
+except ImportError:
+    pass
 
 # Static wealth strategies
 WEALTH_STRATEGIES = [
@@ -115,3 +128,112 @@ def monte_carlo_simulation(data: dict = Body(...)):
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+_ADVISOR_PROMPT = """You are an institutional-grade quant portfolio advisor for the Indian market.
+Analyze the investor profile and provide a structured portfolio audit.
+
+Investor Profile:
+- Target Corpus: ₹{target:,.0f}
+- Current Capital: ₹{current:,.0f}
+- Monthly SIP: ₹{sip:,.0f}
+- Horizon: {horizon} years
+- Expected Return: {exp_return:.1%}
+- Risk Tolerance: {risk_tolerance}
+
+Provide a JSON response with:
+{{
+  "executive_summary": "2-3 sentence overview",
+  "asset_allocation": {{"equity_pct": number, "debt_pct": number, "gold_pct": number, "cash_pct": number}},
+  "recommended_funds": ["fund1", "fund2", "fund3"],
+  "action_items": ["action1", "action2", "action3"],
+  "risk_warnings": ["warning1", "warning2"],
+  "expected_cagr": "X%",
+  "expected_timeline": "X years"
+}}"""
+
+
+def _fallback_advisor(params: dict) -> dict:
+    """Mathematical fallback when Gemini is unavailable."""
+    current = params.get("current", 0)
+    sip = params.get("sip", 10000)
+    horizon = params.get("horizon", 10)
+    target = params.get("target", 10_000_000)
+    exp_return = params.get("exp_return", 0.12)
+
+    # Simple rule-based allocation
+    if horizon <= 3:
+        alloc = {"equity_pct": 40, "debt_pct": 40, "gold_pct": 10, "cash_pct": 10}
+    elif horizon <= 7:
+        alloc = {"equity_pct": 60, "debt_pct": 25, "gold_pct": 10, "cash_pct": 5}
+    else:
+        alloc = {"equity_pct": 75, "debt_pct": 15, "gold_pct": 7, "cash_pct": 3}
+
+    required_monthly = (target - current * (1 + exp_return) ** horizon) / (
+        sum((1 + exp_return / 12) ** i for i in range(horizon * 12))
+    ) if horizon > 0 else 0
+
+    return {
+        "source": "Mathematical Quant Engine",
+        "advisor": {
+            "executive_summary": (
+                f"With ₹{current:,.0f} invested and ₹{sip:,.0f}/month SIP over {horizon} years, "
+                f"you are on track for approximately ₹{(current * (1 + exp_return) ** horizon + sip * sum((1 + exp_return / 12) ** i for i in range(horizon * 12))):,.0f}. "
+                f"{'Target achievable.' if required_monthly <= sip else f'Consider increasing SIP by ₹{(required_monthly - sip):,.0f}/month.'}"
+            ),
+            "asset_allocation": alloc,
+            "recommended_funds": [
+                "Nifty 50 Index Fund (core)",
+                "Nifty Next 50 Index Fund (satellite)",
+                "Short Duration Debt Fund (stability)",
+                "Gold ETF (hedge)",
+            ],
+            "action_items": [
+                f"Maintain monthly SIP of ₹{sip:,.0f}",
+                "Review allocation annually and rebalance",
+                "Increase SIP by 10% each year (step-up SIP)",
+            ],
+            "risk_warnings": [
+                "Past performance does not guarantee future returns",
+                "Equity investments are subject to market risk",
+                f"At {exp_return:.0%} expected return, worst-case 1-year loss could be ~{exp_return + 2 * 0.18:.0%}",
+            ],
+            "expected_cagr": f"{exp_return:.1%}",
+            "expected_timeline": f"{horizon} years",
+        },
+    }
+
+
+@router.post("/wealth-advisor")
+def wealth_advisor(data: dict = Body(...)):
+    """AI-powered portfolio audit using Gemini, with mathematical fallback."""
+    try:
+        params = {
+            "target": float(data.get("target_corpus", 10_000_000)),
+            "current": float(data.get("current_capital", 0)),
+            "sip": float(data.get("monthly_sip", 10000)),
+            "horizon": int(data.get("horizon_years", 10)),
+            "exp_return": float(data.get("expected_return", 0.12)),
+            "risk_tolerance": data.get("risk_tolerance", "Moderate"),
+        }
+
+        if _genai is None:
+            result = _fallback_advisor(params)
+            result["note"] = "Gemini API not configured — using mathematical engine"
+            return result
+
+        prompt = _ADVISOR_PROMPT.format(**params)
+        response = _genai.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config={"response_mime_type": "application/json"},
+        )
+        import json
+        advisor = json.loads(response.text)
+        return {"source": "Gemini AI Quant Advisor", "advisor": advisor}
+
+    except Exception as e:
+        logger.warning("Gemini advisor failed, using fallback: %s", e)
+        result = _fallback_advisor(params if 'params' in dir() else {})
+        result["note"] = f"Gemini error: {e}"
+        return result
