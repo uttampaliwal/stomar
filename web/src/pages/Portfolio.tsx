@@ -1,10 +1,17 @@
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader, EmptyState } from '@/components/UI'
-import { useApi } from '@/hooks/useApi'
+import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader, EmptyState, Badge } from '@/components/UI'
+import { useApi, usePostApi } from '@/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
 
 export default function Portfolio() {
   const stats = useApi<any>('/api/portfolio/stats')
   const trades = useApi<any>('/api/portfolio/trades')
+  const { post: closePosition, loading: closing } = usePostApi<any>('/api/paper-trading/close-position')
+
+  const handleExit = async (ticker: string) => {
+    await closePosition({ ticker })
+    stats.refetch()
+    trades.refetch()
+  }
 
   if (stats.loading || trades.loading) return <Spinner />
   if (stats.error) return <ErrorDisplay message={stats.error} />
@@ -27,7 +34,7 @@ export default function Portfolio() {
       </Card>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Stat
           label="Total Equity"
           value={formatCurrency(data.equity || 0)}
@@ -47,9 +54,15 @@ export default function Portfolio() {
           trend={data.realized_pnl >= 0 ? 'up' : 'down'}
         />
         <Stat
-          label="Open Positions"
-          value={data.positions?.length || 0}
-          sub="Active trades"
+          label="Sharpe Ratio"
+          value={data.sharpe_ratio || '0.00'}
+          sub="Risk-Adjusted"
+          trend={data.sharpe_ratio > 1 ? 'up' : data.sharpe_ratio < 0 ? 'down' : 'neutral'}
+        />
+        <Stat
+          label="Win Rate"
+          value={`${data.win_rate || 0}%`}
+          sub={`${data.closed_positions || 0} closed`}
           trend="neutral"
         />
       </div>
@@ -67,6 +80,8 @@ export default function Portfolio() {
                   <th className="text-right py-2 px-3 font-medium text-muted-foreground">Avg Cost</th>
                   <th className="text-right py-2 px-3 font-medium text-muted-foreground">Current</th>
                   <th className="text-right py-2 px-3 font-medium text-muted-foreground">P&L</th>
+                  <th className="text-right py-2 px-3 font-medium text-muted-foreground">P&L %</th>
+                  <th className="text-center py-2 px-3 font-medium text-muted-foreground">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -78,6 +93,18 @@ export default function Portfolio() {
                     <td className="py-2 px-3 text-right">{formatCurrency(pos.current_price)}</td>
                     <td className={`py-2 px-3 text-right font-medium ${pos.pnl >= 0 ? 'text-emerald' : 'text-rose'}`}>
                       {formatCurrency(pos.pnl)}
+                    </td>
+                    <td className={`py-2 px-3 text-right font-medium ${(pos.pnl_pct || 0) >= 0 ? 'text-emerald' : 'text-rose'}`}>
+                      {(pos.pnl_pct || 0) >= 0 ? '+' : ''}{pos.pnl_pct || 0}%
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <button
+                        onClick={() => handleExit(pos.ticker)}
+                        disabled={closing}
+                        className="rounded bg-rose/10 text-rose border border-rose/20 px-2 py-1 text-xs hover:bg-rose/20 transition-colors disabled:opacity-50"
+                      >
+                        Exit
+                      </button>
                     </td>
                   </tr>
                 ))}
