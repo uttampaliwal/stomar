@@ -96,6 +96,18 @@ if _HAS_PYDANTIC_SETTINGS:
         feature_versions_keep: int = Field(default=10, description="Number of recent feature version files to keep")
         pipeline_logs_retention_days: int = Field(default=14, description="Days to keep pipeline log files")
 
+        # ── Live Market Data (free tier) ───────────────────────────────────
+        kite_api_key: str = Field(default="", description="Zerodha Kite Connect API key (optional)")
+        kite_access_token: str = Field(default="", description="Zerodha Kite Connect access token (optional)")
+        live_poll_interval: float = Field(default=3.0, description="Live quote polling interval in seconds (3-5s recommended)")
+        live_universe: list[str] = Field(
+            default=["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
+                     "SBIN.NS", "BHARTIARTL.NS", "KOTAKBANK.NS", "BAJFINANCE.NS", "LT.NS",
+                     "WIPRO.NS", "AXISBANK.NS", "TITAN.NS", "MARUTI.NS", "SUNPHARMA.NS",
+                     "ASIANPAINT.NS", "NTPC.NS", "ONGC.NS", "ITC.NS", "HINDUNILVR.NS"],
+            description="Symbols polled by the live engine",
+        )
+
 
     settings = Settings()
 else:
@@ -148,5 +160,19 @@ else:
             self.monitoring_retention_days = int(os.environ.get("STOMAR_MONITORING_RETENTION_DAYS", "30"))
             self.feature_versions_keep = int(os.environ.get("STOMAR_FEATURE_VERSIONS_KEEP", "10"))
             self.pipeline_logs_retention_days = int(os.environ.get("STOMAR_PIPELINE_LOGS_RETENTION_DAYS", "14"))
+            # Live Market Data
+            self.kite_api_key = os.environ.get("STOMAR_KITE_API_KEY", "")
+            self.kite_access_token = os.environ.get("STOMAR_KITE_ACCESS_TOKEN", "")
+            self.live_poll_interval = float(os.environ.get("STOMAR_LIVE_POLL_INTERVAL", "3.0"))
+            self.live_universe = [
+                s.strip() for s in os.environ.get(
+                    "STOMAR_LIVE_UNIVERSE",
+                    "RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ICICIBANK.NS,SBIN.NS,"
+                    "BHARTIARTL.NS,KOTAKBANK.NS,BAJFINANCE.NS,LT.NS,WIPRO.NS,AXISBANK.NS,"
+                    "TITAN.NS,MARUTI.NS,SUNPHARMA.NS,ASIANPAINT.NS,NTPC.NS,ONGC.NS,ITC.NS,"
+                    "HINDUNILVR.NS",
+                ).split(",")
+                if s.strip()
+            ]
 
     settings = _FallbackSettings()

@@ -20,6 +20,84 @@ from typing import Callable
 logger = logging.getLogger(__name__)
 
 
+class RateLimiter:
+    """Token-bucket rate limiter for third-party API fairness.
+
+    Guarantees at most `rate` calls per second per key, enforced with a
+    short sleep inside acquire(). Safe to share across threads.
+
+    Usage:
+        limiter = RateLimiter(rate=3, burst=5)   # 3 req/s, burst of 5
+        with limiter.acquire("yfinance"):
+            data = yf.download(ticker)
+    """
+
+    def __init__(self, rate: float = 3.0, burst: int = 5, name: str = "rate_limiter"):
+        if rate <= 0:
+            raise ValueError("rate must be > 0")
+        self.rate = rate
+        self.burst = max(1, burst)
+        self.name = name
+        self._tokens: dict[str, float] = {}
+        self._last: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def acquire(self, key: str = "default"):
+        """Context manager: blocks until a token is available for *key*."""
+        return _RateLimiterGuard(self, key)
+
+    def _wait_for_token(self, key: str):
+        with self._lock:
+            now = time.monotonic()
+            refill = (now - self._last.get(key, now)) * self.rate
+            tokens = min(self.burst, self._tokens.get(key, self.burst) + refill)
+            if tokens >= 1.0:
+                self._tokens[key] = tokens - 1.0
+                self._last[key] = now
+                return
+            # Must wait until one token accrues
+            wait = (1.0 - tokens) / self.rate
+        time.sleep(wait)
+        with self._lock:
+            self._tokens[key] = 0.0
+            self._last[key] = time.monotonic()
+
+
+class _RateLimiterGuard:
+    """Context manager returned by RateLimiter.acquire()."""
+
+    def __init__(self, limiter: RateLimiter, key: str):
+        self._limiter = limiter
+        self._key = key
+
+    def __enter__(self):
+        self._limiter._wait_for_token(self._key)
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def throttle(rate: float = 3.0, burst: int = 5, key: str = "default"):
+    """Decorator: apply a token-bucket rate limit to a function call.
+
+    Usage:
+        @throttle(rate=2, burst=4, key="nse")
+        def fetch_quote(symbol):
+            ...
+    """
+    limiter = RateLimiter(rate=rate, burst=burst, name=key)
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            with limiter.acquire(key):
+                return func(*args, **kwargs)
+        return wrapper
+
+    return decorator
+
+
 def retry_with_backoff(
     max_retries: int = 3,
     base_delay: float = 1.0,
