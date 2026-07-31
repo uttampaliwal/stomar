@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 _model_cache: dict[str, tuple[float, tuple]] = {}
 _MODEL_CACHE_TTL = 3600  # 1 hour
+_MODEL_CACHE_MAX = 10  # Max cached model sets (each ~200-500 MB)
 
 # Allowed types for joblib-loaded objects (defense against pickle payloads)
 _ALLOWED_JOBLIB_TYPES = {
@@ -211,6 +212,11 @@ def load_models(ticker: str):
             lgb_model = safe_joblib_load(lgb_path, "lgb.pkl")
 
     result = lstm, gru, transformer, xgb, scaler, features, lgb_model
+    # Evict oldest entries if cache is full
+    if len(_model_cache) >= _MODEL_CACHE_MAX:
+        oldest_key = min(_model_cache, key=lambda k: _model_cache[k][0])
+        del _model_cache[oldest_key]
+        logger.debug("Evicted model cache: %s", oldest_key)
     _model_cache[cache_key] = (time.time(), result)
     return result
 

@@ -139,8 +139,14 @@ class Ledger:
             if target <= current:
                 continue
             logger.info(f"Migrating ledger schema: {current} -> {target}")
-            self.conn.executescript(_MIGRATIONS[target])
-            self.conn.execute("UPDATE schema_version SET version = ?", (target,))
+            self.conn.execute("BEGIN")
+            try:
+                self.conn.executescript(_MIGRATIONS[target])
+                self.conn.execute("UPDATE schema_version SET version = ?", (target,))
+                self.conn.execute("COMMIT")
+            except Exception:
+                self.conn.execute("ROLLBACK")
+                raise
 
     # --- Write operations ---
 

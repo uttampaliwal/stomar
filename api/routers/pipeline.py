@@ -115,6 +115,15 @@ def run_orchestrator(tickers: list[str] = None):
             tickers = [t for t in NSE_STOCKS if models_exist(t)]
             if not tickers:
                 return {"status": "no_trained_models", "message": "Train at least one model first"}
+        else:
+            # Validate user-supplied ticker list
+            import re
+            ticker_re = re.compile(r"^[A-Z0-9]{1,20}\.NS$")
+            invalid = [t for t in tickers if not ticker_re.match(t)]
+            if invalid:
+                return {"error": f"Invalid ticker format: {invalid[:5]}"}
+            if len(tickers) > 50:
+                return {"error": "Too many tickers (max 50)"}
 
         thread = threading.Thread(target=_run_worker, args=(tickers,), daemon=True)
         thread.start()

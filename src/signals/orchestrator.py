@@ -111,7 +111,7 @@ class DailyOrchestrator:
             "current_price": signals.get("current_price", 0),
         }
 
-        if not dry_run:
+        if not dry_run and signals:
             decision_id = self.ledger.log_decision(
                 date=date,
                 ticker=ticker,

@@ -13,6 +13,7 @@ Usage:
 import json
 import logging
 import os
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -343,7 +344,7 @@ class PaperTrader:
         ]
 
     def export_session(self, path: str = None):
-        """Export session data to JSON."""
+        """Export session data to JSON atomically."""
         if path is None:
             from src.core.constants import DATA_DIR
             path = os.path.join(DATA_DIR, "paper_session.json")
@@ -352,9 +353,19 @@ class PaperTrader:
             "trade_log": self.get_trade_log(),
             "closed_positions": self.closed_positions,
         }
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2, default=str)
-        logger.info("Session exported to %s", path)
+        dir_name = os.path.dirname(path) or "."
+        fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f, indent=2, default=str)
+            os.replace(tmp_path, path)
+            logger.info("Session exported to %s", path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def save_state(self, path: str = None):
         """Save paper trading state to disk for persistence across restarts."""
@@ -402,14 +413,24 @@ class PaperTrader:
         import os
         if not os.path.exists(path):
             return False
-        with open(path) as f:
-            state = json.load(f)
+        try:
+            with open(path) as f:
+                state = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Corrupted paper state file %s: %s", path, e)
+            return False
+
+        if not isinstance(state, dict):
+            logger.warning("Invalid paper state format in %s — expected dict", path)
+            return False
+
         self.cash = state.get("cash", self.initial_capital)
         self.cumulative_pnl = state.get("cumulative_pnl", 0.0)
         self.positions = {
             t: Position(ticker=t, quantity=v["quantity"], avg_cost=v["avg_cost"],
                         current_price=v["current_price"])
             for t, v in state.get("positions", {}).items()
+            if isinstance(v, dict) and "quantity" in v and "avg_cost" in v
         }
         self.closed_positions = state.get("closed_positions", [])
         raw_log = state.get("trade_log", [])
