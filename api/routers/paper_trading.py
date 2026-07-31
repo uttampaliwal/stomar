@@ -104,6 +104,39 @@ def reset_paper_trading(data: dict = Body(default={})):
         return {"error": str(e)}
 
 
+@router.post("/close-position")
+def close_position(data: dict = Body(...)):
+    try:
+        ticker = data.get("ticker", "")
+        if not _TICKER_RE.match(ticker):
+            return {"error": f"Invalid ticker format: {ticker!r}"}
+
+        trader = get_trader()
+        if ticker not in trader.positions or trader.positions[ticker].quantity == 0:
+            return {"error": f"No open position for {ticker}"}
+
+        from src.data.data_fetcher import get_live_price
+        price = get_live_price(ticker)
+        if price is None or price <= 0:
+            return {"error": f"Cannot get price for {ticker}"}
+
+        with _operation_lock:
+            record = trader.close_position(ticker, price=price)
+            if record is None:
+                return {"error": f"Failed to close position for {ticker}"}
+            state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "paper_state.json")
+            trader.save_state(state_path)
+            return {
+                "status": "closed",
+                "ticker": ticker,
+                "price": price,
+                "pnl": round(record.pnl, 2),
+                "summary": trader.get_summary(),
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/positions")
 def positions():
     try:

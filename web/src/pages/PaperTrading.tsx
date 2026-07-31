@@ -5,16 +5,24 @@ import { formatCurrency } from '@/lib/utils'
 
 export default function PaperTrading() {
   const { data: state, loading, error, refetch } = useApi<any>('/api/paper-trading/state')
-  const { data: positions } = useApi<any>('/api/paper-trading/positions')
+  const { data: positions, refetch: refetchPositions } = useApi<any>('/api/paper-trading/positions')
   const { data: trades } = useApi<any>('/api/paper-trading/trades')
   const { data: stocks } = useApi<{ stocks: string[] }>('/api/paper-trading/stocks')
   const { post: placeOrder, loading: ordering } = usePostApi<any>('/api/paper-trading/order')
+  const { post: closePosition, loading: closing } = usePostApi<any>('/api/paper-trading/close-position')
 
   const [form, setForm] = useState({ ticker: 'RELIANCE.NS', side: 'BUY', quantity: 1 })
 
   const handleOrder = async () => {
     await placeOrder(form)
     refetch()
+    refetchPositions()
+  }
+
+  const handleClose = async (ticker: string) => {
+    await closePosition({ ticker })
+    refetch()
+    refetchPositions()
   }
 
   return (
@@ -124,6 +132,7 @@ export default function PaperTrading() {
                       <th className="text-right py-2">LTP</th>
                       <th className="text-right py-2">P&L</th>
                       <th className="text-right py-2">P&L %</th>
+                      <th className="text-center py-2">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -138,6 +147,15 @@ export default function PaperTrading() {
                         </td>
                         <td className={`py-2.5 text-right font-mono ${p.pnl_pct >= 0 ? 'text-emerald' : 'text-rose'}`}>
                           {p.pnl_pct >= 0 ? '+' : ''}{p.pnl_pct}%
+                        </td>
+                        <td className="py-2.5 text-center">
+                          <button
+                            onClick={() => handleClose(p.ticker)}
+                            disabled={closing}
+                            className="rounded bg-rose/10 text-rose border border-rose/20 px-2 py-1 text-xs hover:bg-rose/20 transition-colors disabled:opacity-50"
+                          >
+                            Close
+                          </button>
                         </td>
                       </tr>
                     ))}

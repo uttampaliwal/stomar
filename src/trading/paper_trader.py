@@ -120,6 +120,31 @@ class PaperTrader:
 
         return self.engine.submit_order(order)
 
+    def close_position(self, ticker: str, price: float = 0) -> Optional[PaperTradeRecord]:
+        """Close an entire position at the given price.
+
+        Returns the trade record, or None if no position exists.
+        """
+        if ticker not in self.positions or self.positions[ticker].quantity == 0:
+            return None
+
+        pos = self.positions[ticker]
+        qty = abs(pos.quantity)
+        side = OrderSide.SELL if pos.quantity > 0 else OrderSide.BUY
+
+        if price <= 0:
+            price = pos.current_price
+        if price <= 0:
+            logger.warning("Cannot close %s: no valid price", ticker)
+            return None
+
+        order = self.execute_market_trade(ticker, side, qty, price=price)
+        if order.status == OrderStatus.REJECTED:
+            logger.warning("Close order rejected for %s", ticker)
+            return None
+
+        return self.trade_log[-1] if self.trade_log else None
+
     def execute_market_trade(self, ticker: str, side: OrderSide, quantity: int, price: float) -> Order:
         """Submit and immediately fill a market order using specified live price."""
         order = self.place_order(ticker, side, OrderType.MARKET, quantity, price=price)
