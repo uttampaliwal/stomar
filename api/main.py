@@ -57,7 +57,7 @@ _PROTECTED_PREFIXES = [
     "/api/ledger/",
 ]
 
-app = FastAPI(title="StoMar API", version="0.0.3")
+app = FastAPI(title="StoMar API", version="0.0.4")
 
 if settings.env == "production":
     _cors_origins = [
@@ -211,7 +211,7 @@ app.include_router(wealth.router, prefix="/api/wealth", tags=["Wealth"])
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "0.0.3"}
+    return {"status": "ok", "version": "0.0.4"}
 
 
 @app.get("/api/metrics")
