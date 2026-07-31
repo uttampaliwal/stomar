@@ -1,5 +1,5 @@
 import React from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink } from 'react-router'
 import {
   Activity, BarChart3, Brain, Briefcase,
   ChevronLeft, ChevronRight, Coins, FileText,

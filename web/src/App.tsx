@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router'
 import { Sidebar } from '@/components/Sidebar'
 import { ThemeProvider } from '@/components/ThemeProvider'
 

@@ -21,32 +21,34 @@ export function useApi<T>(url: string, options: UseApiOptions = {}) {
   const [error, setError] = useState<string | null>(null)
   const mountedRef = useRef(true)
 
-  const fetchData = useCallback(async () => {
-    try {
-      // Deduplicate in-flight requests
-      let promise = _inflight.get(url)
-      if (!promise) {
-        promise = fetch(url).then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          return res.json()
-        })
-        _inflight.set(url, promise)
-      }
-      const json = await promise
-      _inflight.delete(url)
-      if (mountedRef.current) {
-        setData(json as T)
-        setError(null)
-        _cache.set(url, { data: json, ts: Date.now() })
-      }
-    } catch (err) {
-      _inflight.delete(url)
-      if (mountedRef.current) {
-        setError(err instanceof Error ? err.message : 'Unknown error')
-      }
-    } finally {
-      if (mountedRef.current) setLoading(false)
+  const fetchData = useCallback(() => {
+    // Deduplicate in-flight requests
+    let promise = _inflight.get(url)
+    if (!promise) {
+      promise = fetch(url).then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      _inflight.set(url, promise)
     }
+    return promise
+      .then((json) => {
+        _inflight.delete(url)
+        if (mountedRef.current) {
+          setData(json as T)
+          setError(null)
+          _cache.set(url, { data: json, ts: Date.now() })
+        }
+      })
+      .catch((err: unknown) => {
+        _inflight.delete(url)
+        if (mountedRef.current) {
+          setError(err instanceof Error ? err.message : 'Unknown error')
+        }
+      })
+      .finally(() => {
+        if (mountedRef.current) setLoading(false)
+      })
   }, [url])
 
   useEffect(() => {
