@@ -17,6 +17,19 @@ trap cleanup SIGINT SIGTERM
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# --- Install Python deps if uvicorn missing ---
+if ! python -c "import uvicorn" 2>/dev/null; then
+    echo "[setup] Installing Python dependencies..."
+    pip install -e ".[dev]"
+fi
+
+# --- Install Node deps if vite missing ---
+if [ ! -f "$DIR/web/node_modules/.bin/vite" ]; then
+    echo "[setup] Installing Node dependencies..."
+    cd "$DIR/web"
+    npm install
+fi
+
 echo "[1/3] Starting FastAPI backend on :8000..."
 cd "$DIR"
 python -m uvicorn api.main:app --reload --port 8000 &
@@ -27,7 +40,7 @@ sleep 3
 
 echo "[3/3] Starting React frontend on :5173..."
 cd "$DIR/web"
-npm run dev &
+npx vite --host &
 WEB_PID=$!
 
 echo
