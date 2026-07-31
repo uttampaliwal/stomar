@@ -158,7 +158,22 @@ def build_lgb_model():
     )
 
 
-def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker, lgb_model=None):
+def build_catboost_model():
+    """CatBoost classifier (5th ensemble member; ordered boosting, robust to
+    feature interactions and categorical leakage)."""
+    from catboost import CatBoostClassifier
+    return CatBoostClassifier(
+        iterations=300,
+        depth=5,
+        learning_rate=0.05,
+        l2_leaf_reg=3.0,
+        random_seed=42,
+        verbose=False,
+        allow_writing_files=False,
+    )
+
+
+def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker, lgb_model=None, cat_model=None):
     ticker_clean = ticker.replace(".", "_")
     def base(name):
         return os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
@@ -168,9 +183,29 @@ def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker, lgb_m
     joblib.dump(xgb, base("xgb.pkl"))
     if lgb_model is not None:
         joblib.dump(lgb_model, base("lgb.pkl"))
+    if cat_model is not None:
+        joblib.dump(cat_model, base("cat.pkl"))
     joblib.dump(scaler, base("scaler.pkl"))
     joblib.dump(feature_cols, base("features.pkl"))
     joblib.dump(lstm.lstm.input_size, base("lstm_dim.pkl"))
+
+
+def load_cat_model(ticker: str):
+    """Load the optional CatBoost model (5th ensemble member).
+
+    Returns None when the model file is absent (legacy / tree-only models).
+    """
+    ticker_clean = ticker.replace(".", "_")
+    path = os.path.join(MODELS_DIR, f"{ticker_clean}_cat.pkl")
+    if not os.path.exists(path):
+        return None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cat = safe_joblib_load(path, "cat.pkl")
+    if not hasattr(cat, "predict_proba"):
+        logger.warning("cat.pkl for %s is not a valid classifier", ticker)
+        return None
+    return cat
 
 
 def load_models(ticker: str):

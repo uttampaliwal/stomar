@@ -12,7 +12,7 @@ import warnings
 from src.data.data_fetcher import fetch_stock_data
 from src.models.model import (
     build_lstm, build_gru, build_transformer,
-    build_xgb_model, build_lgb_model, save_models, DEVICE,
+    build_xgb_model, build_lgb_model, build_catboost_model, save_models, DEVICE,
 )
 from src.core.constants import DEFAULT_SEQ_LENGTH, DEFAULT_EPOCHS, DEFAULT_BATCH_SIZE, DEFAULT_LEARNING_RATE, MODELS_DIR
 from src.core.logging_config import get_logger
@@ -50,11 +50,12 @@ LEARNING_RATE = DEFAULT_LEARNING_RATE
 
 
 def _collect_meta_features(lstm, gru, transformer, xgb, scaler, feature_cols,
-                           df_feat, split_idx, seq_length, lgb_model=None):
+                           df_feat, split_idx, seq_length, lgb_model=None,
+                           cat_model=None):
     """Collect out-of-fold predictions from base models for meta-learner training.
 
-    Returns (X_meta, y_meta) where X_meta is (N, 5) with columns:
-    [xgb_prob_up, lgb_prob_up, lstm_prob, gru_prob, transformer_prob]
+    Returns (X_meta, y_meta) where X_meta is (N, 6) with columns:
+    [xgb_prob_up, lgb_prob_up, lstm_prob, gru_prob, transformer_prob, cat_prob_up]
     and y_meta is binary direction labels.
     """
     feature_cols_valid = [c for c in feature_cols if c in df_feat.columns]
@@ -99,7 +100,11 @@ def _collect_meta_features(lstm, gru, transformer, xgb, scaler, feature_cols,
         if lgb_model is not None:
             lgb_p = lgb_model.predict_proba(xgb_inp)[0][1]
 
-        meta_X.append([xgb_p, lgb_p, prob_lstm, prob_gru, prob_tf])
+        cat_p = 0.5
+        if cat_model is not None:
+            cat_p = cat_model.predict_proba(xgb_inp)[0][1]
+
+        meta_X.append([xgb_p, lgb_p, prob_lstm, prob_gru, prob_tf, cat_p])
         meta_y.append(actual_dir)
 
     return np.array(meta_X), np.array(meta_y)
@@ -320,6 +325,14 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     lgb_acc = accuracy_score(y_te, y_pr_lgb)
     logger.info("lgb_trained ticker=%s accuracy=%.4f", ticker, lgb_acc)
 
+    # --- CatBoost ---
+    logger.info("training_catboost ticker=%s", ticker)
+    cat_model = build_catboost_model()
+    cat_model.fit(X_tr, y_tr, eval_set=(X_te, y_te))
+    y_pr_cat = cat_model.predict(X_te)
+    cat_acc = accuracy_score(y_te, y_pr_cat)
+    logger.info("cat_trained ticker=%s accuracy=%.4f", ticker, cat_acc)
+
     # --- Deep Learning Models ---
     logger.info("training_neural_networks ticker=%s", ticker)
     lstm_data = df_feat[lstm_features].dropna().values
@@ -387,7 +400,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
             test_start_idx = split + SEQ_LENGTH
             df_test = df_feat.iloc[test_start_idx:].copy()
             if len(df_test) > SEQ_LENGTH:
-                bt = backtest_ensemble(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, df_test, lgb_model=lgb_model)
+                bt = backtest_ensemble(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, df_test, lgb_model=lgb_model, cat_model=cat_model)
                 if bt:
                     final_dir = [r["final_ensemble"] for r in bt]
                     actual_dir = [r["actual"] for r in bt]
@@ -399,7 +412,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
         split = 0
 
     if lstm_model is not None:
-        save_models(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, ticker, lgb_model=lgb_model)
+        save_models(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, ticker, lgb_model=lgb_model, cat_model=cat_model)
     else:
         # Save tree models and scaler only (no DL models)
         import joblib
@@ -408,6 +421,8 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
         joblib.dump(xgb_model, os.path.join(MODELS_DIR, f"{ticker_clean}_xgb.pkl"))
         if lgb_model is not None:
             joblib.dump(lgb_model, os.path.join(MODELS_DIR, f"{ticker_clean}_lgb.pkl"))
+        if cat_model is not None:
+            joblib.dump(cat_model, os.path.join(MODELS_DIR, f"{ticker_clean}_cat.pkl"))
         joblib.dump(scaler, os.path.join(MODELS_DIR, f"{ticker_clean}_scaler.pkl"))
         joblib.dump(lstm_features, os.path.join(MODELS_DIR, f"{ticker_clean}_features.pkl"))
 
@@ -420,7 +435,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
         from src.models.ensemble import train_meta_learner, save_meta_model
         meta_features = _collect_meta_features(
             lstm_model, gru_model, tf_model, xgb_model, scaler,
-            lstm_features, df_feat, split, SEQ_LENGTH, lgb_model,
+            lstm_features, df_feat, split, SEQ_LENGTH, lgb_model, cat_model,
         )
         if meta_features is not None:
             X_meta, y_meta = meta_features
@@ -435,6 +450,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     return {
         "xgb_accuracy": float(xgb_acc),
         "lgb_accuracy": float(lgb_acc),
+        "catboost_accuracy": float(cat_acc),
         "lstm_accuracy": float(lstm_acc),
         "gru_accuracy": float(gru_acc),
         "transformer_accuracy": float(tf_acc),

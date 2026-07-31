@@ -1,25 +1,31 @@
 """Ensemble prediction with stacked meta-learner and regime routing.
 
-Combines 5 base models (LSTM, GRU, Transformer, XGBoost, LightGBM) using
-either equal weights or a learned LogisticRegression meta-learner.
+Combines 6 base models (LSTM, GRU, Transformer, XGBoost, LightGBM, CatBoost)
+using either equal weights, static regime weights, learned weights from a
+LogisticRegression meta-learner, or dynamic weights driven by each model's
+rolling 30-day performance *within the detected market regime*.
+
+The meta-controller layer is the Bayesian/stacking ensemble: base-model
+probability outputs are stacked, and the meta-learner (or dynamic regime-
+conditional weights) maps them to a final probability with a Wilson
+confidence interval and a conviction label.
 
 Usage:
-    from src.models.ensemble import predict_ensemble, train_meta_learner
-
-    # Train meta-learner on out-of-sample data
-    meta_model = train_meta_learner(meta_X_train, y_train)
-
-    # Predict with meta-learner
-    direction, confidence, details = predict_ensemble(
-        lstm, gru, transformer, xgb, scaler, feature_cols, df,
-        meta_model=meta_model,
+    from src.models.ensemble import (
+        predict_ensemble, train_meta_learner, regime_adjusted_ensemble,
     )
+
+    # Dynamic regime-conditional prediction
+    decision = regime_adjusted_ensemble(ticker, models, df_feat)
+    # {"signal": "BUY", "probability_up": 0.84, "confidence": 68.0,
+    #  "conviction": "HIGH", "confidence_interval": [0.61, 0.95], ...}
 """
 
 import logging
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -30,21 +36,29 @@ from src.models.model import DEVICE
 
 logger = logging.getLogger(__name__)
 
+# Model key order used across the ensemble (probabilities vector layout)
+MODEL_NAMES = ["lstm", "gru", "transformer", "xgb", "lgb", "cat"]
+# Meta-learner column order (catboost appended last so legacy 5-feature
+# meta models remain compatible).
+META_COLUMNS = ["xgb", "lgb", "lstm", "gru", "transformer", "cat"]
 
-# ── Regime-Conditional Weights ──
+WILSON_Z = 1.645  # 90% confidence
+
+
+# ── Regime-Conditional Static Weights ──
 
 REGIME_WEIGHTS = {
     "Bull": {
-        "lstm": 0.15, "gru": 0.15, "transformer": 0.2,
-        "xgb": 0.25, "lgb": 0.25,
+        "lstm": 0.12, "gru": 0.12, "transformer": 0.16,
+        "xgb": 0.20, "lgb": 0.20, "cat": 0.20,
     },
     "Bear": {
-        "lstm": 0.25, "gru": 0.25, "transformer": 0.15,
-        "xgb": 0.15, "lgb": 0.20,
+        "lstm": 0.20, "gru": 0.20, "transformer": 0.12,
+        "xgb": 0.12, "lgb": 0.16, "cat": 0.20,
     },
     "Sideways": {
-        "lstm": 0.20, "gru": 0.20, "transformer": 0.20,
-        "xgb": 0.20, "lgb": 0.20,
+        "lstm": 0.17, "gru": 0.17, "transformer": 0.17,
+        "xgb": 0.17, "lgb": 0.16, "cat": 0.16,
     },
 }
 
@@ -56,7 +70,7 @@ def get_regime_weights(regime: str) -> dict:
     """
     if regime in REGIME_WEIGHTS:
         return REGIME_WEIGHTS[regime]
-    return {"lstm": 0.2, "gru": 0.2, "transformer": 0.2, "xgb": 0.2, "lgb": 0.2}
+    return {name: 1.0 / len(MODEL_NAMES) for name in MODEL_NAMES}
 
 
 # ── Meta-Learner ──
@@ -65,7 +79,8 @@ def train_meta_learner(meta_X: np.ndarray, y: np.ndarray) -> Pipeline:
     """Train a stacked meta-learner on base model outputs.
 
     Args:
-        meta_X: (N, 5) array of base model probabilities [xgb_prob_up, lgb_prob_up, lstm_prob, gru_prob, transformer_prob]
+        meta_X: (N, K) array of base model probabilities in META_COLUMNS order
+            (K = 6 with CatBoost, 5 for legacy pipelines)
         y: (N,) binary labels (0 or 1)
 
     Returns:
@@ -78,9 +93,10 @@ def train_meta_learner(meta_X: np.ndarray, y: np.ndarray) -> Pipeline:
     pipe.fit(meta_X, y)
 
     coefs = pipe.named_steps["clf"].coef_[0]
-    model_names = ["lstm", "gru", "transformer", "xgb", "lgb"]
+    n_features = getattr(pipe, "n_features_in_", len(META_COLUMNS))
+    model_names = META_COLUMNS[: min(n_features, len(META_COLUMNS))]
     logger.info("Meta-learner trained. Coefficients: %s",
-                dict(zip(model_names, coefs.round(3))))
+                dict(zip(model_names, coefs[: len(model_names)].round(3))))
 
     return pipe
 
@@ -90,11 +106,16 @@ def predict_with_metalearner(meta_model: Pipeline, meta_X: np.ndarray) -> np.nda
 
     Args:
         meta_model: Fitted Pipeline from train_meta_learner()
-        meta_X: (N, 5) array of base model probabilities
+        meta_X: (N, K) array of base model probabilities. When the fitted
+            meta-learner expects fewer columns than provided (legacy
+            5-feature models), the leading columns are used.
 
     Returns:
         (N,) array of probabilities for class 1
     """
+    n_features = getattr(meta_model, "n_features_in_", None)
+    if n_features is not None and meta_X.shape[1] > n_features:
+        meta_X = meta_X[:, :n_features]
     return meta_model.predict_proba(meta_X)[:, 1]
 
 
@@ -158,7 +179,7 @@ def load_meta_model(path: str) -> Pipeline:
 # ── Ensemble Prediction ──
 
 def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
-                     recent_weights=None, lgb_model=None,
+                     recent_weights=None, lgb_model=None, cat_model=None,
                      meta_model=None, regime=None):
     """Run ensemble prediction on latest data.
 
@@ -167,6 +188,7 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
             uses learned weights instead of manual combination.
         regime: Optional regime string ("Bull"/"Bear"/"Sideways").
             When provided with meta_model=None, uses regime-specific weights.
+        cat_model: Optional CatBoost classifier (5th base model).
     """
     feature_cols = [c for c in feature_cols if c in df_feat.columns]
     latest_data = df_feat[feature_cols].dropna()
@@ -208,13 +230,21 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
         lgb_prob = lgb_model.predict_proba(xgb_input)[0]
         dir_lgb = int(lgb_model.predict(xgb_input)[0])
 
-    # Build model probability vector (continuous probabilities for all models)
+    dir_cat = 0
+    cat_prob = [0.5, 0.5]
+    if cat_model is not None:
+        cat_prob = cat_model.predict_proba(xgb_input)[0]
+        dir_cat = int(cat_model.predict(xgb_input)[0])
+
+    # Build model probability vector in META_COLUMNS order:
+    # [xgb, lgb, lstm, gru, transformer, cat]
     meta_X = np.array([[
         float(xgb_prob[1]),   # xgb P(up)
         float(lgb_prob[1]),   # lgb P(up)
         float(prob_lstm),     # lstm P(up) -- continuous
         float(prob_gru),      # gru P(up) -- continuous
         float(prob_tf),       # transformer P(up) -- continuous
+        float(cat_prob[1]),   # cat P(up)
     ]])
 
     # Use meta-learner if available
@@ -228,7 +258,7 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
         elif regime is not None:
             weights = get_regime_weights(regime)
         else:
-            weights = {"lstm": 0.2, "gru": 0.2, "transformer": 0.2, "xgb": 0.2, "lgb": 0.2}
+            weights = {name: 1.0 / len(MODEL_NAMES) for name in MODEL_NAMES}
 
         # Build available model probabilities and renormalize weights
         model_probs = [
@@ -239,16 +269,18 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
         ]
         if lgb_model is not None:
             model_probs.append(("lgb", lgb_prob[1]))
+        if cat_model is not None:
+            model_probs.append(("cat", cat_prob[1]))
 
-        total_w = sum(weights.get(name, 0.2) for name, _ in model_probs)
+        total_w = sum(weights.get(name, 1.0 / len(MODEL_NAMES)) for name, _ in model_probs)
         if total_w > 0:
             ensemble_prob = sum(
-                prob * weights.get(name, 0.2) / total_w
+                prob * weights.get(name, 1.0 / len(MODEL_NAMES)) / total_w
                 for name, prob in model_probs
             )
         else:
             ensemble_prob = 0.5
-        weights_used = {name: weights.get(name, 0.2) / total_w for name, _ in model_probs} if total_w > 0 else weights
+        weights_used = {name: weights.get(name, 1.0 / len(MODEL_NAMES)) / total_w for name, _ in model_probs} if total_w > 0 else weights
 
     ensemble_dir = 1 if ensemble_prob > 0.5 else 0
     confidence = abs(ensemble_prob - 0.5) * 2 * 100
@@ -259,27 +291,32 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
         "transformer_dir": dir_transformer, "transformer_pred": pred_transformer, "transformer_prob": float(prob_tf),
         "xgb_dir": dir_xgb, "xgb_prob_up": float(xgb_prob[1]),
         "lgb_dir": dir_lgb, "lgb_prob_up": float(lgb_prob[1]),
+        "cat_dir": dir_cat, "cat_prob_up": float(cat_prob[1]),
         "ensemble_prob": float(ensemble_prob),
         "weights": weights_used,
     }
     return ensemble_dir, confidence, details
 
 
-def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
-                      seq_length=60, lgb_model=None, meta_model=None, regime=None):
-    """Backtest ensemble over historical data.
+def _backtest_rows(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
+                   seq_length=60, lgb_model=None, cat_model=None):
+    """Shared per-row backtest generator over historical data.
 
-    Args:
-        meta_model: Optional meta-learner for learned weights.
-        regime: Optional regime string for regime-conditional routing.
+    Yields dicts with date, actual direction, per-model direction + prob_up,
+    and the meta feature vector. Used by both backtest_ensemble() and the
+    regime-conditional rolling performance tracker.
     """
     feature_cols = [c for c in feature_cols if c in df_feat.columns]
     data = df_feat[feature_cols].dropna()
     if len(data) < seq_length + 10:
-        return []
+        return
     scaled = scaler.transform(data.values)
+    dates = data.index
 
-    results = []
+    lstm.eval()
+    gru.eval()
+    transformer.eval()
+
     for i in range(seq_length, len(scaled)):
         try:
             inp = torch.tensor(scaled[i - seq_length:i], dtype=torch.float32).unsqueeze(0).to(DEVICE)
@@ -287,9 +324,6 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
             actual_close = scaled[i, 0]
             actual_dir = 1 if actual_close > prev_close else 0
 
-            lstm.eval()
-            gru.eval()
-            transformer.eval()
             with torch.no_grad():
                 p_lstm = lstm(inp).item()
                 p_gru = gru(inp).item()
@@ -302,6 +336,10 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
             if lgb_model is not None:
                 lgb_p = lgb_model.predict_proba(xgb_inp)[0][1]
 
+            cat_p = 0.5
+            if cat_model is not None:
+                cat_p = cat_model.predict_proba(xgb_inp)[0][1]
+
             # Convert DL regression to probabilities
             diff_lstm = p_lstm - prev_close
             diff_gru = p_gru - prev_close
@@ -310,47 +348,350 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
             prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
             prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
 
-            d_lstm = 1 if p_lstm > prev_close else 0
-            d_gru = 1 if p_gru > prev_close else 0
-            d_tf = 1 if p_tf > prev_close else 0
-
-            # Build meta features (continuous probabilities)
-            meta_X = np.array([[xgb_p, lgb_p, prob_lstm, prob_gru, prob_tf]])
-
-            if meta_model is not None:
-                final_prob = float(predict_with_metalearner(meta_model, meta_X)[0])
-            else:
-                if regime is not None:
-                    weights = get_regime_weights(regime)
-                else:
-                    weights = {"lstm": 0.2, "gru": 0.2, "transformer": 0.2, "xgb": 0.2, "lgb": 0.2}
-
-                available = [("lstm", prob_lstm), ("gru", prob_gru), ("transformer", prob_tf), ("xgb", xgb_p)]
-                if lgb_model is not None:
-                    available.append(("lgb", lgb_p))
-
-                total_w = sum(weights.get(name, 0.2) for name, _ in available)
-                if total_w > 0:
-                    final_prob = sum(
-                        prob * weights.get(name, 0.2) / total_w
-                        for name, prob in available
-                    )
-                else:
-                    final_prob = 0.5
-
-            final = 1 if final_prob > 0.5 else 0
-            dl_ens = (d_lstm + d_gru + d_tf) / 3
-            dl_dir = 1 if dl_ens > 0.5 else 0
-            xgb_dir = int(xgb.predict(xgb_inp)[0])
-
-            results.append({
+            yield {
+                "date": dates[i],
                 "actual": actual_dir,
-                "lstm": d_lstm, "gru": d_gru, "transformer": d_tf,
-                "dl_ensemble": dl_dir, "xgb": xgb_dir, "lgb": 1 if lgb_p > 0.5 else 0,
-                "final_ensemble": final,
-            })
+                "lstm": 1 if p_lstm > prev_close else 0,
+                "gru": 1 if p_gru > prev_close else 0,
+                "transformer": 1 if p_tf > prev_close else 0,
+                "xgb": int(xgb.predict(xgb_inp)[0]),
+                "lgb": 1 if lgb_p > 0.5 else 0,
+                "cat": 1 if cat_p > 0.5 else 0,
+                "lstm_prob": float(prob_lstm),
+                "gru_prob": float(prob_gru),
+                "transformer_prob": float(prob_tf),
+                "xgb_prob": float(xgb_p),
+                "lgb_prob": float(lgb_p),
+                "cat_prob": float(cat_p),
+                "meta_X": [float(xgb_p), float(lgb_p), float(prob_lstm),
+                           float(prob_gru), float(prob_tf), float(cat_p)],
+            }
         except Exception as e:
-            logger.debug("backtest_ensemble iteration %d failed: %s", i, e)
+            logger.debug("backtest row %d failed: %s", i, e)
             continue
 
+
+def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
+                      seq_length=60, lgb_model=None, cat_model=None, meta_model=None, regime=None):
+    """Backtest ensemble over historical data.
+
+    Args:
+        meta_model: Optional meta-learner for learned weights.
+        regime: Optional regime string for regime-conditional routing.
+        cat_model: Optional CatBoost classifier.
+    """
+    rows = list(_backtest_rows(
+        lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
+        seq_length=seq_length, lgb_model=lgb_model, cat_model=cat_model,
+    ))
+    if not rows:
+        return []
+
+    if meta_model is not None:
+        meta_probs = predict_with_metalearner(
+            meta_model, np.asarray([r["meta_X"] for r in rows])
+        )
+    else:
+        if regime is not None:
+            weights = get_regime_weights(regime)
+        else:
+            weights = {name: 1.0 / len(MODEL_NAMES) for name in MODEL_NAMES}
+
+        meta_probs = []
+        for r in rows:
+            model_probs = [(n, r[f"{n}_prob"]) for n in MODEL_NAMES]
+            total_w = sum(weights.get(n, 1.0 / len(MODEL_NAMES)) for n, _ in model_probs)
+            if total_w > 0:
+                meta_probs.append(sum(p * weights[n] / total_w for n, p in model_probs))
+            else:
+                meta_probs.append(0.5)
+        meta_probs = np.asarray(meta_probs)
+
+    results = []
+    for r, final_prob in zip(rows, meta_probs):
+        final = 1 if final_prob > 0.5 else 0
+        dl_ens = (r["lstm"] + r["gru"] + r["transformer"]) / 3
+        dl_dir = 1 if dl_ens > 0.5 else 0
+        results.append({
+            "actual": r["actual"],
+            "lstm": r["lstm"], "gru": r["gru"], "transformer": r["transformer"],
+            "dl_ensemble": dl_dir, "xgb": r["xgb"], "lgb": r["lgb"],
+            "cat": r["cat"],
+            "final_ensemble": final,
+        })
+
     return results
+
+
+# ── Dynamic Regime-Conditional Weights (Meta-Controller) ──────────────────────
+
+def wilson_interval(k: int, n: int, z: float = WILSON_Z) -> tuple[float, float]:
+    """Wilson score interval for a proportion (used for confidence bounds).
+
+    Args:
+        k: Number of successes.
+        n: Number of trials.
+        z: Z-score (1.645 -> 90% CI).
+
+    Returns:
+        (lower, upper) bounds.
+    """
+    if n <= 0:
+        return (0.0, 0.0)
+    p = k / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half_width = z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return (float(max(0.0, centre - half_width)), float(min(1.0, centre + half_width)))
+
+
+def conviction_label(prob_up: float, ci_lower: float) -> str:
+    """Map probability + interval lower bound to a conviction label."""
+    if ci_lower >= 0.55 or prob_up >= 0.80:
+        return "HIGH"
+    if prob_up >= 0.62 or ci_lower >= 0.52:
+        return "MEDIUM"
+    return "LOW"
+
+
+def compute_dynamic_regime_weights(
+    backtest_rows: list[dict],
+    regime_series: pd.Series,
+    current_regime: str,
+    window: int = 30,
+    min_samples: int = 10,
+    temperature: float = 8.0,
+    model_names: list[str] | None = None,
+) -> dict:
+    """Rolling performance-based weights within the current regime.
+
+    Each base model is scored by its directional accuracy over the last
+    `window` calendar days *on days whose regime matches the current one*.
+    Weights are a softmax of the excess-accuracy (acc - 0.5) at the given
+    temperature, floored for stability and normalized to sum to 1.
+
+    Models that produced constant probabilities (e.g. a CatBoost model that
+    was never trained, so every value is a 0.5 placeholder) are excluded and
+    the remaining weights are renormalized.
+
+    Falls back to equal weights when there are too few regime-matching days.
+
+    Returns a dict: {"weights": {...}, "accuracies": {...}, "n_samples": n,
+    "excluded": [...], "method": "dynamic" | "fallback"}
+    """
+    names = model_names or MODEL_NAMES
+    if not backtest_rows:
+        return {
+            "weights": {name: 1.0 / len(names) for name in names},
+            "accuracies": {},
+            "excluded": [],
+            "n_samples": 0,
+            "method": "fallback",
+        }
+
+    df = pd.DataFrame(backtest_rows).set_index("date")
+    if regime_series is not None and len(regime_series) > 0:
+        df = df.join(regime_series.rename("regime"), how="left")
+    else:
+        df["regime"] = None
+
+    cutoff = df.index.max() - pd.Timedelta(days=window)
+    sub = df[(df["regime"] == current_regime) & (df.index >= cutoff)]
+    n_samples = len(sub)
+
+    accuracies = {}
+    if n_samples >= min_samples:
+        # Drop models whose probability outputs never vary (placeholders)
+        excluded = [
+            name for name in names
+            if sub[f"{name}_prob"].nunique() <= 1
+        ]
+        active = [name for name in names if name not in excluded]
+        if active:
+            for name in active:
+                accuracies[name] = float(accuracy_score(sub["actual"], sub[name]))
+            excess = np.clip(np.asarray([accuracies[n] for n in active]) - 0.5, 0.0, None)
+            exp_w = np.exp(excess * temperature)
+            weights = exp_w / exp_w.sum()
+            weights = {name: round(float(w), 6) for name, w in zip(active, weights)}
+            accuracies = {name: round(float(a), 4) for name, a in accuracies.items()}
+            logger.info(
+                "dynamic_regime_weights regime=%s n_samples=%d excluded=%s accuracies=%s",
+                current_regime, n_samples, excluded, accuracies,
+            )
+            return {
+                "weights": weights, "accuracies": accuracies,
+                "excluded": excluded, "n_samples": n_samples,
+                "method": "dynamic",
+            }
+    else:
+        return {
+            "weights": {name: 1.0 / len(names) for name in names},
+            "accuracies": accuracies,
+            "excluded": [],
+            "n_samples": n_samples,
+            "method": "fallback",
+            "reason": f"only {n_samples} regime-matching days in window (need {min_samples})",
+        }
+
+    return {
+        "weights": {name: 1.0 / len(names) for name in names},
+        "accuracies": accuracies,
+        "excluded": [],
+        "n_samples": n_samples,
+        "method": "fallback",
+    }
+
+
+def regime_adjusted_ensemble(
+    ticker: str,
+    models: dict,
+    df_feat: pd.DataFrame,
+    seq_length: int = 60,
+    window: int = 30,
+    use_meta: bool = True,
+    regime_info: dict | None = None,
+    backtest_rows: list[dict] | None = None,
+) -> dict:
+    """Dynamic meta-controller prediction with regime-based weighting.
+
+    Pipeline:
+        1. Detect the market regime (GMM/HMM on log returns + ATR).
+        2. Backtest all 6 base models over the trailing window and score
+           their accuracy on days in the current regime (rolling 30-day
+           performance, regime-conditional).
+        3. Weight the base-model probability outputs by those scores
+           (or by the stacked meta-learner when one is fitted).
+        4. Compute the ensemble probability, a Wilson confidence interval on
+           the ensemble's regime-conditional OOS accuracy, and a conviction
+           label.
+
+    Args:
+        ticker: Symbol (used for the optional meta-learner file lookup).
+        models: Dict with keys lstm/gru/transformer/xgb/lgb/cat/scaler/features.
+        df_feat: Feature DataFrame (needs OHLCV columns + FEATURE_COLS).
+        seq_length: DL sequence length used at training time.
+        window: Rolling performance window in calendar days.
+        use_meta: Use the stacked meta-learner when available.
+        regime_info: Precomputed detect_regime() output (skips refitting).
+        backtest_rows: Precomputed _backtest_rows() output (skips recompute).
+
+    Returns:
+        Decision dict with signal, probability_up, confidence, conviction,
+        confidence_interval, regime, weights, model breakdown and risk.
+    """
+    import os
+
+    from src.models.model import MODELS_DIR
+    from src.signals.regime_hmm import detect_regime
+
+    ohlc = df_feat[["open", "high", "low", "close", "volume"]].dropna()
+    if regime_info is None:
+        regime_info = detect_regime(ohlc)
+    regime_key = regime_info["regime_key"]
+
+    active_models = [n for n in MODEL_NAMES if n != "cat" or models.get("cat") is not None]
+
+    if backtest_rows is None:
+        backtest_rows = list(_backtest_rows(
+            models["lstm"], models["gru"], models["transformer"], models["xgb"],
+            models["scaler"], models.get("features") or models.get("feature_cols"),
+            df_feat, seq_length=seq_length,
+            lgb_model=models.get("lgb"), cat_model=models.get("cat"),
+        ))
+
+    # Regime-conditional rolling performance -> dynamic weights
+    regime_series = None
+    if backtest_rows:
+        from src.signals.regime_hmm import state_sequence
+        try:
+            regime_series = state_sequence(ohlc)
+        except Exception as exc:
+            logger.debug("state_sequence failed: %s", exc)
+
+    dyn = compute_dynamic_regime_weights(
+        backtest_rows, regime_series if regime_series is not None else pd.Series(dtype=str),
+        regime_key, window=window, model_names=active_models,
+    )
+
+    # Optional stacked meta-learner (Bayesian-style ensemble layer)
+    meta_model = None
+    if use_meta:
+        meta_path = os.path.join(MODELS_DIR, f"meta_{ticker.replace('.', '_')}.pkl")
+        if os.path.exists(meta_path):
+            try:
+                meta_model = load_meta_model(meta_path)
+            except Exception as exc:
+                logger.debug("meta-learner load failed: %s", exc)
+
+    # Final ensemble probability on the latest bar
+    last = backtest_rows[-1] if backtest_rows else None
+    if last is not None:
+        meta_X = np.asarray([last["meta_X"]])
+        if meta_model is not None:
+            prob_up = float(predict_with_metalearner(meta_model, meta_X)[0])
+            weight_method = "meta_learner"
+            weights = None
+        else:
+            probs = np.asarray([last[f"{n}_prob"] for n in active_models])
+            w = np.asarray([dyn["weights"][n] for n in active_models])
+            total_w = float(w.sum())
+            if total_w > 0:
+                prob_up = float(probs @ w / total_w)
+            else:
+                prob_up = 0.5
+            weight_method = dyn["method"]
+            weights = dict(zip(active_models, [round(float(x / total_w), 4) for x in w])) if total_w > 0 else dict(zip(active_models, [round(float(x), 4) for x in w]))
+    else:
+        prob_up = 0.5
+        weight_method = "fallback"
+        weights = {n: 1.0 / len(active_models) for n in active_models}
+
+    # Wilson CI on the ensemble's regime-conditional OOS accuracy
+    n_correct = 0
+    n_total = 0
+    if backtest_rows:
+        for r in backtest_rows:
+            if regime_series is not None and r["date"] in regime_series.index and \
+               regime_series.loc[r["date"]] == regime_key:
+                # ensemble direction from the same weighting logic
+                meta_X = np.asarray([r["meta_X"]])
+                if meta_model is not None:
+                    p = float(predict_with_metalearner(meta_model, meta_X)[0])
+                else:
+                    probs = np.asarray([r[f"{n}_prob"] for n in active_models])
+                    w = np.asarray([dyn["weights"][n] for n in active_models])
+                    p = float(probs @ w / w.sum())
+                n_correct += int((p > 0.5) == r["actual"])
+                n_total += 1
+
+    ci_lo, ci_hi = wilson_interval(n_correct, n_total)
+    signal = "BUY" if prob_up >= 0.5 else "SELL"
+    confidence = abs(prob_up - 0.5) * 2 * 100
+    conviction = conviction_label(prob_up, ci_lo)
+
+    return {
+        "ticker": ticker,
+        "signal": signal,
+        "probability_up": round(float(prob_up), 4),
+        "confidence": round(float(confidence), 2),
+        "conviction": conviction,
+        "confidence_interval": [round(ci_lo, 4), round(ci_hi, 4)],
+        "method": weight_method,
+        "weights": weights,
+        "model_performance": dyn["accuracies"],
+        "performance_window_days": window,
+        "performance_n_samples": dyn["n_samples"],
+        "excluded_models": dyn.get("excluded", []),
+        "regime": {
+            "label": regime_info["regime"],
+            "key": regime_info["regime_key"],
+            "probabilities": {k: round(float(v), 4) for k, v in regime_info["probabilities"].items()},
+        },
+        "risk": regime_info["risk"],
+        "models": (
+            {n: {"prob_up": round(float(last[f"{n}_prob"]), 4),
+                 "direction": int(last[n])} for n in active_models}
+            if last is not None else {}
+        ),
+    }

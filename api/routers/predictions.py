@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 from src.data.data_fetcher import fetch_stock_data
 from src.data.features import add_technical_indicators
-from src.models.model import load_models, models_exist
+from src.models.model import load_models, load_cat_model, models_exist
 from src.models.trainer import FEATURE_COLS
 from src.models.ensemble import predict_ensemble
 
@@ -84,6 +84,44 @@ def get_prediction(ticker: str):
             "recent": recent_data,
             "chart": chart_data,
         }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/ensemble/{ticker}")
+def get_ensemble_prediction(ticker: str):
+    """Regime-aware multi-model ensemble prediction.
+
+    Combines 6 base models (LSTM, GRU, Transformer, XGBoost, LightGBM,
+    CatBoost) with a GMM regime detector and rolling regime-conditional
+    performance weights (dynamic meta-controller). Returns a signal with
+    probability, confidence, Wilson interval, and conviction label.
+    """
+    try:
+        df = fetch_stock_data(ticker)
+        if df is None or df.empty:
+            return {"error": f"No data for {ticker}"}
+
+        if not models_exist(ticker):
+            return {"error": "Models not trained"}
+
+        from src.signals.feature_pipeline import compute_features, load_index_history
+        index_df = None
+        try:
+            index_df = load_index_history()
+        except Exception:
+            pass
+        df_feat = compute_features(df.copy(), ticker=ticker, index_df=index_df)
+        df_feat = df_feat.dropna(axis=1, how="all").replace([float("inf"), float("-inf")], None)
+
+        m = _load(ticker)
+        if m["lstm"] is None:
+            return {"error": "DL models not trained for this ticker"}
+        m["cat"] = load_cat_model(ticker)
+
+        from src.models.ensemble import regime_adjusted_ensemble
+        result = regime_adjusted_ensemble(ticker, m, df_feat)
+        return result
     except Exception as e:
         return {"error": str(e)}
 
