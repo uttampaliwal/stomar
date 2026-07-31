@@ -11,6 +11,7 @@ from src.core.constants import DATA_DIR
 logger = logging.getLogger(__name__)
 
 MTF_CACHE_DIR = DATA_DIR
+CACHE_VERSION = 1  # Bump to invalidate old caches
 os.makedirs(MTF_CACHE_DIR, exist_ok=True)
 
 
@@ -19,11 +20,33 @@ def fetch_mtf_data(ticker: str) -> dict:
 
 
 def _fetch_mtf_data_impl(ticker: str) -> dict:
-    cache_file = os.path.join(MTF_CACHE_DIR, f"mtf_{ticker.replace('.','_')}.pkl")
-    if os.path.exists(cache_file):
-        mtime = os.path.getmtime(cache_file)
+    ticker_clean = ticker.replace('.', '_')
+    cache_prefix = os.path.join(MTF_CACHE_DIR, f"mtf_{ticker_clean}")
+
+    # Try loading from parquet cache (one file per timeframe)
+    cache_files = {tf: f"{cache_prefix}_{tf}.parquet" for tf in ("15m", "1h", "daily", "weekly")}
+    all_exist = all(os.path.exists(f) for f in cache_files.values())
+    if all_exist:
+        youngest = max(os.path.getmtime(f) for f in cache_files.values())
+        if time.time() - youngest < 3600:
+            try:
+                return {tf: pd.read_parquet(path) for tf, path in cache_files.items()}
+            except Exception:
+                pass  # Corrupted cache, re-fetch
+
+    # Also try loading legacy pickle cache for backward compat
+    legacy_cache = os.path.join(MTF_CACHE_DIR, f"mtf_{ticker_clean}.pkl")
+    if os.path.exists(legacy_cache):
+        mtime = os.path.getmtime(legacy_cache)
         if time.time() - mtime < 3600:
-            return pd.read_pickle(cache_file)
+            try:
+                data = pd.read_pickle(legacy_cache)
+                # Migrate to parquet
+                _save_mtf_cache(cache_prefix, data)
+                os.unlink(legacy_cache)
+                return data
+            except Exception:
+                pass
 
     data = {}
     intervals = {
@@ -45,11 +68,17 @@ def _fetch_mtf_data_impl(ticker: str) -> dict:
             continue
 
     if data:
-        try:
-            pd.to_pickle(data, cache_file)
-        except Exception:
-            pass
+        _save_mtf_cache(cache_prefix, data)
     return data
+
+
+def _save_mtf_cache(cache_prefix: str, data: dict) -> None:
+    """Save MTF data as individual parquet files per timeframe."""
+    try:
+        for tf, df in data.items():
+            df.to_parquet(f"{cache_prefix}_{tf}.parquet")
+    except Exception:
+        pass
 
 
 def _add_tf_indicators(df: pd.DataFrame) -> pd.DataFrame:
