@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import (
     market,
+    market_data,
     predictions,
     portfolio,
     backtest,
@@ -185,6 +186,7 @@ async def cache_middleware(request: Request, call_next):
 
 
 app.include_router(market.router, prefix="/api/market", tags=["Market"])
+app.include_router(market_data.router, prefix="/api/market-data", tags=["Market Data"])
 app.include_router(predictions.router, prefix="/api/predictions", tags=["Predictions"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
 app.include_router(backtest.router, prefix="/api/backtest", tags=["Backtest"])

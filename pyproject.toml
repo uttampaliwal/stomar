@@ -61,5 +61,5 @@ ignore = ["E501", "F841"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["api*", "src*"]
+include = ["api*", "src*", "services*"]
 exclude = ["tests*", "tests.*"]
