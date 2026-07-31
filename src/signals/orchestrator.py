@@ -13,6 +13,7 @@ Usage:
 """
 
 import logging
+import os
 from datetime import datetime
 
 import pandas as pd
@@ -143,7 +144,13 @@ class DailyOrchestrator:
 
             trader = self.paper_trader
             if trader is None:
+                from src.core.constants import PAPER_STATE_PATH
                 trader = PaperTrader(initial_capital=200000)
+                if os.path.exists(PAPER_STATE_PATH):
+                    try:
+                        trader.load_state(PAPER_STATE_PATH)
+                    except Exception:
+                        pass
 
             price = get_live_price(ticker)
             if price is None or price <= 0:
