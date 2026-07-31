@@ -143,9 +143,14 @@ def load_meta_model(path: str) -> Pipeline:
     """Load meta-learner from disk."""
     import joblib
     import warnings
+    import os
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Meta-learner file not found: {path}")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         meta_model = joblib.load(path)
+    if not hasattr(meta_model, "predict") or not hasattr(meta_model, "fit"):
+        raise TypeError(f"Loaded object from {path} is not a valid sklearn estimator")
     logger.info("Meta-learner loaded from %s", path)
     return meta_model
 

@@ -1,4 +1,5 @@
 import warnings
+import logging
 import torch
 import torch.nn as nn
 import joblib
@@ -9,8 +10,49 @@ from src.core.constants import MODELS_DIR
 os.makedirs(MODELS_DIR, exist_ok=True)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+logger = logging.getLogger(__name__)
+
 _model_cache: dict[str, tuple[float, tuple]] = {}
 _MODEL_CACHE_TTL = 3600  # 1 hour
+
+# Allowed types for joblib-loaded objects (defense against pickle payloads)
+_ALLOWED_JOBLIB_TYPES = {
+    "lstm_dim.pkl": (int, float),
+    "xgb.pkl": None,  # XGBClassifier — checked via hasattr
+    "lgb.pkl": None,   # LGBMClassifier — checked via hasattr
+    "scaler.pkl": None,  # MinMaxScaler — checked via hasattr
+    "features.pkl": (list, tuple),
+}
+
+
+def safe_joblib_load(path: str, expected_key: str = None):
+    """Load a joblib file with type validation.
+
+    Validates the loaded object is an expected type to prevent
+    arbitrary code execution via crafted pickle payloads.
+    """
+    raw = joblib.load(path)
+
+    if expected_key and expected_key in _ALLOWED_JOBLIB_TYPES:
+        allowed = _ALLOWED_JOBLIB_TYPES[expected_key]
+        if allowed is not None and not isinstance(raw, allowed):
+            raise TypeError(
+                f"Unexpected type {type(raw).__name__} in {path} "
+                f"(expected {allowed})"
+            )
+        elif allowed is None and expected_key in ("xgb.pkl", "lgb.pkl"):
+            if not hasattr(raw, "predict") or not hasattr(raw, "predict_proba"):
+                raise TypeError(
+                    f"Object in {path} lacks predict/predict_proba — "
+                    f"not a valid classifier"
+                )
+        elif allowed is None and expected_key == "scaler.pkl":
+            if not hasattr(raw, "transform"):
+                raise TypeError(
+                    f"Object in {path} lacks transform — not a valid scaler"
+                )
+
+    return raw
 
 
 class StockLSTM(nn.Module):
@@ -143,7 +185,7 @@ def load_models(ticker: str):
         return os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        input_dim = joblib.load(base("lstm_dim.pkl"))
+        input_dim = safe_joblib_load(base("lstm_dim.pkl"), "lstm_dim.pkl")
 
     lstm = StockLSTM(input_dim=input_dim).to(DEVICE)
     lstm.load_state_dict(torch.load(base("lstm.pt"), map_location=DEVICE, weights_only=True))
@@ -159,14 +201,14 @@ def load_models(ticker: str):
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        xgb = joblib.load(base("xgb.pkl"))
-        scaler = joblib.load(base("scaler.pkl"))
-        features = joblib.load(base("features.pkl"))
+        xgb = safe_joblib_load(base("xgb.pkl"), "xgb.pkl")
+        scaler = safe_joblib_load(base("scaler.pkl"), "scaler.pkl")
+        features = safe_joblib_load(base("features.pkl"), "features.pkl")
 
         lgb_model = None
         lgb_path = base("lgb.pkl")
         if os.path.exists(lgb_path):
-            lgb_model = joblib.load(lgb_path)
+            lgb_model = safe_joblib_load(lgb_path, "lgb.pkl")
 
     result = lstm, gru, transformer, xgb, scaler, features, lgb_model
     _model_cache[cache_key] = (time.time(), result)

@@ -395,6 +395,9 @@ class MetaController:
         try:
             import joblib
             state = joblib.load(path)
+            if not isinstance(state, dict) or "model" not in state or "weights" not in state:
+                logger.warning("Invalid meta-controller state in %s — missing required keys", path)
+                return False
             self.model = state.get("model")
             self.weights = state.get("weights")
             self.is_calibrated = state.get("is_calibrated", False)
