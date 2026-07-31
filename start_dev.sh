@@ -17,6 +17,11 @@ trap cleanup SIGINT SIGTERM
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# --- Activate venv if present ---
+if [ -f "$DIR/.venv/bin/activate" ]; then
+    source "$DIR/.venv/bin/activate"
+fi
+
 # --- Install Python deps if uvicorn missing ---
 if ! python -c "import uvicorn" 2>/dev/null; then
     echo "[setup] Installing Python dependencies..."
