@@ -611,22 +611,39 @@ export interface WealthStrategiesResponse {
 export interface MonteCarloResponse {
   probability: number
   median_corpus: number
+  mean_corpus: number
   real_corpus: number
+  real_p10: number
+  real_p50: number
+  real_p90: number
   target: number
+  shortfall_risk: number
+  recommended_sip: number
+  sip_topup: number
+  worst_5pct: number
+  best_5pct: number
+  var_95: number
+  cvar_95: number
   percentiles: {
+    p5: number[]
     p10: number[]
+    p25: number[]
     p50: number[]
+    p75: number[]
     p90: number[]
+    p95: number[]
     labels: string[]
   }
   params: {
     current_capital: number
     monthly_sip: number
+    step_up_pct: number
     horizon_years: number
     expected_return: number
     volatility: number
     inflation_rate: number
     simulations: number
+    t_df: number
   }
 }
 
