@@ -62,7 +62,7 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
         if action == "BUY":
             from src.data.data_fetcher import get_live_price
             current_price = get_live_price(ticker)
-            if current_price <= 0:
+            if not current_price or current_price <= 0:
                 current_price = price
 
             order = trader.place_order(
@@ -79,7 +79,7 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
                 sell_qty = min(qty, trader.positions[ticker].quantity)
             from src.data.data_fetcher import get_live_price
             current_price = get_live_price(ticker)
-            if current_price <= 0:
+            if not current_price or current_price <= 0:
                 current_price = price
 
             order = trader.place_order(
@@ -95,7 +95,7 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
         try:
             from src.data.data_fetcher import get_live_price
             current_price = get_live_price(ticker)
-            if current_price > 0:
+            if current_price and current_price > 0:
                 trader.update_prices({ticker: current_price})
         except Exception:
             pass

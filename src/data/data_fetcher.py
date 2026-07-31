@@ -90,12 +90,17 @@ def fetch_stock_data(
 
 
 @retry_with_backoff(max_retries=2, base_delay=1.0)
-def get_live_price(ticker: str) -> float:
+def get_live_price(ticker: str) -> float | None:
+    """Fetch the latest live price for a ticker.
+
+    Returns the price on success, None on failure. Callers must
+    check for None before using the price to avoid zero-price trades.
+    """
     stock = yf.Ticker(ticker)
     data = yf_breaker.call(stock.history, period="1d", interval="1m")
     if data.empty or "Close" not in data.columns:
         logger.warning("No live price data for %s", ticker)
-        return 0.0
+        return None
     return float(data["Close"].iloc[-1])
 
 
