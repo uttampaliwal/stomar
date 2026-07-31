@@ -29,6 +29,7 @@ dependencies = [
     "pydantic-settings>=2.0,<3",
     "duckdb>=1.1,<2",
     "nsepython>=1.0.6,<2",
+    "shap>=0.47,<1",
 ]
 
 [dependency-groups]
@@ -44,6 +45,14 @@ addopts = "-v --tb=short"
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+
+[tool.uv]
+# shap pulls numba/llvmlite; the resolver occasionally backtracks to ancient
+# versions that cannot build on Python 3.12+ — pin minimums explicitly.
+constraint-dependencies = [
+    "numba==0.66.0",
+    "llvmlite==0.48.0",
+]
 
 [tool.ruff.lint]
 select = ["F401", "E", "F", "W"]

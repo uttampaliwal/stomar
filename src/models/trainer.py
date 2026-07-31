@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
@@ -9,7 +10,6 @@ from sklearn.metrics import accuracy_score
 import warnings
 
 from src.data.data_fetcher import fetch_stock_data
-from src.data.features import add_technical_indicators
 from src.models.model import (
     build_lstm, build_gru, build_transformer,
     build_xgb_model, build_lgb_model, save_models, DEVICE,
@@ -34,6 +34,13 @@ FEATURE_COLS = [
     "pcr", "mtf_signal", "mtf_confidence",
     "stoch_k", "stoch_d", "williams_r", "cci", "mfi",
     "adx", "vwap",
+    # SOTA factor pipeline (appended to preserve alignment with legacy models)
+    "supertrend", "supertrend_dir",
+    "ichimoku_tenkan", "ichimoku_kijun", "ichimoku_senkou_a",
+    "ichimoku_senkou_b", "ichimoku_chikou",
+    "cmf", "ofi", "vol_zscore", "pcr_slope", "fii_momentum",
+    "mom_1m_voladj", "mom_3m_voladj", "mom_6m_voladj", "mom_12m_voladj",
+    "rel_strength_1m", "rel_strength_3m", "high_low_spread",
 ]
 
 SEQ_LENGTH = DEFAULT_SEQ_LENGTH
@@ -141,31 +148,49 @@ def _train_one_model(model, train_loader, X_val, y_val, model_name, epochs=EPOCH
     return model
 
 
-def _walk_forward_xgb(X, y, ticker, n_splits=5):
-    """Walk-forward validation for XGBoost/LightGBM.
+def _walk_forward_xgb(X, y, ticker, n_splits=5, returns=None, embargo=5, horizon=1):
+    """Purged & embargoed walk-forward validation for XGBoost/LightGBM.
 
-    Splits data into n_splits chronological folds. Each fold trains on all
-    prior data and tests on the next chunk. Returns per-fold accuracies.
+    Uses PurgedGroupTimeSeriesSplit (López de Prado method): training samples
+    whose labels overlap the test fold are purged, and an embargo removes
+    samples immediately after each test fold. Returns OOS metrics computed on
+    the out-of-sample predictions only.
+
+    Args:
+        X, y: Feature matrix and binary target.
+        ticker: Symbol for logging.
+        n_splits: Number of chronological folds.
+        returns: Optional forward-return series (aligned with y) used to
+            compute OOS Sharpe/Sortino/Calmar/MaxDrawdown.
+        embargo: Embargo size in samples.
+        horizon: Label horizon in samples (purge window).
+
+    Returns:
+        (X_tr, X_te, y_tr, y_te, fold_accs) — final train/test for the
+        last-fold production model, plus per-fold accuracies; the OOS metric
+        dict is attached to X_te.attrs["oos_metrics"].
     """
+    from src.models.validation import PurgedGroupTimeSeriesSplit, performance_metrics
+
     fold_size = len(X) // n_splits
     if fold_size < 50:
         X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, shuffle=False)
         return X_tr, X_te, y_tr, y_te, []
 
+    splitter = PurgedGroupTimeSeriesSplit(
+        n_splits=n_splits, embargo=embargo, horizon=horizon
+    )
+
     fold_accs = []
     best_acc = 0
     best_fold = 0
+    oos_chunks = []
 
-    for fold in range(n_splits):
-        test_start = (fold + 1) * fold_size
-        test_end = min(test_start + fold_size, len(X))
-        if test_start >= len(X):
-            break
-
-        X_tr_fold = X.iloc[:test_start]
-        y_tr_fold = y.iloc[:test_start]
-        X_te_fold = X.iloc[test_start:test_end]
-        y_te_fold = y.iloc[test_start:test_end]
+    for fold, (train_idx, test_idx) in enumerate(splitter.split(X, y)):
+        X_tr_fold = X.iloc[train_idx]
+        y_tr_fold = y.iloc[train_idx]
+        X_te_fold = X.iloc[test_idx]
+        y_te_fold = y.iloc[test_idx]
 
         xgb_model = build_xgb_model()
         xgb_model.fit(X_tr_fold, y_tr_fold, eval_set=[(X_te_fold, y_te_fold)], verbose=False)
@@ -173,11 +198,18 @@ def _walk_forward_xgb(X, y, ticker, n_splits=5):
         acc = accuracy_score(y_te_fold, y_pred)
         fold_accs.append(acc)
 
+        if returns is not None:
+            oos_chunks.append(pd.DataFrame({
+                "y_true": np.asarray(y_te_fold),
+                "y_pred": y_pred,
+                "ret": np.asarray(returns.iloc[test_idx]),
+            }))
+
         if acc > best_acc:
             best_acc = acc
             best_fold = fold
 
-    # Train final model on first (n_splits-1) folds, test on last fold
+    # Final production model: train on the first (n_splits-1) folds, test last
     final_test_start = (n_splits - 1) * fold_size
     if final_test_start >= len(X):
         X_tr_final, X_te_final, y_tr_final, y_te_final = train_test_split(X, y, test_size=0.2, shuffle=False)
@@ -187,8 +219,21 @@ def _walk_forward_xgb(X, y, ticker, n_splits=5):
         X_te_final = X.iloc[final_test_start:]
         y_te_final = y.iloc[final_test_start:]
 
-    logger.info("walk_forward ticker=%s fold_accuracies=%s best_fold=%d",
-                ticker, [round(a, 4) for a in fold_accs], best_fold)
+    oos_metric_dict = {}
+    if returns is not None and oos_chunks:
+        oos_df = pd.concat(oos_chunks, ignore_index=True)
+        pos = np.where(oos_df["y_pred"].values > 0.5, 1.0, 0.0)
+        strat_ret = pos * oos_df["ret"].values
+        oos_metric_dict = performance_metrics(pd.Series(strat_ret))
+        oos_metric_dict["n_folds"] = len(oos_chunks)
+        oos_metric_dict["fold_accuracies"] = [round(a, 4) for a in fold_accs]
+
+    X_te_final.attrs["oos_metrics"] = oos_metric_dict
+
+    logger.info(
+        "walk_forward ticker=%s fold_accuracies=%s best_fold=%d oos_metrics=%s",
+        ticker, [round(a, 4) for a in fold_accs], best_fold, oos_metric_dict,
+    )
 
     return X_tr_final, X_te_final, y_tr_final, y_te_final, fold_accs
 
@@ -228,21 +273,38 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     df = fetch_stock_data(ticker, period="5y", force_refresh=force_retrain)
     logger.info("data_fetched ticker=%s rows=%d", ticker, len(df))
 
-    df_feat = add_technical_indicators(df, ticker=ticker)
+    # SOTA feature pipeline (technical + microstructure + cross-sectional).
+    # Relative-strength factors need NIFTY 50 history; best-effort.
+    from src.signals.feature_pipeline import compute_features, load_index_history
+
+    index_df = None
+    try:
+        index_df = load_index_history(period="5y")
+    except Exception as exc:
+        logger.debug("index history unavailable: %s", exc)
+
+    df_feat = compute_features(df, ticker=ticker, index_df=index_df)
+    # drop all-NaN columns (e.g. relative strength without index data) so
+    # dropna() cannot eliminate every row, then remove warmup rows
+    df_feat = df_feat.dropna(axis=1, how="all")
     df_feat = df_feat.replace([np.inf, -np.inf], np.nan).dropna()
     logger.info("features_computed ticker=%s rows=%d", ticker, len(df_feat))
 
     lstm_features = [c for c in FEATURE_COLS if c in df_feat.columns]
 
-    # --- XGBoost (with walk-forward) ---
+    # --- XGBoost (purged walk-forward) ---
     logger.info("training_xgboost ticker=%s", ticker)
-    xgb_data = df_feat[lstm_features + ["target_direction"]].dropna()
+    xgb_cols = lstm_features + ["target_direction", "target"]
+    xgb_data = df_feat[[c for c in xgb_cols if c in df_feat.columns]].dropna()
     X_xgb = xgb_data[lstm_features]
     y_xgb = xgb_data["target_direction"]
+    fwd_returns = xgb_data["target"] if "target" in xgb_data.columns else None
     up_c, dn_c = int(y_xgb.sum()), len(y_xgb) - int(y_xgb.sum())
     logger.info("xgb_class_distribution ticker=%s up=%d down=%d", ticker, up_c, dn_c)
 
-    X_tr, X_te, y_tr, y_te, fold_accs = _walk_forward_xgb(X_xgb, y_xgb, ticker)
+    X_tr, X_te, y_tr, y_te, fold_accs = _walk_forward_xgb(
+        X_xgb, y_xgb, ticker, returns=fwd_returns
+    )
     xgb_model = build_xgb_model()
     xgb_model.fit(X_tr, y_tr, eval_set=[(X_te, y_te)], verbose=False)
 
@@ -378,6 +440,8 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
         "transformer_accuracy": float(tf_acc),
         "ensemble_accuracy": float(ensemble_acc),
         "n_samples": len(df_feat),
+        "n_features": len(lstm_features),
+        "oos_metrics": X_te.attrs.get("oos_metrics", {}) if hasattr(X_te, "attrs") else {},
     }
 
 

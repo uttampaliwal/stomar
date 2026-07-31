@@ -105,13 +105,22 @@ def get_feature_importance(ticker: str):
 
 @router.get("/{ticker}/explain")
 def explain_prediction(ticker: str):
-    """Explain the current prediction with feature contributions."""
+    """Explain the current prediction with a SHAP feature breakdown.
+
+    Returns per-feature SHAP contributions, percentage contribution to the
+    signal, and human-readable sentences (e.g. "RSI_14 contributed
+    moderately to the BUY signal, pushing bullish by 0.12 (18% of total)").
+    """
     try:
         from src.signals.interpretability import explain_prediction as _explain
+        from src.signals.feature_pipeline import compute_features, load_index_history
+
         df = fetch_stock_data(ticker)
         if df is None or df.empty:
             return {"error": f"No data for {ticker}"}
-        df_feat = add_technical_indicators(df.copy(), ticker)
+        index_df = load_index_history()
+        df_feat = compute_features(df.copy(), ticker=ticker, index_df=index_df)
+        df_feat = df_feat.replace([float("inf"), float("-inf")], None)
         explanation = _explain(ticker, df_feat, FEATURE_COLS)
         return explanation
     except Exception as e:
