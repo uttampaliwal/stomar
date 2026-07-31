@@ -3,8 +3,8 @@
 ## Quick Start
 
 ### Prerequisites
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (installs Python 3.12 automatically)
-- Node.js 22+ (see `.nvmrc`)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (installs Python 3.13 automatically)
+- Node.js 22.22+ (see `.nvmrc`)
 
 ### Option 1: One-click startup
 ```bash
@@ -59,20 +59,20 @@ stomar/
 │       ├── paper_trading.py # Simulated execution
 │       ├── mf_tracker.py  # Mutual fund tracking
 │       ├── holdings.py    # Zerodha CSV parser
-│       └── ledger.py      # Trading journal
+│       ├── ledger.py      # Trading journal
+│       ├── insights.py    # Recommendations + enrichment
+│       ├── automation.py  # Automation run + decisions
+│       └── wealth.py      # Wealth strategies + Monte-Carlo
 │
 ├── web/                    # React frontend
 │   ├── src/
 │   │   ├── components/    # UI components (Sidebar, Cards, etc.)
-│   │   ├── pages/         # All 19 module pages
-│   │   ├── hooks/         # useApi hook for data fetching
-│   │   └── lib/           # Utilities (formatting, cn)
+│   │   ├── pages/         # All 21 module pages
+│   │   ├── hooks/         # useApi, useDebouncedValue
+│   │   └── lib/           # Utilities + typed API shapes (api-types.ts)
+│   ├── .nvmrc             # Node 22
 │   ├── tailwind.config.js
 │   └── vite.config.ts     # Proxy /api to :8000
-│
-├── src/                    # Python source
-├── api/                    # FastAPI backend
-└── start_dev.bat           # One-click startup
 ```
 
 ## Design System
@@ -83,26 +83,28 @@ stomar/
 - **Typography**: Inter (UI) + JetBrains Mono (data/numbers)
 - **Responsive**: Collapsible sidebar, adaptive grids
 
-## All 20 Modules
+## All 21 Pages
 
 | # | Page | Description |
 |---|------|-------------|
 | 1 | Dashboard | Command center overview |
 | 2 | Predictions | 5-model ML ensemble signals |
-| 3 | Scanner | Multi-stock BUY/SELL scan |
-| 4 | Consensus | 14-signal unified view |
-| 5 | Market Pulse | FII/DII flows, options PCR |
-| 6 | Sentiment | FinBERT multi-source |
-| 7 | Backtest | Walk-forward validation |
-| 8 | Optimizer | Portfolio allocation |
-| 9 | Risk | VaR, CVaR, Kelly |
-| 10 | Volatility | GARCH, Parkinson, YZ |
-| 11 | Ranking | Cross-sectional ranking |
-| 12 | Scenarios | Strategy comparison |
-| 13 | Regime | Bull/Bear/Sideways |
-| 14 | Correlation | Cross-asset heatmap |
-| 15 | Monitoring | System health |
-| 16 | Pipeline | Training status |
-| 17 | Paper Trading | Simulated execution |
-| 18 | MF Tracker | Mutual fund XIRR |
-| 19 | Ledger | Trading journal |
+| 3 | Portfolio | Current holdings + allocation |
+| 4 | Scanner | Multi-stock BUY/SELL scan |
+| 5 | Consensus | 14-signal unified view |
+| 6 | Market Pulse | FII/DII flows, options PCR |
+| 7 | Sentiment | FinBERT multi-source |
+| 8 | Backtest | Walk-forward validation |
+| 9 | Optimizer | Portfolio allocation |
+| 10 | Risk | VaR, CVaR, Kelly |
+| 11 | Volatility | GARCH, Parkinson, YZ |
+| 12 | Ranking | Cross-sectional ranking |
+| 13 | Scenarios | Strategy comparison |
+| 14 | Regime | Bull/Bear/Sideways |
+| 15 | Correlation | Cross-asset heatmap |
+| 16 | Monitoring | System health |
+| 17 | Pipeline | Training status |
+| 18 | Paper Trading | Simulated execution |
+| 19 | MF Tracker | Mutual fund XIRR |
+| 20 | Ledger | Trading journal |
+| 21 | Wealth Goals | Monte-Carlo projection + advisor |

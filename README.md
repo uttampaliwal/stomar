@@ -9,12 +9,12 @@ An autonomous quantitative trading system for the Indian NSE market. 5-model ML 
 
 ## Quick Start
 
-> Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager) and Node.js 22+.
+> Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager) and Node.js 22.22+ (see `web/.nvmrc`).
 > `start_dev.sh` / `start_dev.bat` install both toolchains' dependencies automatically — you only need `uv` and Node.
 
 ```bash
 # 1. Clone the repo
-git clone <repo-url>
+git clone https://github.com/uttampaliwal/stomar.git
 cd stomar
 
 # 2. Install uv (if not already installed)
@@ -36,7 +36,7 @@ uv run run_daily.py --paper-trade --capital 200000
 ```
 
 All Python dependencies are declared in `pyproject.toml` and pinned in `uv.lock`.
-`uv sync` creates the `.venv` (Python 3.12, pinned via `.python-version`) and installs
+`uv sync` creates the `.venv` (Python 3.13, pinned via `.python-version`) and installs
 everything reproducibly — no manual venv/pip management.
 
 ---
@@ -45,13 +45,13 @@ everything reproducibly — no manual venv/pip management.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                REACT DASHBOARD (20 pages, :5173)                  │
+│                REACT DASHBOARD (21 pages, :5173)                 │
 │  Scanner | Consensus | Ranking | Portfolio | Backtest | Risk     │
 │  Sentiment | Market Pulse | Optimizer | Paper Trading | Ledger   │
 │                      ↕ Vite proxy (/api)                         │
 ├─────────────────────────────────────────────────────────────────┤
 │                  FASTAPI BACKEND (:8000)                          │
-│  21 API routers | CORS | Response caching | Parallel fetch       │
+│  24 API routers | CORS | Response caching | Parallel fetch      │
 └───────────────────────────┬─────────────────────────────────────┘
                             │ calls
 ┌───────────────────────────▼─────────────────────────────────────┐
@@ -145,30 +145,31 @@ uv run run_daily.py --dry-run                # Signals only, no ledger writes
 - **NSE costs** — Brokerage, STT, stamp duty, exchange charges, GST
 - **Risk controls** — Position limits, drawdown limits, kill switch, Kelly sizing
 
-### Dashboard (20 pages)
+### Dashboard (21 pages)
 
 | # | Page | Purpose |
 |---|------|---------|
-| 1 | Predictions | ML model predictions + candlestick + RSI + volume + **model explanations** |
-| 2 | Portfolio | Current holdings + allocation |
-| 3 | Backtest | Walk-forward backtest with per-window breakdown |
-| 4 | Scanner | Multi-stock screening (absolute direction) |
-| 5 | **Consensus** | **Unified signal: Meta-Controller + Ensemble + Regime voting** |
-| 6 | Sentiment | News sentiment analysis |
-| 7 | Market Pulse | FII/DII flow, PCR, market health |
-| 8 | Optimizer | Portfolio optimization + efficient frontier |
-| 9 | Risk | VaR, CVaR, drawdown, Kelly criterion |
-| 10 | Volatility | Multi-estimator volatility + forecast chart |
-| 11 | Ranking | Cross-sectional stock ranking (relative quality) |
-| 12 | Scenarios | What-if scenario comparison |
-| 13 | Regime | Bull/Bear/Sideways detection + indicators |
-| 14 | Correlation | Cross-asset correlation heatmap |
-| 15 | Monitoring | System health + model drift + data freshness |
-| 16 | Pipeline | Retraining pipeline status |
-| 17 | Paper Trading | Simulated trading engine |
-| 18 | MF Tracker | Mutual fund NAV, XIRR, allocation |
-| 19 | Ledger | Historical decisions, signal accuracy, P&L |
-| 20 | **Interpretability** | **Feature importance + prediction explanations** |
+| 1 | Dashboard | Command center: pipeline health, recommendations, automation |
+| 2 | Predictions | ML model predictions + candlestick + RSI + volume + **model explanations** |
+| 3 | Portfolio | Current holdings + allocation |
+| 4 | Backtest | Walk-forward backtest with per-window breakdown |
+| 5 | Scanner | Multi-stock screening (absolute direction) |
+| 6 | **Consensus** | **Unified signal: Meta-Controller + Ensemble + Regime voting** |
+| 7 | Sentiment | News sentiment analysis |
+| 8 | Market Pulse | FII/DII flow, PCR, market health |
+| 9 | Optimizer | Portfolio optimization + efficient frontier |
+| 10 | Risk | VaR, CVaR, drawdown, Kelly criterion |
+| 11 | Volatility | Multi-estimator volatility + forecast chart |
+| 12 | Ranking | Cross-sectional stock ranking (relative quality) |
+| 13 | Scenarios | What-if scenario comparison |
+| 14 | Regime | Bull/Bear/Sideways detection + indicators |
+| 15 | Correlation | Cross-asset correlation heatmap |
+| 16 | Monitoring | System health + model drift + data freshness |
+| 17 | Pipeline | Retraining pipeline status |
+| 18 | Paper Trading | Simulated trading engine |
+| 19 | MF Tracker | Mutual fund NAV, XIRR, allocation |
+| 20 | Ledger | Historical decisions, signal accuracy, P&L |
+| 21 | **Wealth Goals** | **Monte-Carlo retirement projection + wealth advisor** |
 
 ---
 
@@ -176,18 +177,21 @@ uv run run_daily.py --dry-run                # Signals only, no ledger writes
 
 ```
 stomar/
-├── start_dev.bat              # Start FastAPI + React dev servers
+├── start_dev.sh               # Start FastAPI + React dev servers (Linux/macOS)
+├── start_dev.bat              # Start FastAPI + React dev servers (Windows)
 ├── run_daily.py               # Autonomous daily loop
 ├── run_pipeline.py            # Retraining pipeline
 ├── auto_pipeline.py           # Startup automation
 ├── schedule_pipeline.py       # Windows Task Scheduler
 ├── verify_system.py           # System verification
 ├── pyproject.toml             # Python deps + ruff/pytest config
+├── uv.lock                    # Locked dependency graph (commit it)
+├── .python-version            # Pinned Python 3.13
 ├── Dockerfile
 ├── api/                       # FastAPI backend
 │   ├── main.py                # App + CORS + response caching
 │   ├── utils.py               # Parallel fetch utility
-│   └── routers/               # 21 API routers
+│   └── routers/               # 24 API routers
 │       ├── predictions.py     # ML predictions + feature importance + explanations
 │       ├── scanner.py         # Multi-stock screening
 │       ├── consensus.py       # Meta-Controller integration
@@ -207,14 +211,18 @@ stomar/
 │       ├── pipeline.py        # Retraining pipeline
 │       ├── paper_trading.py   # Paper trading engine
 │       ├── mf_tracker.py      # Mutual fund tracker
-│       └── ledger.py          # Trading journal
+│       ├── ledger.py          # Trading journal
+│       ├── insights.py        # Recommendations + enrichment
+│       ├── automation.py      # Automation run + decisions
+│       └── wealth.py          # Wealth strategies + Monte-Carlo + advisor
 ├── web/                       # React frontend
 │   ├── src/
-│   │   ├── App.tsx            # Router with 20 routes
+│   │   ├── App.tsx            # Router with 21 routes
 │   │   ├── components/        # Sidebar, ThemeProvider, UI components
 │   │   ├── hooks/             # useApi, useDebouncedValue
-│   │   ├── pages/             # 20 page components
-│   │   └── lib/               # Utilities
+│   │   ├── pages/             # 21 page components
+│   │   └── lib/               # Utilities + typed API shapes (api-types.ts)
+│   ├── .nvmrc                 # Node 22
 │   ├── vite.config.ts         # Vite + proxy /api → :8000
 │   └── package.json
 ├── src/                       # Python ML/trading logic
@@ -262,7 +270,7 @@ stomar/
 │       ├── risk_controls.py   # Pre-trade risk controls + kill switch
 │       ├── optimizer.py       # MVO, Black-Litterman
 │       └── holdings.py        # Zerodha CSV parser
-├── tests/                     # 679 tests
+├── tests/                     # 750 tests
 ├── models/                    # Trained weights (gitignored)
 │   ├── *.pt, *.pkl            # Per-ticker models
 │   └── meta_controller.pkl    # Meta-controller
@@ -272,13 +280,6 @@ stomar/
 │   ├── stomar.db              # SQLite ledger
 │   ├── paper_state.json       # Paper trading state
 │   └── mf_state.json          # MF tracker state
-└── docs/
-    ├── ARCHITECTURE.md        # System design
-    ├── API.md                 # Module interfaces
-    ├── DESIGN.md              # UI/UX design system
-    ├── DEPLOYMENT.md          # Setup guide
-    ├── PLAN.md                # Development plan
-    └── IMPROVEMENTS.md        # Roadmap
 ```
 
 ---
@@ -295,16 +296,17 @@ stomar/
 ### Meta-Controller
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/consensus/{ticker}` | GET | Unified signal from all 14 modules |
 | `/api/consensus/` | GET | All tickers consensus |
 
 ### Paper Trading
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/paper/state` | GET | Current portfolio state |
-| `/api/paper/order` | POST | Place paper order |
-| `/api/paper/positions` | GET | Open positions |
-| `/api/paper/trades` | GET | Trade history |
+| `/api/paper-trading/state` | GET | Current portfolio state |
+| `/api/paper-trading/order` | POST | Place paper order |
+| `/api/paper-trading/positions` | GET | Open positions |
+| `/api/paper-trading/trades` | GET | Trade history |
+| `/api/paper-trading/close-position` | POST | Close/cover a position |
+| `/api/paper-trading/reset` | POST | Reset paper trading account |
 
 ### Monitoring
 | Endpoint | Method | Description |
@@ -312,6 +314,8 @@ stomar/
 | `/api/monitoring/` | GET | System health + model status |
 | `/api/pipeline/status` | GET | Training pipeline status |
 | `/api/pipeline/run` | POST | Start orchestrator run |
+| `/api/pipeline/run/status` | GET | Orchestrator run progress |
+| `/api/pipeline/train/{ticker}` | POST | Train one ticker's models |
 
 ---
 
@@ -342,14 +346,14 @@ uv run schedule_pipeline.py --run-now            # Run immediately
 ## Tests
 
 ```bash
-# Run all 679 tests
+# Run all 750 tests
 uv run pytest tests/ -v
 
 # Run with coverage
 uv run pytest tests/ --cov=src --cov-report=term-missing
 
-# Lint check
-uv run ruff check src/ api/ tests/ --output-format=concise
+# Lint check (whole repo, same as CI)
+uv run ruff check .
 ```
 
 ---
@@ -358,7 +362,7 @@ uv run ruff check src/ api/ tests/ --output-format=concise
 
 | Layer | Technology |
 |-------|-----------|
-| **Frontend** | React 18 + TypeScript + Tailwind CSS + Recharts (dark/light theme) |
+| **Frontend** | React 19 + TypeScript + Tailwind CSS + React Router 8 + Recharts (dark/light theme) |
 | **Backend** | FastAPI + Uvicorn + Pydantic (CORS, response caching, parallel fetch) |
 | **ML/DL** | PyTorch 2.0+, XGBoost 2.0+, LightGBM 4.0+ |
 | **NLP** | HuggingFace Transformers (ProsusAI/finbert) |
@@ -367,7 +371,7 @@ uv run ruff check src/ api/ tests/ --output-format=concise
 | **Optimization** | SciPy, scikit-learn (Ledoit-Wolf) |
 | **Technical Analysis** | `ta` library (30+ indicators) |
 | **Storage** | SQLite (ledger), Parquet (data cache) |
-| **Testing** | pytest (679 tests), ruff (linting) |
+| **Testing** | pytest (750 tests), ruff (linting) |
 
 ---
 

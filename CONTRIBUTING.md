@@ -34,8 +34,8 @@ Thank you for your interest in contributing to StoMar! This document provides gu
 
 ### Prerequisites
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (installs and manages Python 3.12 automatically)
-- Node.js 22+ (see `web/.nvmrc`)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (installs and manages Python 3.13 automatically)
+- Node.js 22.22+ (see `web/.nvmrc`)
 - Git
 
 ### Installation
@@ -48,7 +48,7 @@ uv sync
 cd web && npm ci && cd ..
 
 # Run lint/tests (no manual activation needed)
-uv run ruff check src/ tests/
+uv run ruff check .
 uv run pytest tests/ -v --tb=short
 ```
 
@@ -58,14 +58,16 @@ uv run pytest tests/ -v --tb=short
 
 ### Environment Variables
 
-No API keys are required for core functionality. The project uses:
+All configuration is read from `STOMAR_*` environment variables (see `src/core/settings.py` and the
+`.env.example` file). No API keys are required for core functionality:
 - **yfinance** for market data (free, no API key needed)
 - **FinBERT** for sentiment analysis (auto-downloaded on first use)
 
-Optional environment variables:
+Common overrides:
 ```bash
-# For enhanced data sources (optional)
-export NSE_ARCHIVE_API_KEY=your_key_here
+export STOMAR_ENV=dev               # dev or production
+export STOMAR_API_KEY=your_key_here # optional auth for the API
+export STOMAR_CORS_ORIGINS=http://localhost:5173
 ```
 
 ## Code Style
@@ -75,12 +77,12 @@ export NSE_ARCHIVE_API_KEY=your_key_here
 We use **ruff** for linting. Run before committing:
 
 ```bash
-python -m ruff check src/ tests/ --output-format=concise
+uv run ruff check . --output-format=concise
 ```
 
 Auto-fix common issues:
 ```bash
-python -m ruff check src/ tests/ --fix
+uv run ruff check . --fix
 ```
 
 ### Formatting Guidelines
@@ -104,16 +106,16 @@ python -m ruff check src/ tests/ --fix
 
 ```bash
 # Run all tests
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 
 # Run with coverage
-python -m pytest tests/ --cov=src --cov-report=term-missing
+uv run pytest tests/ --cov=src --cov-report=term-missing
 
 # Run specific test file
-python -m pytest tests/test_model.py -v
+uv run pytest tests/test_model.py -v
 
 # Run specific test
-python -m pytest tests/test_model.py::TestModel::test_specific -v
+uv run pytest tests/test_model.py::TestModel::test_specific -v
 ```
 
 ### Writing Tests
@@ -157,8 +159,8 @@ Aim for:
 ### Before Submitting
 
 1. **Update tests** for any new/changed functionality
-2. **Run linting**: `python -m ruff check src/ tests/`
-3. **Run full test suite**: `python -m pytest tests/ -v`
+2. **Run linting**: `uv run ruff check .`
+3. **Run full test suite**: `uv run pytest tests/ -v`
 4. **Update documentation** if adding new features
 5. **Keep commits atomic**: One logical change per commit
 
@@ -208,7 +210,8 @@ Include:
 
 **Do not open public issues for security vulnerabilities.**
 
-Email security concerns to: [SECURITY_EMAIL]
+Report security concerns privately via the repository's
+[Security tab](https://github.com/uttampaliwal/stomar/security) (private vulnerability reporting).
 
 ## Feature Requests
 
@@ -235,25 +238,37 @@ Looking for help with:
 
 ```
 stomar/
-├── src/                    # Main source code
-│   ├── __init__.py
-│   ├── data_fetcher.py     # Data acquisition
-│   ├── features.py         # Feature engineering
-│   ├── model.py            # ML models
-│   ├── ensemble.py         # Ensemble methods
-│   ├── backtester.py       # Backtesting engine
-│   ├── sentiment.py        # Sentiment analysis
-│   ├── risk.py             # Risk metrics
-│   └── ...
-├── tests/                  # Test suite
-├── docs/                   # Documentation
-├── data/                   # Data cache (gitignored)
-├── models/                 # Trained models (gitignored)
-├── api/                    # FastAPI backend
-├── web/                    # React frontend
-├── start_dev.bat           # One-click startup
-├── run_pipeline.py         # CLI pipeline
-└── requirements.txt        # Dependencies
+├── start_dev.sh / start_dev.bat  # One-click dev startup (uv sync + npm ci + both servers)
+├── run_daily.py                  # Autonomous daily loop
+├── run_pipeline.py               # Retraining pipeline
+├── auto_pipeline.py              # Startup automation
+├── schedule_pipeline.py          # Windows Task Scheduler
+├── verify_system.py              # System verification
+├── pyproject.toml                # Python deps + ruff/pytest config (single source of truth)
+├── uv.lock                       # Locked dependency graph (commit it)
+├── .python-version               # Pinned Python 3.13
+├── api/                          # FastAPI backend
+│   ├── main.py                   # App + CORS + response caching
+│   ├── utils.py                  # Parallel fetch utility
+│   └── routers/                  # 24 API routers
+├── web/                          # React frontend (React 19 + Vite + TypeScript)
+│   ├── src/
+│   │   ├── pages/                # 21 page components
+│   │   ├── components/           # Sidebar, ThemeProvider, UI components
+│   │   ├── hooks/                # useApi, usePostApi, useDebouncedValue
+│   │   └── lib/                  # Utilities + typed API shapes (api-types.ts)
+│   ├── .nvmrc                    # Node 22
+│   └── vite.config.ts            # Proxy /api → :8000
+├── src/                          # Python ML/trading logic
+│   ├── core/                     # Settings, constants, logging, pipeline, backfill
+│   ├── data/                     # Data fetch, features, feature store
+│   ├── models/                   # 5 model architectures, trainer, ensemble, meta-controller
+│   ├── signals/                  # 16 signal modules (sentiment, flow, regime, risk, ...)
+│   └── trading/                  # Engine, paper trader, portfolio, backtester, ledger, optimizer
+├── tests/                        # 750 tests (pytest)
+├── data/                         # Runtime data cache (gitignored)
+├── models/                       # Trained weights (gitignored)
+└── .github/workflows/ci.yml      # CI: ruff + pytest + web lint/build
 ```
 
 ## License

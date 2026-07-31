@@ -124,7 +124,7 @@
 *You must run paper trading for a minimum period before any real money. This phase is mostly time, not code.*
 
 - [ ] 🔴 **P3.1** Start the paper trading clock — minimum 3 months uninterrupted
-  - Command: `python run_daily.py --paper-trade --capital 200000`
+  - Command: `uv run run_daily.py --paper-trade --capital 200000`
   - Schedule via Task Scheduler to run every weekday at 3:45 PM IST (after market close)
   - Do NOT interrupt, reset, or modify the strategy during this period
   - This is a time gate, not a code task — it just has to run
