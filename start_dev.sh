@@ -25,7 +25,7 @@ fi
 # --- Install Python deps if uvicorn missing ---
 if ! python -c "import uvicorn" 2>/dev/null; then
     echo "[setup] Installing Python dependencies..."
-    pip install -e ".[dev]"
+    "$DIR/.venv/bin/pip" install -e ".[dev]"
 fi
 
 # --- Install Node deps if vite missing ---
