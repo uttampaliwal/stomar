@@ -3,26 +3,26 @@
 ## Quick Start
 
 ### Prerequisites
-- Python 3.11+ with all dependencies installed
-- Node.js 18+ and npm
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (installs Python 3.12 automatically)
+- Node.js 22+ (see `.nvmrc`)
 
-### Option 1: One-click startup (Windows)
+### Option 1: One-click startup
 ```bash
-start_dev.bat
+./start_dev.sh        # Linux/macOS
+start_dev.bat         # Windows
 ```
 
 ### Option 2: Manual startup
 
 **Backend (FastAPI):**
 ```bash
-pip install fastapi uvicorn[standard]
-python -m uvicorn api.main:app --reload --port 8000
+uv sync && uv run uvicorn api.main:app --reload --port 8000
 ```
 
 **Frontend (React + Vite):**
 ```bash
 cd web
-npm install
+npm ci
 npm run dev
 ```
 

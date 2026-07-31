@@ -11,10 +11,8 @@ import json
 import logging
 import sys
 import threading
-import time
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Correlation / context storage (thread-local)

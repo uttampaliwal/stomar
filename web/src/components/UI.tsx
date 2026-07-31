@@ -33,7 +33,7 @@ export function Stat({ label, value, sub, trend, className }: StatProps) {
 // ─── Badge ───
 interface BadgeProps {
   children: React.ReactNode
-  variant?: 'default' | 'success' | 'danger' | 'warning' | 'info'
+  variant?: 'default' | 'success' | 'danger' | 'warning' | 'info' | 'outline'
   className?: string
 }
 
@@ -43,6 +43,7 @@ const badgeVariants = {
   danger: 'bg-rose/15 text-rose border border-rose/30',
   warning: 'bg-amber/15 text-amber border border-amber/30',
   info: 'bg-cyan/15 text-cyan border border-cyan/30',
+  outline: 'bg-transparent text-muted-foreground border border-border',
 }
 
 export function Badge({ children, variant = 'default', className }: BadgeProps) {

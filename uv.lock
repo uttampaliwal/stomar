@@ -1233,7 +1233,7 @@ dependencies = [
     { name = "yfinance" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "ruff" },
@@ -1250,10 +1250,8 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=15.0" },
     { name = "pydantic", specifier = ">=2.0,<3" },
     { name = "pydantic-settings", specifier = ">=2.0,<3" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0,<9" },
     { name = "python-dotenv", specifier = ">=1.0,<2" },
     { name = "requests", specifier = ">=2.31,<3" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4,<1" },
     { name = "scikit-learn", specifier = ">=1.5,<2" },
     { name = "scipy", specifier = ">=1.11,<2" },
     { name = "ta", specifier = ">=0.11,<1" },
@@ -1263,7 +1261,12 @@ requires-dist = [
     { name = "xgboost", specifier = ">=2.0,<3" },
     { name = "yfinance", specifier = ">=0.2.44,<3" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.0,<9" },
+    { name = "ruff", specifier = ">=0.4,<1" },
+]
 
 [[package]]
 name = "sympy"

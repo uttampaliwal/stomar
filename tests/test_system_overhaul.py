@@ -1,11 +1,10 @@
 """Integration tests verifying StoMar system overhaul."""
 import os
 import tempfile
-import pytest
 import numpy as np
 
 from src.trading.paper_trader import PaperTrader
-from src.trading.engine import OrderSide, OrderType, OrderStatus
+from src.trading.engine import OrderSide, OrderStatus
 from src.signals.significance import calculate_quant_stats
 
 

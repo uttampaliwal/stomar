@@ -150,7 +150,7 @@ class PaperTrader:
         order = self.place_order(ticker, side, OrderType.MARKET, quantity, price=price)
         if order.status == OrderStatus.REJECTED:
             return order
-        
+
         # Immediate bar execution
         self.on_bar(ticker, o=price, h=price, low=price, c=price, volume=1_000_000)
         try:

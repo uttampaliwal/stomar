@@ -15,13 +15,11 @@ Usage:
 """
 
 import glob
-import json
 import logging
 import os
 import sqlite3
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -515,7 +513,7 @@ def print_report(report: dict) -> None:
     before = report["disk_usage_before"]
     print(f"  Disk usage before: {before['total_mb']:.1f} MB ({before['file_count']} files)")
 
-    print(f"\n  Actions taken:")
+    print("\n  Actions taken:")
     print(f"    Cache files deleted:       {report['cache_files_deleted']}")
     if "cache_bytes_freed" in report:
         print(f"    Cache bytes freed:         {_format_bytes(report['cache_bytes_freed'])}")
@@ -528,7 +526,7 @@ def print_report(report: dict) -> None:
               f"{ledger.get('archived_trades', 0)} trades, {ledger.get('archived_snapshots', 0)} snapshots")
         print(f"    Ledger rows deleted:       {ledger.get('deleted', 0)}")
     else:
-        print(f"    Ledger: no rows to archive")
+        print("    Ledger: no rows to archive")
 
     print(f"    Feature versions deleted:  {report['feature_versions_deleted']}")
     print(f"    Monitoring files deleted:  {report['monitoring_files_deleted']}")
@@ -549,7 +547,6 @@ def print_report(report: dict) -> None:
 
 if __name__ == "__main__":
     import argparse
-    import sys
 
     logging.basicConfig(
         level=logging.INFO,

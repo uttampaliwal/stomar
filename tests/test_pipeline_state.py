@@ -2,7 +2,6 @@
 
 import json
 import os
-import tempfile
 from unittest.mock import patch
 
 import pytest
@@ -599,7 +598,6 @@ class TestRetrainingPipelineCheckpoint:
 
     def test_checkpoint_created_per_ticker(self, tmp_path):
         """Retraining pipeline creates per-ticker checkpoint files."""
-        from src.core.pipeline import RetrainingPipeline, PipelineConfig
 
         path = checkpoint_path("retrain", "TEST.NS")
         assert "TEST_NS" in path
@@ -616,7 +614,7 @@ class TestRetrainingPipelineCheckpoint:
 
     def test_full_run_clears_checkpoint(self):
         """Successful full run clears the checkpoint file."""
-        from src.core.pipeline import RetrainingPipeline, PipelineResult
+        from src.core.pipeline import RetrainingPipeline
 
         pipeline = RetrainingPipeline()
         # Mock all stages to succeed
