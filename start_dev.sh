@@ -6,11 +6,20 @@ echo "  StoMar - Full Stack Startup"
 echo "========================================"
 echo
 
+API_PID=""
+WEB_PID=""
+
 cleanup() {
     echo
     echo "Shutting down..."
-    kill $API_PID $WEB_PID 2>/dev/null
-    wait $API_PID $WEB_PID 2>/dev/null
+    if [ -n "$WEB_PID" ]; then
+        kill $WEB_PID 2>/dev/null
+        wait $WEB_PID 2>/dev/null
+    fi
+    if [ -n "$API_PID" ]; then
+        kill $API_PID 2>/dev/null
+        wait $API_PID 2>/dev/null
+    fi
     exit 0
 }
 trap cleanup SIGINT SIGTERM
@@ -44,13 +53,30 @@ if [ ! -f "$DIR/web/node_modules/.bin/vite" ]; then
     npm ci
 fi
 
-echo "[1/3] Starting FastAPI backend on :8000..."
-cd "$DIR"
-uv run uvicorn api.main:app --reload --port 8000 &
-API_PID=$!
+# --- Backend: reuse an already-running healthy API, otherwise start one ---
+health_ok() {
+    curl -fsS -m 2 http://localhost:8000/api/health 2>/dev/null | grep -q '"status":"ok"'
+}
 
-echo "[2/3] Waiting for API to start..."
-sleep 3
+if health_ok; then
+    echo "[1/3] API already healthy on :8000 — reusing it (Ctrl+C won't stop it)"
+else
+    echo "[1/3] Starting FastAPI backend on :8000..."
+    cd "$DIR"
+    uv run uvicorn api.main:app --reload --port 8000 &
+    API_PID=$!
+
+    echo "[2/3] Waiting for API to start..."
+    for _ in $(seq 1 30); do
+        if health_ok; then
+            break
+        fi
+        sleep 1
+    done
+    if ! health_ok; then
+        echo "[warn] API not responding on http://localhost:8000/api/health — check the logs above."
+    fi
+fi
 
 echo "[3/3] Starting React frontend on :5173..."
 cd "$DIR/web"

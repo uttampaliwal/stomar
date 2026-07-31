@@ -51,11 +51,16 @@ if not exist "web\node_modules\.bin\vite.cmd" (
     popd
 )
 
-echo [1/3] Starting FastAPI backend on :8000...
-start "StoMar API" cmd /k "cd /d %~dp0 && uv run uvicorn api.main:app --reload --port 8000"
-
-echo [2/3] Waiting for API to start...
-timeout /t 3 /nobreak >nul
+REM --- Backend: reuse an already-running healthy API, otherwise start one ---
+powershell -Command "try { $null = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://localhost:8000/api/health; exit 0 } catch { exit 1 }"
+if not errorlevel 1 (
+    echo [1/3] API already healthy on :8000 - reusing it
+) else (
+    echo [1/3] Starting FastAPI backend on :8000...
+    start "StoMar API" cmd /k "cd /d %~dp0 && uv run uvicorn api.main:app --reload --port 8000"
+    echo [2/3] Waiting for API to start...
+    timeout /t 3 /nobreak >nul
+)
 
 echo [3/3] Starting React frontend on :5173...
 start "StoMar Web" cmd /k "cd /d %~dp0\web && npm run dev"
