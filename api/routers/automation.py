@@ -18,10 +18,11 @@ def run_daily_cycle():
 
 @router.get("/decisions")
 def recent_decisions():
+    ledger = Ledger()
     try:
-        ledger = Ledger()
         decisions = ledger.get_decisions(limit=20) if hasattr(ledger, "get_decisions") else []
-        ledger.close()
         return {"decisions": decisions}
     except Exception as exc:  # pragma: no cover - defensive
         return {"error": str(exc)}
+    finally:
+        ledger.close()
