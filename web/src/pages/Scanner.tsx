@@ -6,6 +6,11 @@ import type { ScannerResponse, PipelineStatusResponse } from '../lib/api-types'
 type SortKey = 'ticker' | 'signal' | 'confidence' | 'price' | 'chg_5d' | 'rsi'
 type SortDir = 'asc' | 'desc'
 
+const SortIcon = ({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) => {
+  if (sortKey !== col) return <span className="text-muted-foreground ml-1">↕</span>
+  return <span className="text-cyan ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
+}
+
 export default function Scanner() {
   const { data, loading, error, refetch } = useApi<ScannerResponse>('/api/scanner/')
   const { data: pipeStatus } = useApi<PipelineStatusResponse>('/api/pipeline/status')
@@ -13,8 +18,7 @@ export default function Scanner() {
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   const sortedResults = useMemo(() => {
-    if (!data?.results?.length) return []
-    const results = [...data.results]
+    const results = [...(data?.results ?? [])]
     results.sort((a, b) => {
       let av = a[sortKey], bv = b[sortKey]
       if (sortKey === 'signal') { av = a.confidence; bv = b.confidence }
@@ -27,11 +31,6 @@ export default function Scanner() {
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('desc') }
-  }
-
-  const SortIcon = ({ col }: { col: SortKey }) => {
-    if (sortKey !== col) return <span className="text-muted-foreground ml-1">↕</span>
-    return <span className="text-cyan ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
   }
 
   const noModels = pipeStatus && pipeStatus.trained === 0
@@ -109,22 +108,22 @@ export default function Scanner() {
                 <thead>
                   <tr className="border-b border-border text-xs text-muted-foreground uppercase">
                     <th className="text-left py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('ticker')}>
-                      Ticker <SortIcon col="ticker" />
+                      Ticker <SortIcon col="ticker" sortKey={sortKey} sortDir={sortDir} />
                     </th>
                     <th className="text-center py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('signal')}>
-                      Signal <SortIcon col="signal" />
+                      Signal <SortIcon col="signal" sortKey={sortKey} sortDir={sortDir} />
                     </th>
                     <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('confidence')}>
-                      Confidence <SortIcon col="confidence" />
+                      Confidence <SortIcon col="confidence" sortKey={sortKey} sortDir={sortDir} />
                     </th>
                     <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('price')}>
-                      Price <SortIcon col="price" />
+                      Price <SortIcon col="price" sortKey={sortKey} sortDir={sortDir} />
                     </th>
                     <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('chg_5d')}>
-                      5D Chg <SortIcon col="chg_5d" />
+                      5D Chg <SortIcon col="chg_5d" sortKey={sortKey} sortDir={sortDir} />
                     </th>
                     <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('rsi')}>
-                      RSI <SortIcon col="rsi" />
+                      RSI <SortIcon col="rsi" sortKey={sortKey} sortDir={sortDir} />
                     </th>
                   </tr>
                 </thead>

@@ -6,14 +6,18 @@ import type { RankingResponse, RankingResult } from '../lib/api-types'
 type SortKey = 'rank' | 'composite_score' | 'momentum_score' | 'volatility_score' | 'technical_score' | 'ml_score'
 type SortDir = 'asc' | 'desc'
 
+const SortIcon = ({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) => {
+  if (sortKey !== col) return <span className="text-muted-foreground ml-1">↕</span>
+  return <span className="text-cyan ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
+}
+
 export default function Ranking() {
   const { data, loading, error, refetch } = useApi<RankingResponse>('/api/ranking/')
   const [sortKey, setSortKey] = useState<SortKey>('rank')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   const sortedRankings = useMemo(() => {
-    if (!data?.rankings?.length) return []
-    const rankings = [...data.rankings]
+    const rankings = [...(data?.rankings ?? [])]
     rankings.sort((a, b) => {
       let av: string | number, bv: string | number
       if (sortKey === 'rank') { av = a.rank; bv = b.rank }
@@ -32,11 +36,6 @@ export default function Ranking() {
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir(key === 'rank' ? 'asc' : 'desc') }
-  }
-
-  const SortIcon = ({ col }: { col: SortKey }) => {
-    if (sortKey !== col) return <span className="text-muted-foreground ml-1">↕</span>
-    return <span className="text-cyan ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
   }
 
   return (
@@ -72,15 +71,15 @@ export default function Ranking() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-xs text-muted-foreground uppercase">
-                  <th className="text-left py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('rank')}># <SortIcon col="rank" /></th>
+                  <th className="text-left py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('rank')}># <SortIcon col="rank" sortKey={sortKey} sortDir={sortDir} /></th>
                   <th className="text-left py-2">Ticker</th>
                   <th className="text-right py-2">Price</th>
                   <th className="text-right py-2">Return</th>
-                  <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('momentum_score')}>Momentum <SortIcon col="momentum_score" /></th>
-                  <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('volatility_score')}>Volatility <SortIcon col="volatility_score" /></th>
-                  <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('technical_score')}>Technical <SortIcon col="technical_score" /></th>
-                  <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('ml_score')}>ML Score <SortIcon col="ml_score" /></th>
-                  <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('composite_score')}>Composite <SortIcon col="composite_score" /></th>
+                  <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('momentum_score')}>Momentum <SortIcon col="momentum_score" sortKey={sortKey} sortDir={sortDir} /></th>
+                  <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('volatility_score')}>Volatility <SortIcon col="volatility_score" sortKey={sortKey} sortDir={sortDir} /></th>
+                  <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('technical_score')}>Technical <SortIcon col="technical_score" sortKey={sortKey} sortDir={sortDir} /></th>
+                  <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('ml_score')}>ML Score <SortIcon col="ml_score" sortKey={sortKey} sortDir={sortDir} /></th>
+                  <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('composite_score')}>Composite <SortIcon col="composite_score" sortKey={sortKey} sortDir={sortDir} /></th>
                   <th className="text-center py-2">Action</th>
                 </tr>
               </thead>

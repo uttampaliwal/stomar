@@ -5,6 +5,12 @@ import type { ConsensusResponse } from '../lib/api-types'
 
 type SortKey = 'ticker' | 'ensemble_confidence' | 'meta_confidence' | 'consensus'
 type SortDir = 'asc' | 'desc'
+
+const SortIcon = ({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) => {
+  if (sortKey !== col) return <span className="text-muted-foreground ml-1">↕</span>
+  return <span className="text-cyan ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
+}
+
 type BadgeVariant = 'default' | 'success' | 'danger' | 'warning' | 'info' | 'outline'
 
 const CONSENSUS_VARIANT: Record<string, BadgeVariant> = {
@@ -31,8 +37,7 @@ export default function Consensus() {
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   const sortedResults = useMemo(() => {
-    if (!data?.results?.length) return []
-    const results = [...data.results]
+    const results = [...(data?.results ?? [])]
     results.sort((a, b) => {
       let av: string | number, bv: string | number
       if (sortKey === 'ticker') { av = a.ticker; bv = b.ticker }
@@ -50,11 +55,6 @@ export default function Consensus() {
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('desc') }
-  }
-
-  const SortIcon = ({ col }: { col: SortKey }) => {
-    if (sortKey !== col) return <span className="text-muted-foreground ml-1">↕</span>
-    return <span className="text-cyan ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
   }
 
   return (
@@ -117,16 +117,16 @@ export default function Consensus() {
                 <thead>
                   <tr className="border-b border-border text-xs text-muted-foreground uppercase">
                     <th className="text-left py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('ticker')}>
-                      Stock <SortIcon col="ticker" />
+                      Stock <SortIcon col="ticker" sortKey={sortKey} sortDir={sortDir} />
                     </th>
                     <th className="text-center py-2">Ensemble</th>
                     <th className="text-center py-2">Meta-Ctrl</th>
                     <th className="text-center py-2">Regime</th>
                     <th className="text-right py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('meta_confidence')}>
-                      Confidence <SortIcon col="meta_confidence" />
+                      Confidence <SortIcon col="meta_confidence" sortKey={sortKey} sortDir={sortDir} />
                     </th>
                     <th className="text-center py-2 cursor-pointer hover:text-foreground" onClick={() => handleSort('consensus')}>
-                      Consensus <SortIcon col="consensus" />
+                      Consensus <SortIcon col="consensus" sortKey={sortKey} sortDir={sortDir} />
                     </th>
                   </tr>
                 </thead>

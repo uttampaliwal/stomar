@@ -17,13 +17,11 @@ export function useApi<T>(url: string, options: UseApiOptions = {}) {
     }
     return null
   })
-  const [loading, setLoading] = useState(!data)
+  const [loading, setLoading] = useState(() => options.immediate !== false && !data)
   const [error, setError] = useState<string | null>(null)
   const mountedRef = useRef(true)
 
   const fetchData = useCallback(async () => {
-    setLoading(true)
-    setError(null)
     try {
       // Deduplicate in-flight requests
       let promise = _inflight.get(url)
@@ -38,6 +36,7 @@ export function useApi<T>(url: string, options: UseApiOptions = {}) {
       _inflight.delete(url)
       if (mountedRef.current) {
         setData(json as T)
+        setError(null)
         _cache.set(url, { data: json, ts: Date.now() })
       }
     } catch (err) {
