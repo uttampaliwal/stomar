@@ -5,6 +5,7 @@ import pandas as pd
 from unittest.mock import patch
 
 from src.core.pipeline import RetrainingPipeline, PipelineConfig, PipelineResult
+from src.data.data_fetcher import NSE_STOCKS
 
 
 def _mock_df(n=100):
@@ -21,7 +22,7 @@ def _mock_df(n=100):
 class TestPipelineConfig:
     def test_defaults(self):
         config = PipelineConfig()
-        assert len(config.tickers) == 3
+        assert len(config.tickers) == len(NSE_STOCKS) > 0
         assert config.lookback_period == "3y"
         assert config.min_oos_accuracy == 0.50
 

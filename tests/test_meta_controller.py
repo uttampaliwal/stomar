@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from datetime import datetime, timedelta
 import numpy as np
 import pytest
 
@@ -21,7 +22,7 @@ def ledger_with_data():
     lg = Ledger(db_path)
 
     np.random.seed(42)
-    for i in range(150):
+    for i in range(600):
         direction = int(i % 2)  # Alternate 0/1 to guarantee both classes
         signals = {
             "ensemble_direction": direction,
@@ -39,7 +40,7 @@ def ledger_with_data():
             "fundamental_score": np.random.uniform(0.4, 0.8),
         }
         decision_id = lg.log_decision(
-            date=f"2025-{(i // 28) + 1:02d}-{(i % 28) + 1:02d}",
+            date=(datetime(2025, 1, 1) + timedelta(days=i)).strftime("%Y-%m-%d"),
             ticker="RELIANCE.NS",
             signals=signals,
             action="BUY" if direction == 1 else "SELL",
@@ -153,7 +154,7 @@ def test_train_with_enough_data(mc, ledger_with_data):
     result = mc.train(ledger_with_data)
     assert result["status"] == "trained"
     assert result["accuracy"] > 0.0
-    assert result["n_samples"] == 150
+    assert result["n_samples"] == 600
     assert mc.model is not None
 
 

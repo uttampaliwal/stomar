@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
 # Install Node.js 22 for the React frontend
 RUN apt-get update && apt-get install -y --no-install-recommends curl && \
