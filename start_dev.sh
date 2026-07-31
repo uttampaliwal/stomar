@@ -17,31 +17,36 @@ trap cleanup SIGINT SIGTERM
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# --- Activate venv if present ---
-if [ -f "$DIR/.venv/bin/activate" ]; then
-    source "$DIR/.venv/bin/activate"
-fi
-
-# --- Install Python deps if uvicorn missing ---
-if ! python -c "import uvicorn" 2>/dev/null; then
-    echo "[setup] Installing Python dependencies..."
-    # Ensure pip exists in venv
-    if [ ! -f "$DIR/.venv/bin/pip" ]; then
-        "$DIR/.venv/bin/python" -m ensurepip --upgrade 2>/dev/null || true
+# --- Ensure uv is installed ---
+if ! command -v uv >/dev/null 2>&1; then
+    echo "[setup] 'uv' not found. Installing uv (Python package manager)..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "[error] uv installation failed. Install it manually: https://docs.astral.sh/uv/getting-started/installation/"
+        exit 1
     fi
-    "$DIR/.venv/bin/python" -m pip install -e ".[dev]"
 fi
 
-# --- Install Node deps if vite missing ---
+# --- Sync Python env (creates .venv with pinned Python, installs deps from uv.lock) ---
+echo "[setup] Syncing Python dependencies with uv..."
+cd "$DIR"
+uv sync
+
+# --- Install Node deps if vite missing (npm ci = reproducible from lockfile) ---
 if [ ! -f "$DIR/web/node_modules/.bin/vite" ]; then
+    if ! command -v node >/dev/null 2>&1; then
+        echo "[error] Node.js not found. Install Node 22+ (https://nodejs.org) or use nvm (see web/.nvmrc)."
+        exit 1
+    fi
     echo "[setup] Installing Node dependencies..."
     cd "$DIR/web"
-    npm install
+    npm ci
 fi
 
 echo "[1/3] Starting FastAPI backend on :8000..."
 cd "$DIR"
-python -m uvicorn api.main:app --reload --port 8000 &
+uv run uvicorn api.main:app --reload --port 8000 &
 API_PID=$!
 
 echo "[2/3] Waiting for API to start..."

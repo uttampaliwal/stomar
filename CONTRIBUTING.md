@@ -34,22 +34,27 @@ Thank you for your interest in contributing to StoMar! This document provides gu
 
 ### Prerequisites
 
-- Python 3.12+
-- pip
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (installs and manages Python 3.12 automatically)
+- Node.js 22+ (see `web/.nvmrc`)
 - Git
 
 ### Installation
 
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or
-venv\Scripts\activate     # Windows
+# Sync Python environment (creates .venv with pinned Python, installs all deps from uv.lock)
+uv sync
 
-# Install dependencies (includes dev dependencies)
-pip install -e ".[dev]"
+# Install frontend dependencies (web/package-lock.json)
+cd web && npm ci && cd ..
+
+# Run lint/tests (no manual activation needed)
+uv run ruff check src/ tests/
+uv run pytest tests/ -v --tb=short
 ```
+
+`pyproject.toml` is the single source of truth for Python dependencies
+(`requirements.txt` no longer exists). Pin tooling with uv commands, e.g.
+`uv add pandas` / `uv add --dev pytest`, and commit the updated `uv.lock`.
 
 ### Environment Variables
 

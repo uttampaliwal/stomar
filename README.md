@@ -9,34 +9,35 @@ An autonomous quantitative trading system for the Indian NSE market. 5-model ML 
 
 ## Quick Start
 
+> Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager) and Node.js 22+.
+> `start_dev.sh` / `start_dev.bat` install both toolchains' dependencies automatically — you only need `uv` and Node.
+
 ```bash
 # 1. Clone the repo
 git clone <repo-url>
 cd stomar
 
-# 2. Create virtual environment (Python 3.12+)
-python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate    # Linux/Mac
+# 2. Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh   # Linux/macOS
+# powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
 
-# 3. Install Python dependencies
-pip install -e ".[dev]"
+# 3. Install Python + frontend dependencies and start both servers (FastAPI + React)
+./start_dev.sh        # Linux/macOS
+start_dev.bat         # Windows
 
-# 4. Install frontend dependencies
-cd web && npm install && cd ..
+# 4. Train all models
+uv run run_pipeline.py --train-all
 
-# 5. Start both servers (FastAPI + React)
-start_dev.bat
+# 5. Backfill history + train meta-controller
+uv run run_daily.py --backfill
 
-# 6. Train all models
-python run_pipeline.py --train-all
-
-# 7. Backfill history + train meta-controller
-python run_daily.py --backfill
-
-# 8. Start paper trading
-python run_daily.py --paper-trade --capital 200000
+# 6. Start paper trading
+uv run run_daily.py --paper-trade --capital 200000
 ```
+
+All Python dependencies are declared in `pyproject.toml` and pinned in `uv.lock`.
+`uv sync` creates the `.venv` (Python 3.12, pinned via `.python-version`) and installs
+everything reproducibly — no manual venv/pip management.
 
 ---
 
@@ -127,12 +128,12 @@ Superior ML training targets that account for realistic trading conditions:
 ### Autonomous Daily Loop
 
 ```bash
-python run_daily.py                          # Run all 20 NSE stocks
-python run_daily.py --ticker RELIANCE.NS     # Specific tickers
-python run_daily.py --backfill               # Backfill 1 year + train meta
-python run_daily.py --train-meta             # Retrain meta-controller
-python run_daily.py --paper-trade            # Auto-execute paper trades
-python run_daily.py --dry-run                # Signals only, no ledger writes
+uv run run_daily.py                          # Run all 20 NSE stocks
+uv run run_daily.py --ticker RELIANCE.NS     # Specific tickers
+uv run run_daily.py --backfill               # Backfill 1 year + train meta
+uv run run_daily.py --train-meta             # Retrain meta-controller
+uv run run_daily.py --paper-trade            # Auto-execute paper trades
+uv run run_daily.py --dry-run                # Signals only, no ledger writes
 ```
 
 ### Paper Trading (with short selling)
@@ -318,22 +319,22 @@ stomar/
 
 ```bash
 # Daily autonomous loop
-python run_daily.py                              # All 20 NSE stocks
-python run_daily.py --ticker RELIANCE.NS         # Specific tickers
-python run_daily.py --backfill                   # Backfill 1 year
-python run_daily.py --train-meta                 # Retrain meta-controller
-python run_daily.py --paper-trade                # Auto paper trades
-python run_daily.py --paper-trade --capital 500000
+uv run run_daily.py                              # All 20 NSE stocks
+uv run run_daily.py --ticker RELIANCE.NS         # Specific tickers
+uv run run_daily.py --backfill                   # Backfill 1 year
+uv run run_daily.py --train-meta                 # Retrain meta-controller
+uv run run_daily.py --paper-trade                # Auto paper trades
+uv run run_daily.py --paper-trade --capital 500000
 
 # Retraining pipeline
-python run_pipeline.py --train-all               # Train all 20 stocks
-python run_pipeline.py --train RELIANCE.NS       # Specific tickers
-python run_pipeline.py --paper                   # Train + paper trade
+uv run run_pipeline.py --train-all               # Train all 20 stocks
+uv run run_pipeline.py --train RELIANCE.NS       # Specific tickers
+uv run run_pipeline.py --paper                   # Train + paper trade
 
 # Windows scheduler
-python schedule_pipeline.py                      # Install daily 4 PM IST
-python schedule_pipeline.py --remove             # Remove task
-python schedule_pipeline.py --run-now            # Run immediately
+uv run schedule_pipeline.py                      # Install daily 4 PM IST
+uv run schedule_pipeline.py --remove             # Remove task
+uv run schedule_pipeline.py --run-now            # Run immediately
 ```
 
 ---
@@ -342,13 +343,13 @@ python schedule_pipeline.py --run-now            # Run immediately
 
 ```bash
 # Run all 679 tests
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 
 # Run with coverage
-python -m pytest tests/ --cov=src --cov-report=term-missing
+uv run pytest tests/ --cov=src --cov-report=term-missing
 
 # Lint check
-python -m ruff check src/ api/ tests/ --output-format=concise
+uv run ruff check src/ api/ tests/ --output-format=concise
 ```
 
 ---
