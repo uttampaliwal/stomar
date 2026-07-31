@@ -58,18 +58,40 @@ export default function PaperTrading() {
             <Stat label="Unrealized P&L" value={formatCurrency(state.unrealized_pnl || 0)} trend={state.unrealized_pnl >= 0 ? 'up' : 'down'} />
           </div>
 
-          <Card className="space-y-2">
+          <Card className={`space-y-3 border-l-4 ${state.risk_status?.halted ? 'border-l-rose bg-rose/5' : 'border-l-emerald bg-emerald/5'}`}>
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">Risk controls</p>
+              <p className="text-sm font-semibold">Risk Controls</p>
               <Badge variant={state.risk_status?.halted ? 'danger' : 'success'}>
-                {state.risk_status?.halted ? 'Halted' : 'Live'}
+                {state.risk_status?.halted ? 'TRADING HALTED' : 'NORMAL'}
               </Badge>
             </div>
-            <p className="text-sm text-muted-foreground">
-              {state.risk_status?.halted
-                ? `Trading is paused: ${state.risk_status.halt_reason || 'risk limit breached'}`
-                : `Drawdown ${((state.risk_status?.drawdown_pct || 0) * 100).toFixed(1)}% • Daily loss remaining ${formatCurrency(state.risk_status?.daily_loss_remaining || 0)}`}
-            </p>
+            {state.risk_status?.halted && (
+              <p className="text-sm text-rose font-medium">
+                {state.risk_status.halt_reason || 'Risk limit breached'}
+              </p>
+            )}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div>
+                <p className="text-muted-foreground">Drawdown</p>
+                <p className={`font-mono font-semibold ${((state.risk_status?.drawdown_pct || 0) * 100) > 10 ? 'text-rose' : 'text-foreground'}`}>
+                  {((state.risk_status?.drawdown_pct || 0) * 100).toFixed(1)}%
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Daily Loss Remaining</p>
+                <p className="font-mono font-semibold">{formatCurrency(state.risk_status?.daily_loss_remaining || 0)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Peak Equity</p>
+                <p className="font-mono font-semibold">{formatCurrency(state.risk_status?.peak_equity || 0)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Consecutive Losses</p>
+                <p className={`font-mono font-semibold ${(state.risk_status?.consecutive_losses || 0) >= 3 ? 'text-amber' : 'text-foreground'}`}>
+                  {state.risk_status?.consecutive_losses || 0} / 5
+                </p>
+              </div>
+            </div>
           </Card>
 
           {/* Order Form */}
