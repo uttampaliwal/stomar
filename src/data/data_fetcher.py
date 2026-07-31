@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 import time
 import logging
+import threading
 
 from src.data.free_data import fetch_free_historical_data
 from src.data.resilience import retry_with_backoff, yf_breaker
@@ -13,20 +14,23 @@ from src.core.constants import DATA_DIR
 logger = logging.getLogger(__name__)
 
 _fetch_cache: dict[str, tuple[float, pd.DataFrame]] = {}
+_fetch_cache_lock = threading.Lock()
 _FETCH_CACHE_TTL = 600  # 10 minutes in-memory cache
 
 
 def _cache_get(key: str) -> pd.DataFrame | None:
-    if key in _fetch_cache:
-        ts, df = _fetch_cache[key]
-        if time.time() - ts < _FETCH_CACHE_TTL:
-            return df
-        del _fetch_cache[key]
+    with _fetch_cache_lock:
+        if key in _fetch_cache:
+            ts, df = _fetch_cache[key]
+            if time.time() - ts < _FETCH_CACHE_TTL:
+                return df
+            del _fetch_cache[key]
     return None
 
 
 def _cache_put(key: str, df: pd.DataFrame):
-    _fetch_cache[key] = (time.time(), df)
+    with _fetch_cache_lock:
+        _fetch_cache[key] = (time.time(), df)
 
 NSE_STOCKS = [
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",

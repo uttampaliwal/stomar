@@ -13,6 +13,7 @@ Usage:
 
 import time
 import logging
+import threading
 import functools
 from typing import Callable
 
@@ -97,6 +98,7 @@ class CircuitBreaker:
         self._failure_count = 0
         self._last_failure_time: float = 0.0
         self._half_open_allowed = True
+        self._lock = threading.Lock()
 
     @property
     def state(self) -> str:
@@ -133,23 +135,26 @@ class CircuitBreaker:
 
         Raises CircuitOpenError if the circuit is open.
         """
-        current_state = self.state
-        if current_state == self.OPEN:
-            raise self.CircuitOpenError(
-                f"Circuit breaker '{self.name}' is open "
-                f"(retry after {self.recovery_timeout}s)"
-            )
-        if current_state == self.HALF_OPEN and not self._half_open_allowed:
-            raise self.CircuitOpenError(
-                f"Circuit breaker '{self.name}' is half-open (probe pending)"
-            )
-        self._half_open_allowed = False
+        with self._lock:
+            current_state = self.state
+            if current_state == self.OPEN:
+                raise self.CircuitOpenError(
+                    f"Circuit breaker '{self.name}' is open "
+                    f"(retry after {self.recovery_timeout}s)"
+                )
+            if current_state == self.HALF_OPEN and not self._half_open_allowed:
+                raise self.CircuitOpenError(
+                    f"Circuit breaker '{self.name}' is half-open (probe pending)"
+                )
+            self._half_open_allowed = False
         try:
             result = func(*args, **kwargs)
-            self._on_success()
+            with self._lock:
+                self._on_success()
             return result
         except Exception as exc:
-            self._on_failure(exc)
+            with self._lock:
+                self._on_failure(exc)
             raise
 
 
