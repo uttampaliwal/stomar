@@ -47,6 +47,7 @@ from api.routers import (
     mf_tracker,
     ledger,
     wealth,
+    risk_guard,
 )
 
 # Mutable endpoints on these prefixes require a valid API key via X-API-Key header.
@@ -56,6 +57,7 @@ _PROTECTED_PREFIXES = [
     "/api/pipeline/train/",
     "/api/pipeline/run",
     "/api/ledger/",
+    "/api/risk-guard/",
 ]
 
 app = FastAPI(title="StoMar API", version="0.0.5")
@@ -209,6 +211,7 @@ app.include_router(paper_trading.router, prefix="/api/paper-trading", tags=["Pap
 app.include_router(mf_tracker.router, prefix="/api/mf-tracker", tags=["MF Tracker"])
 app.include_router(ledger.router, prefix="/api/ledger", tags=["Ledger"])
 app.include_router(wealth.router, prefix="/api/wealth", tags=["Wealth"])
+app.include_router(risk_guard.router, prefix="/api/risk-guard", tags=["Risk Guard"])
 
 
 @app.get("/api/health")
