@@ -124,7 +124,9 @@ export default function TradingViewChart({
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   // keep the latest callback without recreating the chart on every render
   const onCrosshairMoveRef = useRef(onCrosshairMove)
-  onCrosshairMoveRef.current = onCrosshairMove
+  useEffect(() => {
+    onCrosshairMoveRef.current = onCrosshairMove
+  })
 
   const handleResize = useCallback(() => {
     if (chartRef.current && containerRef.current) {
