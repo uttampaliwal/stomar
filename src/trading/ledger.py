@@ -263,8 +263,11 @@ class Ledger:
         query = "SELECT * FROM decisions WHERE " + " AND ".join(conditions)
         query += " ORDER BY date DESC, id DESC"
         if limit is not None:
+            limit = int(limit)
+            if limit < 0:
+                raise ValueError(f"limit must be >= 0, got {limit}")
             query += " LIMIT ?"
-            params.append(int(limit))
+            params.append(limit)
         rows = self.conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
