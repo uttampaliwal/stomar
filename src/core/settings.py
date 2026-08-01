@@ -71,23 +71,13 @@ if _HAS_PYDANTIC_SETTINGS:
         min_samples_to_train: int = Field(default=500, description="Min resolved samples to train meta-controller")
         meta_controller_c: float = Field(default=0.1, description="Regularization strength (inverse) for meta-controller LogisticRegression")
 
-        # ── Risk Controls ──────────────────────────────────────────────────
-        max_daily_loss_pct: float = Field(default=0.02, description="Daily loss limit")
-        max_weekly_loss_pct: float = Field(default=0.05, description="Weekly loss limit")
-        max_drawdown_pct: float = Field(default=0.15, description="Max drawdown limit")
-
-        # ── Risk Guard (hardware circuit breakers) ─────────────────────────
-        risk_override_token: str = Field(default="", description="Manual override token to resume trading after a drawdown freeze")
-        guard_daily_loss_pct: float = Field(default=0.02, description="Risk guard: max intraday loss as fraction of equity")
-        guard_max_drawdown_pct: float = Field(default=0.08, description="Risk guard: cumulative drawdown freeze threshold")
-        guard_max_stock_allocation_pct: float = Field(default=0.15, description="Risk guard: max allocation per single ticker")
-        guard_vix_threshold: float = Field(default=22.0, description="Risk guard: VIX level that scales down position sizing")
-        guard_atr_expansion_threshold: float = Field(default=2.0, description="Risk guard: ATR expansion multiple that scales down sizing")
-
         # ── Orchestrator ───────────────────────────────────────────────────
         max_daily_trades: int = Field(default=5, description="Max trades per day")
         max_portfolio_exposure: float = Field(default=0.50, description="Max portfolio exposure")
         stop_loss_pct: float = Field(default=0.05, description="Stop-loss percentage")
+        uncalibrated_confidence_discount: float = Field(
+            default=0.7, description="Confidence discount for uncalibrated models (0-1)"
+        )
 
         # ── Circuit Breaker ────────────────────────────────────────────────
         yf_failure_threshold: int = Field(default=5, description="yfinance breaker failure threshold")
@@ -172,6 +162,9 @@ else:
             self.min_confidence_to_trade = float(os.environ.get("STOMAR_MIN_CONFIDENCE_TO_TRADE", "0.3"))
             self.min_samples_to_train = int(os.environ.get("STOMAR_MIN_SAMPLES_TO_TRAIN", "500"))
             self.meta_controller_c = float(os.environ.get("STOMAR_META_CONTROLLER_C", "0.1"))
+            self.uncalibrated_confidence_discount = float(
+                os.environ.get("STOMAR_UNCALIBRATED_CONFIDENCE_DISCOUNT", "0.7")
+            )
             self.max_daily_loss_pct = float(os.environ.get("STOMAR_MAX_DAILY_LOSS_PCT", "0.02"))
             self.max_weekly_loss_pct = float(os.environ.get("STOMAR_MAX_WEEKLY_LOSS_PCT", "0.05"))
             self.max_drawdown_pct = float(os.environ.get("STOMAR_MAX_DRAWDOWN_PCT", "0.15"))

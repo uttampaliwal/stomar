@@ -16,32 +16,17 @@ from src.models.model import (
 )
 from src.core.constants import DEFAULT_SEQ_LENGTH, DEFAULT_EPOCHS, DEFAULT_BATCH_SIZE, DEFAULT_LEARNING_RATE, MODELS_DIR
 from src.core.logging_config import get_logger
+from src.models.trainer_features import (
+    FEATURE_COLS as FEATURE_COLS,  # re-export: model.py / test_safety_leakage import it from here
+    OPTIONAL_FEATURES as OPTIONAL_FEATURES,
+    REQUIRED_FEATURES as REQUIRED_FEATURES,
+    select_training_features,
+)
 
 warnings.filterwarnings("ignore", category=UserWarning, module="torch")
 warnings.filterwarnings("ignore", category=FutureWarning, module="torch")
 
 logger = get_logger("trainer")
-
-FEATURE_COLS = [
-    "close", "volume", "sma_10", "sma_20", "sma_50", "ema_12", "ema_26",
-    "rsi", "macd", "macd_signal", "bb_width", "atr", "obv", "volume_ratio",
-    "high_low_pct", "close_open_pct", "close_position",
-    "returns_1d", "returns_2d", "returns_3d", "returns_5d", "returns_10d", "returns_20d",
-    "volatility_5d", "volatility_10d", "volatility_20d",
-    "return_lag_1", "return_lag_2", "return_lag_3", "return_lag_5",
-    "day_of_week", "month", "quarter", "day_of_month",
-    "sentiment_score", "fii_net", "dii_net", "flow_signal",
-    "pcr", "mtf_signal", "mtf_confidence",
-    "stoch_k", "stoch_d", "williams_r", "cci", "mfi",
-    "adx", "vwap",
-    # SOTA factor pipeline (appended to preserve alignment with legacy models)
-    "supertrend", "supertrend_dir",
-    "ichimoku_tenkan", "ichimoku_kijun", "ichimoku_senkou_a",
-    "ichimoku_senkou_b",
-    "cmf", "ofi", "vol_zscore", "pcr_slope", "fii_momentum",
-    "mom_1m_voladj", "mom_3m_voladj", "mom_6m_voladj", "mom_12m_voladj",
-    "rel_strength_1m", "rel_strength_3m", "high_low_spread",
-]
 
 SEQ_LENGTH = DEFAULT_SEQ_LENGTH
 EPOCHS = DEFAULT_EPOCHS
@@ -295,7 +280,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     df_feat = df_feat.replace([np.inf, -np.inf], np.nan).dropna()
     logger.info("features_computed ticker=%s rows=%d", ticker, len(df_feat))
 
-    lstm_features = [c for c in FEATURE_COLS if c in df_feat.columns]
+    lstm_features = select_training_features(df_feat, ticker)
 
     # --- XGBoost (purged walk-forward) ---
     logger.info("training_xgboost ticker=%s", ticker)

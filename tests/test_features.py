@@ -35,3 +35,27 @@ class TestFeatureEngineering:
         numeric_cols = result.select_dtypes(include=[np.number]).columns
         inf_count = np.isinf(result[numeric_cols].values).sum()
         assert inf_count == 0, f"Found {inf_count} infinite values in features"
+
+
+class TestPrepareLstmDataDeprecation:
+    def test_alias_warns_and_delegates(self, sample_prices):
+        import warnings
+
+        from src.data.features import (
+            prepare_lstm_data,
+            prepare_lstm_data_simple_split,
+        )
+
+        feature_cols = ["close", "volume"]
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            X, y, scaler = prepare_lstm_data(
+                sample_prices, feature_cols, seq_length=5, train_ratio=0.7
+            )
+        assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+
+        X2, y2, _ = prepare_lstm_data_simple_split(
+            sample_prices, feature_cols, seq_length=5, train_ratio=0.7
+        )
+        assert X.shape == X2.shape
+        assert y.shape == y2.shape

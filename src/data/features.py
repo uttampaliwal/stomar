@@ -253,11 +253,17 @@ def add_technical_indicators(df: pd.DataFrame, ticker: str = None) -> pd.DataFra
     return df
 
 
-def prepare_lstm_data(
+def prepare_lstm_data_simple_split(
     df: pd.DataFrame, feature_cols: list, seq_length: int = 60,
     train_ratio: float = 0.8,
 ):
-    """Prepare LSTM data with proper train/test split to prevent scaler leakage.
+    """Prepare LSTM data with a simple chronological train/test split.
+
+    For quick experiments only — NOT walk-forward validation. The split is a
+    fixed prefix (train) / suffix (test) cut at position
+    ``int(len(data) * train_ratio)``; results are not representative of
+    out-of-sample performance. For production evaluation use the trainer's
+    purged walk-forward paths (``_walk_forward_xgb`` / ``_walk_forward_dl``).
 
     The scaler is fit ONLY on the training portion of the data, then applied
     to both train and test. This prevents information from the test set
@@ -293,6 +299,26 @@ def prepare_lstm_data(
         y.append(scaled[i, 0])
 
     return np.array(X), np.array(y), scaler
+
+
+def prepare_lstm_data(
+    df: pd.DataFrame, feature_cols: list, seq_length: int = 60,
+    train_ratio: float = 0.8,
+):
+    """Deprecated alias for :func:`prepare_lstm_data_simple_split`.
+
+    Use :func:`prepare_lstm_data_simple_split` (or the trainer's purged
+    walk-forward paths) instead.
+    """
+    import warnings
+
+    warnings.warn(
+        "prepare_lstm_data is deprecated; use prepare_lstm_data_simple_split "
+        "(simple chronological split, not walk-forward)",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return prepare_lstm_data_simple_split(df, feature_cols, seq_length, train_ratio)
 
 
 def _triple_barrier_labels(close: pd.Series, profit_pct: float = 0.02,

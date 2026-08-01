@@ -47,20 +47,17 @@ SELL_THRESHOLD = 0.4
 MIN_CONFIDENCE_TO_TRADE = 0.3
 MIN_SAMPLES_TO_TRAIN = 500
 META_CONTROLLER_C = 0.1
+UNCALIBRATED_CONFIDENCE_DISCOUNT = 0.7
 
 
 class MetaController:
     """Combines signal modules into one decision via regularized regression."""
 
-    # Discount applied to confidence when model lacks calibration.
-    # Uncalibrated logistic regression probabilities tend to be overconfident
-    # near the decision boundary; this penalty compensates.
-    UNCALIBRATED_CONFIDENCE_DISCOUNT = 0.7
-
     def __init__(self):
         self.model = None
         self.weights = None
         self.is_calibrated = False
+        self.uncalibrated_confidence_discount = UNCALIBRATED_CONFIDENCE_DISCOUNT
         self._load_settings()
 
     def _load_settings(self):
@@ -73,6 +70,9 @@ class MetaController:
             self.min_confidence_to_trade = getattr(settings, "min_confidence_to_trade", MIN_CONFIDENCE_TO_TRADE)
             self.min_samples_to_train = getattr(settings, "min_samples_to_train", MIN_SAMPLES_TO_TRAIN)
             self.meta_controller_c = getattr(settings, "meta_controller_c", META_CONTROLLER_C)
+            self.uncalibrated_confidence_discount = getattr(
+                settings, "uncalibrated_confidence_discount", UNCALIBRATED_CONFIDENCE_DISCOUNT
+            )
         except Exception:
             self.max_position_pct = MAX_POSITION_PCT
             self.buy_threshold = BUY_THRESHOLD
@@ -80,6 +80,7 @@ class MetaController:
             self.min_confidence_to_trade = MIN_CONFIDENCE_TO_TRADE
             self.min_samples_to_train = MIN_SAMPLES_TO_TRAIN
             self.meta_controller_c = META_CONTROLLER_C
+            self.uncalibrated_confidence_discount = UNCALIBRATED_CONFIDENCE_DISCOUNT
 
     @staticmethod
     def _can_calibrate(y: np.ndarray, min_cv: int = 3) -> int:
@@ -157,7 +158,7 @@ class MetaController:
         # Discount confidence when model lacks calibration to avoid
         # overconfident position sizing from raw logistic probabilities.
         if not self.is_calibrated:
-            confidence = round(confidence * self.UNCALIBRATED_CONFIDENCE_DISCOUNT, 4)
+            confidence = round(confidence * self.uncalibrated_confidence_discount, 4)
 
         if confidence < self.min_confidence_to_trade:
             return {

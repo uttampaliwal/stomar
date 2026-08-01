@@ -41,8 +41,31 @@ NSE_STOCKS = [
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# Per-ticker locks: serialize fetch_stock_data so two concurrent requests
+# for the same ticker cannot both miss the cache and download redundantly.
+_ticker_fetch_locks: dict[str, threading.Lock] = {}
+_ticker_fetch_locks_guard = threading.Lock()
+
+
+def _get_ticker_lock(ticker: str) -> threading.Lock:
+    with _ticker_fetch_locks_guard:
+        lock = _ticker_fetch_locks.get(ticker)
+        if lock is None:
+            lock = _ticker_fetch_locks[ticker] = threading.Lock()
+        return lock
+
 
 def fetch_stock_data(
+    ticker: str,
+    period: str = "2y",
+    interval: str = "1d",
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    with _get_ticker_lock(ticker):
+        return _fetch_stock_data_locked(ticker, period, interval, force_refresh)
+
+
+def _fetch_stock_data_locked(
     ticker: str,
     period: str = "2y",
     interval: str = "1d",

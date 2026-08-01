@@ -18,14 +18,13 @@ from datetime import datetime
 
 import pandas as pd
 
+from src.core.settings import settings
+
 logger = logging.getLogger(__name__)
 
 
 class DailyOrchestrator:
     """Runs the full signal pipeline once per day."""
-
-    MAX_DAILY_TRADES = 5
-    MAX_PORTFOLIO_EXPOSURE = 0.50
 
     def __init__(self, tickers: list[str], ledger, meta_controller=None,
                  paper_trader=None):
@@ -69,16 +68,16 @@ class DailyOrchestrator:
 
                 # Enforce daily trade limit
                 if result["action"] != "HOLD":
-                    if trade_count >= self.MAX_DAILY_TRADES:
-                        logger.info(f"{ticker}: trade blocked (daily limit {self.MAX_DAILY_TRADES} reached)")
+                    if trade_count >= settings.max_daily_trades:
+                        logger.info(f"{ticker}: trade blocked (daily limit {settings.max_daily_trades} reached)")
                         result["action"] = "HOLD"
                         result["position_size"] = 0.0
-                        result["reasoning"] = f"Daily trade limit ({self.MAX_DAILY_TRADES}) reached"
-                    elif total_exposure + result["position_size"] > self.MAX_PORTFOLIO_EXPOSURE:
-                        logger.info(f"{ticker}: trade blocked (portfolio exposure would exceed {self.MAX_PORTFOLIO_EXPOSURE:.0%})")
+                        result["reasoning"] = f"Daily trade limit ({settings.max_daily_trades}) reached"
+                    elif total_exposure + result["position_size"] > settings.max_portfolio_exposure:
+                        logger.info(f"{ticker}: trade blocked (portfolio exposure would exceed {settings.max_portfolio_exposure:.0%})")
                         result["action"] = "HOLD"
                         result["position_size"] = 0.0
-                        result["reasoning"] = f"Portfolio exposure cap ({self.MAX_PORTFOLIO_EXPOSURE:.0%}) reached"
+                        result["reasoning"] = f"Portfolio exposure cap ({settings.max_portfolio_exposure:.0%}) reached"
                     else:
                         trade_count += 1
                         total_exposure += result["position_size"]
@@ -134,8 +133,7 @@ class DailyOrchestrator:
         logger.info(f"{ticker}: {decision['action']} (size={decision['position_size']:.2%})")
         return result
 
-    # Stop-loss percentage applied to every new position (5% from entry)
-    STOP_LOSS_PCT: float = 0.05
+    # Stop-loss percentage applied to every new position (settings.stop_loss_pct from entry)
 
     def _execute_paper_trade(self, ticker: str, result: dict) -> dict | None:
         """Execute a paper trade and log to ledger. Returns trade info or None.
@@ -194,10 +192,10 @@ class DailyOrchestrator:
 
             # ── Attach protective stop-loss ──────────────────────────────────
             if side == OrderSide.BUY:
-                stop_price = round(fill_price * (1 - self.STOP_LOSS_PCT), 2)
+                stop_price = round(fill_price * (1 - settings.stop_loss_pct), 2)
                 stop_side = OrderSide.SELL
             else:
-                stop_price = round(fill_price * (1 + self.STOP_LOSS_PCT), 2)
+                stop_price = round(fill_price * (1 + settings.stop_loss_pct), 2)
                 stop_side = OrderSide.BUY
 
             stop_order = trader.place_order(
@@ -208,7 +206,7 @@ class DailyOrchestrator:
                 logger.info(
                     f"Stop-loss placed: {stop_side.value} {quantity} {ticker} "
                     f"@ stop ₹{stop_price:.2f} (entry ₹{fill_price:.2f}, "
-                    f"{self.STOP_LOSS_PCT:.0%} risk)"
+                    f"{settings.stop_loss_pct:.0%} risk)"
                 )
             # ────────────────────────────────────────────────────────────────
 

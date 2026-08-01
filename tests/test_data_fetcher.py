@@ -36,3 +36,70 @@ class TestFetchStockData:
         from src.data.data_fetcher import fetch_stock_data
         with pytest.raises(ValueError):
             fetch_stock_data("INVALID_TICKER_XYZ.NS", period="1y", force_refresh=True)
+
+
+class TestTickerFetchLock:
+    """Concurrent fetch_stock_data calls for one ticker must be serialized."""
+
+    def test_same_ticker_calls_are_serialized(self, monkeypatch):
+        import threading
+        import time
+        import src.data.data_fetcher as dfm
+
+        calls = []
+        state = {"active": 0, "max_active": 0}
+        state_lock = threading.Lock()
+
+        def slow_fetch(*args, **kwargs):
+            with state_lock:
+                state["active"] += 1
+                state["max_active"] = max(state["max_active"], state["active"])
+            time.sleep(0.1)
+            calls.append(args[0])
+            with state_lock:
+                state["active"] -= 1
+            return None
+
+        monkeypatch.setattr(dfm, "_fetch_stock_data_locked", slow_fetch)
+
+        threads = [
+            threading.Thread(target=dfm.fetch_stock_data, args=("LOCK.NS",), kwargs={"force_refresh": True})
+            for _ in range(3)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(calls) == 3
+        assert state["max_active"] == 1
+
+    def test_different_tickers_run_in_parallel(self, monkeypatch):
+        import threading
+        import time
+        import src.data.data_fetcher as dfm
+
+        state = {"active": 0, "max_active": 0}
+        state_lock = threading.Lock()
+
+        def slow_fetch(*args, **kwargs):
+            with state_lock:
+                state["active"] += 1
+                state["max_active"] = max(state["max_active"], state["active"])
+            time.sleep(0.15)
+            with state_lock:
+                state["active"] -= 1
+            return None
+
+        monkeypatch.setattr(dfm, "_fetch_stock_data_locked", slow_fetch)
+
+        threads = [
+            threading.Thread(target=dfm.fetch_stock_data, args=(f"T{i}.NS",), kwargs={"force_refresh": True})
+            for i in range(3)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert state["max_active"] == 3
