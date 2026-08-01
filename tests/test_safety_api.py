@@ -57,6 +57,49 @@ def test_correct_key_accepted(monkeypatch):
     assert _auth_verdict("/api/pipeline/status", key) is None
 
 
+def test_order_quantity_bounds(monkeypatch):
+    from api.routers import paper_trading as pt
+
+    class _FakeTrader:
+        pass
+
+    monkeypatch.setattr(pt, "get_trader", lambda: _FakeTrader())
+    for bad in [0, -1, -100, 1_000_001, 999_999_999]:
+        res = pt.place_order({"ticker": "RELIANCE.NS", "quantity": bad})
+        assert "error" in res, f"quantity={bad} accepted"
+        assert "Quantity" in res["error"], res
+    res = pt.place_order({"ticker": "RELIANCE.NS", "quantity": "abc"})
+    assert "error" in res, "non-numeric quantity accepted"
+    # a valid quantity must get past validation (no bounds error)
+    res = pt.place_order({"ticker": "BAD!TICKER", "quantity": 10})
+    assert "Invalid ticker" in res["error"], res
+
+
+def test_reset_capital_bounds(monkeypatch):
+    from api.routers import paper_trading as pt
+
+    class _FakeTrader:
+        initial_capital = 0
+
+        def reset(self):
+            self.initial_capital = self.initial_capital
+
+        def save_state(self, *a, **k):
+            pass
+
+        def get_summary(self):
+            return {"capital": self.initial_capital}
+
+    fake = _FakeTrader()
+    monkeypatch.setattr(pt, "get_trader", lambda: fake)
+    for bad in [0, -1, -1000, 100_000_001, 1e15, "nan", "inf", "abc"]:
+        res = pt.reset_paper_trading({"capital": bad})
+        assert "error" in res, f"capital={bad} accepted"
+    res = pt.reset_paper_trading({"capital": 200000})
+    assert res.get("status") == "success"
+    assert res.get("state", {}).get("capital") == 200000
+
+
 def test_comparison_is_constant_time():
     key = "secret-key-12345"
     assert hmac.compare_digest(key, key) is True

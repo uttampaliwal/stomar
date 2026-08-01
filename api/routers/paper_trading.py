@@ -7,6 +7,7 @@ must flow through the broker-backed execution path instead.
 
 import os
 import re
+import math
 import threading
 from fastapi import APIRouter, Body
 from src.trading.paper_trader import PaperTrader
@@ -79,14 +80,17 @@ def place_order(data: dict = Body(...)):
         trader = get_trader()
         ticker = data.get("ticker", "")
         side_str = data.get("side", "BUY").upper()
-        quantity = int(data.get("quantity", 0))
+        try:
+            quantity = int(data.get("quantity", 0))
+        except (TypeError, ValueError):
+            return {"error": f"Invalid quantity: {data.get('quantity')!r} (expected an integer)"}
         order_type_str = data.get("order_type", "MARKET").upper()
 
         if not _TICKER_RE.match(ticker):
             return {"error": f"Invalid ticker format: {ticker!r} (expected e.g. RELIANCE.NS)"}
 
-        if quantity <= 0:
-            return {"error": "Quantity must be greater than 0"}
+        if quantity <= 0 or quantity > 1_000_000:
+            return {"error": "Quantity must be between 1 and 1,000,000"}
 
         side = OrderSide.BUY if side_str == "BUY" else OrderSide.SELL
         order_type = OrderType.MARKET if order_type_str == "MARKET" else OrderType.LIMIT
@@ -144,7 +148,12 @@ def place_order(data: dict = Body(...)):
 def reset_paper_trading(data: dict = Body(default={})):
     try:
         trader = get_trader()
-        capital = float(data.get("capital", 200000))
+        try:
+            capital = float(data.get("capital", 200000))
+        except (TypeError, ValueError):
+            return {"error": f"Invalid capital: {data.get('capital')!r} (expected a number)"}
+        if not math.isfinite(capital) or capital <= 0 or capital > 100_000_000:
+            return {"error": "Capital out of allowed range (1 to 100,000,000)"}
         with _operation_lock:
             trader.initial_capital = capital
             trader.reset()
