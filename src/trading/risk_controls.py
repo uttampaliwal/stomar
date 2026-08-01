@@ -211,6 +211,12 @@ class RiskController:
         else:
             checks.append({"passed": True, "check": "total_exposure"})
 
+        # 6. Correlated exposure (skip when closing/reducing an existing position)
+        if not is_closing and holdings and ticker:
+            checks.append(
+                self.check_correlated_exposure(holdings, ticker, order_value)
+            )
+
         # 10. Liquidity (skip when closing an existing position)
         if market is not None:
             volume_rs = market.avg_daily_traded_value or market.daily_volume_rs
@@ -334,13 +340,21 @@ class RiskController:
 
     def check_correlated_exposure(self, holdings: dict, new_ticker: str,
                                   new_value: float) -> dict:
-        """Check if adding a position would exceed correlated exposure limit."""
+        """Check if adding a position would exceed correlated exposure limit.
+
+        Holdings may be ticker -> (qty, price) tuples or position objects
+        exposing ``market_value`` (e.g. PaperTrader positions).
+        """
         correlated_value = new_value
-        for existing_ticker, (qty, price) in holdings.items():
+        for existing_ticker, holding in holdings.items():
             key = tuple(sorted([existing_ticker, new_ticker]))
             corr = self.position_correlations.get(key, 0.0)
             if abs(corr) >= self.limits.correlation_threshold:
-                correlated_value += qty * price
+                if hasattr(holding, "market_value"):
+                    correlated_value += abs(holding.market_value)
+                else:
+                    qty, price = holding[0], holding[1]
+                    correlated_value += abs(qty) * price
 
         corr_pct = correlated_value / max(self.current_equity, 1)
         if corr_pct > self.limits.max_correlated_exposure_pct:

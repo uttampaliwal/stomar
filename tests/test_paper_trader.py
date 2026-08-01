@@ -4,7 +4,7 @@ import pytest
 
 from src.trading.engine import OrderSide, OrderType, OrderStatus
 from src.trading.paper_trader import PaperTrader, Position
-from src.trading.risk_controls import RiskLimits
+from src.trading.risk_controls import RiskController, RiskLimits
 
 
 def _trader(capital=100_000):
@@ -85,6 +85,43 @@ class TestRiskIntegration:
         t.risk_controller.halted = True
         order = t.place_order("TEST.NS", OrderSide.BUY, OrderType.MARKET, 10)
         assert order.status == OrderStatus.REJECTED
+
+
+# ── Consecutive-Loss Circuit Breaker ──
+
+class TestConsecutiveLossCircuitBreaker:
+    def _trader(self, tmp_path, capital=100_000):
+        t = _trader(capital=capital)
+        t.risk_controller = RiskController(
+            initial_capital=capital,
+            kill_switch_file=tmp_path / "kill_switch.json",  # avoid real data dir
+        )
+        return t
+
+    def test_entry_fill_does_not_reset_streak(self, tmp_path):
+        t = self._trader(tmp_path)
+        t.risk_controller.consecutive_losses = 4
+        t.execute_market_trade("TEST.NS", OrderSide.BUY, 10, 100.0)
+        assert t.risk_controller.consecutive_losses == 4
+
+    def test_losing_close_trips_kill_switch(self, tmp_path):
+        t = self._trader(tmp_path)
+        t.execute_market_trade("TEST.NS", OrderSide.BUY, 10, 100.0)
+        t.risk_controller.consecutive_losses = 4
+        t.execute_market_trade("TEST.NS", OrderSide.SELL, 5, 95.0)
+        assert t.risk_controller.consecutive_losses == 5
+        assert t.risk_controller.halted is True
+        result = t.risk_controller.check_order(
+            500, 500, ticker="TEST.NS", holdings={}, prices={}
+        )
+        assert result["approved"] is False
+
+    def test_winning_close_resets_streak(self, tmp_path):
+        t = self._trader(tmp_path)
+        t.execute_market_trade("TEST.NS", OrderSide.BUY, 10, 100.0)
+        t.risk_controller.consecutive_losses = 4
+        t.execute_market_trade("TEST.NS", OrderSide.SELL, 5, 110.0)
+        assert t.risk_controller.consecutive_losses == 0
 
 
 # ── Trade Log ──

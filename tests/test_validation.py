@@ -62,7 +62,8 @@ class TestPurgedGroupTimeSeriesSplit:
         dates = daily_groups["t0"]
         for tr, te in sp.split(X, y, daily_groups):
             test_t0 = dates.iloc[te[0]]
-            test_t1 = dates.iloc[te[-1]] + pd.Timedelta(days=1)
+            # purge band is [first test t0, last test sample's label end)
+            test_t1 = daily_groups["t1"].iloc[te[-1]]
             t1_train = daily_groups["t1"].iloc[tr]
             assert not ((t1_train >= test_t0) & (t1_train < test_t1)).any(), (
                 "train sample label overlaps test fold"
@@ -80,6 +81,23 @@ class TestPurgedGroupTimeSeriesSplit:
             test_start, test_end = te[0], te[-1] + 1
             t1_train = groups["t1"].iloc[tr]
             assert not ((t1_train >= test_start) & (t1_train < test_end)).any()
+
+    def test_purge_uses_exact_label_end(self):
+        """Regression: purge must extend to the last test sample's label end,
+        not the t0 step estimate (which under-purged when labels span
+        several days)."""
+        n = 40
+        X = pd.DataFrame({"f1": np.random.default_rng(7).normal(size=n)})
+        y = pd.Series(np.random.default_rng(8).normal(size=n))
+        t0 = pd.bdate_range("2024-01-01", periods=n).to_series().reset_index(drop=True)
+        t1 = t0 + pd.Timedelta(days=5)  # labels span 5 calendar days
+        groups = pd.DataFrame({"t0": t0, "t1": t1})
+        sp = PurgedGroupTimeSeriesSplit(n_splits=19, embargo=0, horizon=5)
+        leaks = 0
+        for tr, te in sp.split(X, y, groups):
+            band = (t1.iloc[tr] >= t0.iloc[te[0]]) & (t1.iloc[tr] < t1.iloc[te[-1]])
+            leaks += int(band.sum())
+        assert leaks == 0
 
     def test_insufficient_samples(self):
         sp = PurgedGroupTimeSeriesSplit(n_splits=5, embargo=10, horizon=5)

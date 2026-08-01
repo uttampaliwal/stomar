@@ -161,7 +161,17 @@ class PurgedGroupTimeSeriesSplit(BaseCrossValidator):
         """
         if t0 is not None and pd.api.types.is_datetime64_any_dtype(t1):
             test_t0 = t0.iloc[int(test_idx[0])]
-            test_t1 = t0.iloc[int(test_idx[-1])] + (t0.iloc[1] - t0.iloc[0])
+            last = int(test_idx[-1])
+            # Exclusive end of the test label span. Prefer the exact label end
+            # of the last test sample; the old uniform-step estimate
+            # (t0[last] + (t0[1] - t0[0])) under-purges when trading calendars
+            # have holidays/gaps and labels span several days.
+            if t1.iloc[last] > test_t0:
+                test_t1 = t1.iloc[last]
+            elif len(t0) > 1:
+                test_t1 = t0.iloc[last] + (t0.iloc[1] - t0.iloc[0])
+            else:
+                test_t1 = test_t0
             mask = ~((t1.iloc[train_idx] >= test_t0) & (t1.iloc[train_idx] < test_t1))
         else:
             test_start = int(test_idx[0])
@@ -207,7 +217,9 @@ def purged_walk_forward(
     Args:
         X: Feature matrix (index must be an integer position or datetimes
             aligned with y).
-        y: Target series (binary or continuous).
+        y: Target series. Must be per-period returns (decimal) when the
+            returned OOS metrics are to be meaningful — the splitter purges
+            on label spans but the metrics treat y_true as strategy returns.
         fit_predict: Callable(train_X, train_y, test_X) -> predictions.
         groups: DataFrame with t0/t1 label columns (preferred), or array of
             group keys. See PurgedGroupTimeSeriesSplit.
@@ -301,6 +313,10 @@ def oos_metrics(
 
     Args:
         predictions: DataFrame with y_true, y_pred (and optional position).
+            y_true MUST be per-period returns in decimal (e.g. 0.01 = 1%),
+            not binary direction labels — strategy returns are
+            position * y_true. Pass labels to the splitter for purging, but
+            provide the aligned return series to oos_metrics.
         groups: As in the splitter (used to estimate label duration when the
             predictions are not daily).
         horizon: Label horizon in bars (used for period scaling).

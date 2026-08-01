@@ -149,14 +149,20 @@ class MetricsCollector:
                 lines.append(f"# TYPE {base} histogram")
                 sorted_vals = sorted(values)
                 n = len(sorted_vals)
+                # labels between braces (e.g. method="GET",path="/api/x"), "" if none
+                existing = key[key.find("{") + 1:key.rfind("}")] if "{" in key else ""
                 for bucket in [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]:
                     count = sum(1 for v in sorted_vals if v <= bucket)
-                    label = f'{key.split("{")[0]}{{le="{bucket}"' + ('",' + key.split("{")[1] if '{' in key else '"')
-                    lines.append(f"{label} {count}")
-                label_all = f'{base}{{le="+Inf"' + (',' + key.split("{")[1] if '{' in key else '"')
-                lines.append(f"{label_all} {n}")
-                lines.append(f"{base}_sum{('{' + key.split('{')[1] if '{' in key else '')} {sum(values)}")
-                lines.append(f"{base}_count{('{' + key.split('{')[1] if '{' in key else '')} {n}")
+                    labels = f'le="{bucket}"' + (f",{existing}" if existing else "")
+                    lines.append(f"{base}{{{labels}}} {count}")
+                labels_all = 'le="+Inf"' + (f",{existing}" if existing else "")
+                lines.append(f"{base}{{{labels_all}}} {n}")
+                if existing:
+                    lines.append(f"{base}_sum{{{existing}}} {sum(values)}")
+                    lines.append(f"{base}_count{{{existing}}} {n}")
+                else:
+                    lines.append(f"{base}_sum {sum(values)}")
+                    lines.append(f"{base}_count {n}")
 
             for key, val in sorted(self._gauges.items()):
                 lines.append(f"# TYPE {key.split('{')[0]} gauge")

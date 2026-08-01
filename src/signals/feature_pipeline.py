@@ -241,9 +241,8 @@ def add_relative_strength(df: pd.DataFrame, index_df: pd.DataFrame | None = None
         return df
 
     idx_close = index_df["close"].reindex(df.index).ffill()
-    stock_ret = df["close"].pct_change
     for label, h in [("1m", 21), ("3m", 63)]:
-        rs = stock_ret(h) - idx_close.pct_change(h)
+        rs = df["close"].pct_change(h) - idx_close.pct_change(h)
         df[f"rel_strength_{label}"] = rs
     return df
 

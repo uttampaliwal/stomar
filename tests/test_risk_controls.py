@@ -1,5 +1,7 @@
 """Tests for src/risk_controls.py."""
 
+import types
+
 import pytest
 
 from src.trading.risk_controls import RiskController
@@ -114,6 +116,54 @@ class TestTotalExposure:
         assert result["approved"] is False
         checks = {c["check"]: c["passed"] for c in result["checks"]}
         assert checks["total_exposure"] is False
+
+
+# ── Correlated Exposure ──
+
+class TestCorrelatedExposure:
+    def test_rejects_correlated_add_on(self, tmp_path):
+        rc = RiskController(initial_capital=100_000, kill_switch_file=tmp_path / "ks.json")
+        rc.position_correlations[("AAPL", "MSFT")] = 0.9
+        holdings = {"AAPL": (50, 500.0)}  # 25,000
+        result = rc.check_order(20_000, 25_000, ticker="MSFT", holdings=holdings, prices={})
+        assert result["approved"] is False
+        checks = {c["check"]: c["passed"] for c in result["checks"]}
+        assert checks["correlated_exposure"] is False
+
+    def test_accepts_uncorrelated(self, tmp_path):
+        rc = RiskController(initial_capital=100_000, kill_switch_file=tmp_path / "ks.json")
+        rc.position_correlations[("AAPL", "MSFT")] = 0.5  # below 0.70 threshold
+        holdings = {"AAPL": (50, 500.0)}
+        result = rc.check_order(20_000, 25_000, ticker="MSFT", holdings=holdings, prices={})
+        checks = {c["check"]: c["passed"] for c in result["checks"]}
+        assert checks["correlated_exposure"] is True
+
+    def test_closing_skips_correlated_check(self, tmp_path):
+        rc = RiskController(initial_capital=100_000, kill_switch_file=tmp_path / "ks.json")
+        rc.position_correlations[("MSFT", "MSFT")] = 0.9
+        holdings = {"MSFT": (10, 1000.0)}
+        result = rc.check_order(9_000, 10_000, ticker="MSFT", holdings=holdings,
+                                prices={}, is_closing=True)
+        assert result["approved"] is True
+        names = {c["check"] for c in result["checks"]}
+        assert "correlated_exposure" not in names
+
+    def test_position_object_holdings(self, tmp_path):
+        rc = RiskController(initial_capital=100_000, kill_switch_file=tmp_path / "ks.json")
+        rc.position_correlations[("AAPL", "MSFT")] = 0.9
+        pos = types.SimpleNamespace(market_value=25_000.0)  # PaperTrader Position-like
+        result = rc.check_order(20_000, 25_000, ticker="MSFT", holdings={"AAPL": pos}, prices={})
+        checks = {c["check"]: c["passed"] for c in result["checks"]}
+        assert checks["correlated_exposure"] is False
+
+    def test_short_notional_counts_absolute(self, tmp_path):
+        rc = RiskController(initial_capital=100_000, kill_switch_file=tmp_path / "ks.json")
+        rc.position_correlations[("AAPL", "MSFT")] = 0.9
+        pos = types.SimpleNamespace(market_value=-30_000.0)  # short position
+        result = rc.check_order(30_000, -30_000, ticker="MSFT", holdings={"AAPL": pos}, prices={})
+        assert result["approved"] is False
+        checks = {c["check"]: c["passed"] for c in result["checks"]}
+        assert checks["correlated_exposure"] is False
 
 
 # ── Resume Trading ──

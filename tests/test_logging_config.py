@@ -2,8 +2,11 @@
 
 import json
 import logging
+import re
 
-from src.core.logging_config import setup_logging, get_logger, JSONFormatter, HumanFormatter
+from src.core.logging_config import (
+    setup_logging, get_logger, JSONFormatter, HumanFormatter, MetricsCollector,
+)
 
 
 class TestSetupLogging:
@@ -109,3 +112,37 @@ class TestHumanFormatter:
         )
         output = formatter.format(record)
         assert "WARNING" in output
+
+
+# ── Prometheus Export Format ──
+
+_LINE_RE = re.compile(r"^[A-Za-z_:][A-Za-z0-9_:]*(\{[^{}]+\})? (\d+(\.\d+)?)$")
+
+
+class TestMetricsExport:
+    def test_histogram_lines_are_well_formed(self):
+        m = MetricsCollector()
+        m.observe("http_request_duration_seconds", 0.003, {"method": "GET", "path": "/api/x"})
+        m.observe("http_request_duration_seconds", 9.0, {"method": "POST", "path": "/api/y"})
+        body = [ln for ln in m.export_prometheus().splitlines()
+                if not ln.startswith("#")]
+        assert body
+        assert all(_LINE_RE.match(ln) for ln in body), body
+
+    def test_histogram_keeps_labels_with_le(self):
+        m = MetricsCollector()
+        m.observe("http_request_duration_seconds", 0.003, {"method": "GET", "path": "/api/x"})
+        out = m.export_prometheus()
+        assert 'le="0.005",method="GET",path="/api/x"}' in out
+        assert 'le="+Inf",method="GET",path="/api/x"}' in out
+        assert 'le="+Inf",method="GET",path="/api/x"}_sum' not in out
+        assert out.count("}}") == 0
+
+    def test_histogram_without_labels(self):
+        m = MetricsCollector()
+        m.observe("pipeline_stage_duration_seconds", 1.5, None)
+        out = m.export_prometheus()
+        assert 'pipeline_stage_duration_seconds{le="1.0"} 0' in out
+        assert 'pipeline_stage_duration_seconds{le="+Inf"} 1' in out
+        assert "pipeline_stage_duration_seconds_sum 1.5" in out
+        assert "pipeline_stage_duration_seconds_count 1" in out

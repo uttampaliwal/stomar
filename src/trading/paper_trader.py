@@ -204,6 +204,11 @@ class PaperTrader:
 
         self.cumulative_pnl += pnl
 
+        # Circuit breaker: only closing trades (pnl != 0) count as outcomes.
+        # Entry fills (pnl == 0) must not reset the losing streak.
+        if pnl != 0.0:
+            self.risk_controller.update_consecutive_losses(pnl < 0)
+
         record = PaperTradeRecord(
             timestamp=datetime.now().isoformat(),
             ticker=order.ticker,
