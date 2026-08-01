@@ -59,6 +59,7 @@ paper_state.json
 paper_session.json
 mf_state.json
 data/api_audit/
+data/dry_run/
 data/market_data.db.stale_*.bak
 meta_controller.pkl
 meta_*_NS.pkl

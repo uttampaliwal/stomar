@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_HDFCBANK_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-01T04:40:31.232892+00:00",
+  "files": {
+    "meta_HDFCBANK_NS.pkl": "4d7964d088c04dd16f6b6f6fe043beab4164eb8f5016987f284719174f21816b"
+  }
+}

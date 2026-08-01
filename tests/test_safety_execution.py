@@ -302,3 +302,114 @@ def test_dryrun_never_reaches_a_real_market():
     assert order.status in (BrokerOrderStatus.SUBMITTED, BrokerOrderStatus.REJECTED)
     # no external side effects are representable — positions are local
     assert broker.get_positions() == []
+
+
+# ── Kite instrument mapping (fail-closed) ─────────────────────────────────
+
+class _FakeKiteConnect:
+    fetch_count = 0
+
+    def __init__(self, api_key):
+        self.api_key = api_key
+
+    def set_access_token(self, token):
+        self.token = token
+
+    def instruments(self, exchange):
+        _FakeKiteConnect.fetch_count += 1
+        return [
+            {"instrument_token": 738561, "tradingsymbol": "RELIANCE",
+             "exchange": "NSE", "name": "RELIANCE"},
+            {"instrument_token": 2953217, "tradingsymbol": "TCS",
+             "exchange": "NSE", "name": "TCS"},
+        ]
+
+
+def _live_gate(monkeypatch):
+    monkeypatch.setenv("STOMAR_LIVE_TRADING", "true")
+    monkeypatch.setenv("STOMAR_LIVE_CONFIRMATION", LIVE_CONFIRMATION_PHRASE)
+    monkeypatch.setenv("STOMAR_LIVE_ACCOUNT_APPROVED", "true")
+    monkeypatch.setenv("STOMAR_KITE_API_KEY", "k")
+    monkeypatch.setenv("STOMAR_KITE_ACCESS_TOKEN", "t")
+
+
+def _kite_broker(monkeypatch):
+    import sys
+    import types
+
+    from src.brokers import kite as kite_mod
+    from src.brokers.kite import KiteLiveBroker
+
+    _live_gate(monkeypatch)
+    # settings is a frozen import-time singleton — patch its attributes
+    monkeypatch.setattr(kite_mod.settings, "kite_api_key", "k")
+    monkeypatch.setattr(kite_mod.settings, "kite_access_token", "t")
+    monkeypatch.setattr(kite_mod.settings, "live_account_id", "test-account")
+    fake = types.ModuleType("kiteconnect")
+    fake.KiteConnect = _FakeKiteConnect
+    monkeypatch.setitem(sys.modules, "kiteconnect", fake)
+    broker = KiteLiveBroker()
+    monkeypatch.setattr(_FakeKiteConnect, "fetch_count", 0)
+    return broker
+
+
+def test_instrument_token_resolves_and_caches(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+    token = broker._instrument_token("RELIANCE.NS")
+    assert token == 738561
+    assert broker._instrument_token("reliance.ns") == 738561
+    assert _FakeKiteConnect.fetch_count == 1  # cached — no second network call
+
+
+def test_instrument_token_refetches_after_ttl(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+    assert broker._instrument_token("TCS.NS") == 2953217
+    broker._instruments_ts -= 3601.0  # expire TTL
+    assert broker._instrument_token("TCS.NS") == 2953217
+    assert _FakeKiteConnect.fetch_count == 2
+
+
+def test_instrument_token_fails_closed_on_unknown_symbol(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+    with pytest.raises(ValueError):
+        broker._instrument_token("NOTAREALSTOCK.NS")
+
+
+def test_instrument_token_fails_closed_on_fetch_error(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+
+    def boom(exchange):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(broker._kite, "instruments", boom)
+    with pytest.raises(RuntimeError):
+        broker._instrument_token("RELIANCE.NS")
+
+
+def test_resolve_symbol_returns_public_mapping(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+    resolved = broker.resolve_symbol("TCS.NS")
+    assert resolved["ticker"] == "TCS.NS"
+    assert resolved["tradingsymbol"] == "TCS"
+    assert resolved["instrument_token"] == 2953217
+    assert resolved["exchange"] == "NSE"
+
+
+def test_submit_order_resolves_instrument_before_sending(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+    broker._kite.place_order = lambda **kwargs: {
+        "order_id": "12345", "status": "pending", "filled_quantity": 0,
+        "average_price": 0.0, "order_timestamp": "", "exchange_timestamp": "",
+    }
+    broker._kite.orders = lambda: []
+    order = broker.submit_order("ord-kite-1", "RELIANCE.NS", "BUY", 10)
+    assert order.client_order_id == "ord-kite-1"
+    assert _FakeKiteConnect.fetch_count == 1
+
+
+def test_sandbox_validation_is_read_only(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+    report = broker.validate_sandbox(tickers=["RELIANCE.NS"])
+    assert report["ok"] is True
+    assert report["checks"]["instrument_mapping"]["detail"]["RELIANCE.NS"]["ok"]
+    assert _FakeKiteConnect.fetch_count == 1

@@ -13,5 +13,20 @@
     "created_at": "2026-08-01T09:08:12.964838",
     "promoted_at": null,
     "notes": "approval_state=approved"
+  },
+  {
+    "ticker": "HDFCBANK_NS",
+    "version": 2,
+    "model_path": "/home/uttam/dev/stomar/models/production/HDFCBANK_NS_xgb.pkl",
+    "feature_hash": "4",
+    "metrics": {
+      "model_version": "2",
+      "feature_schema_version": "4",
+      "training_dataset_hash": ""
+    },
+    "status": "staging",
+    "created_at": "2026-08-01T10:34:29.445668",
+    "promoted_at": null,
+    "notes": "approval_state=approved"
   }
 ]

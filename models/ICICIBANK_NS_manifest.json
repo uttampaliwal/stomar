@@ -1,18 +1,19 @@
 {
   "manifest_version": 1,
   "bundle": "ICICIBANK_NS",
-  "model_version": "1",
-  "feature_schema_version": "1",
+  "model_version": "2",
+  "feature_schema_version": "4",
   "training_dataset_hash": "",
-  "created_at": "2026-08-01T03:36:43.258792+00:00",
+  "created_at": "2026-08-01T04:49:28.114239+00:00",
   "files": {
-    "ICICIBANK_NS_lstm.pt": "3b0b260b77c83b6a453617ef34d127ef93111ae91317645a4fd564997d5b83b9",
-    "ICICIBANK_NS_gru.pt": "a558f1cb1142401dd6cb87e4c608799462da7a2092ac3f94d1331e17e4658e74",
-    "ICICIBANK_NS_transformer.pt": "1569af184b99ef169f8b97db29ab8b9872cef065c73855245382b422f8abe80b",
-    "ICICIBANK_NS_xgb.pkl": "16b39308e061bac1dcd89ec9a91f659a1f2b8ae1cbbe5c605e204d27372c711d",
-    "ICICIBANK_NS_scaler.pkl": "9dbfb9baf1deb9080628102c1b57b41b6f845b812022108785d3cb7fb9d2adee",
-    "ICICIBANK_NS_features.pkl": "4303f8cb8bb17cf123a801cb333aee6bf0ee9ce013f9c7b6c16eb63a5e786d01",
-    "ICICIBANK_NS_lstm_dim.pkl": "eaf396d9c8e374ee91fe686e4a2cce02ebd61ccded0210e40bae8c00fa6def99",
-    "ICICIBANK_NS_lgb.pkl": "e65030cbc68f411750b33da7e3d9f669f7c8014b06d71b2c2bd1b6bf15fdfdbb"
+    "ICICIBANK_NS_lstm.pt": "ce12f1b7cde1106a05fae84c4b1c2a5a9f77abd0919b8760805a1f20c7d0d15f",
+    "ICICIBANK_NS_gru.pt": "fdd103f96e710f51cda93a5f0fbea82307c5131c423ec995241b3f01b5f62211",
+    "ICICIBANK_NS_transformer.pt": "55cf8f10d94a9e1e209a0847955e600af637e0865b735b9b500b26239c445aba",
+    "ICICIBANK_NS_xgb.pkl": "3950dfe966d3166edcc082395ea8922058ad0d5f2532ec3b29cbe1badc41648f",
+    "ICICIBANK_NS_scaler.pkl": "142b567acf00c60ba43edb65d394d0b57c328061a4120ca9e5f51897ed29cfd7",
+    "ICICIBANK_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "ICICIBANK_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "ICICIBANK_NS_lgb.pkl": "d5a44a4d01b96f863c7e6c57fbdcdd4b03bf8a33ccf72198bd665f7153b67aa2",
+    "ICICIBANK_NS_cat.pkl": "673780a931fc5a6b9ab79c08349a525fd45cadb5e57b0ce49d4c9912536173d3"
   }
 }

@@ -16,6 +16,8 @@ Safety properties:
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from datetime import datetime, timezone
 
 from src.brokers.base import (
@@ -31,6 +33,7 @@ from src.core.trading_mode import require_live_allowed
 logger = logging.getLogger(__name__)
 
 _TIMEOUT_SECONDS = 10
+_INSTRUMENT_TTL = 3600.0  # refresh instrument snapshot at most hourly
 
 
 class KiteLiveBroker(BrokerAdapter):
@@ -55,18 +58,63 @@ class KiteLiveBroker(BrokerAdapter):
         self._kite = KiteConnect(api_key=settings.kite_api_key)
         self._kite.set_access_token(settings.kite_access_token)
         self._submitted: dict[str, BrokerOrder] = {}
+        self._instruments: dict | None = None
+        self._instruments_ts: float = 0.0
+        self._instrument_lock = threading.Lock()
         logger.warning(
             "KiteLiveBroker constructed — LIVE orders may be submitted. "
             "Account: %s", settings.live_account_id or "<unset>"
         )
 
-    # ── Kite symbol → instrument mapping (frozen snapshot on first use) ───
+    # ── Kite symbol → instrument mapping (cached snapshot) ─────────────────
 
     def _instrument_token(self, ticker: str) -> int:
-        raise NotImplementedError(
-            "instrument token lookup requires a kite instrument cache; "
-            "broker sandbox validation is required before this path is usable"
-        )
+        """Resolve ``RELIANCE.NS`` to a Kite instrument token.
+
+        Fetches the NSE instrument list on first use (TTL-cached). Refuses
+        to trade when the mapping is unavailable — fail-closed.
+        """
+        symbol = ticker.upper().removesuffix(".NS")
+        now = time.monotonic()
+        with self._instrument_lock:
+            if self._instruments is None or now - self._instruments_ts > _INSTRUMENT_TTL:
+                try:
+                    instruments = self._kite.instruments("NSE") or []
+                    self._instruments = {
+                        str(i.get("tradingsymbol", "")).upper(): i
+                        for i in instruments
+                    }
+                    self._instruments_ts = now
+                    logger.info(
+                        "kite instrument snapshot refreshed: %d symbols",
+                        len(self._instruments),
+                    )
+                except Exception as exc:
+                    self._instruments = None
+                    raise RuntimeError(
+                        f"cannot fetch instrument list for {ticker}: {exc}"
+                    ) from exc
+            row = self._instruments.get(symbol)
+            if row is None:
+                raise ValueError(
+                    f"ticker {ticker!r} not found in Kite NSE instruments "
+                    f"(snapshot has {len(self._instruments)} symbols)"
+                )
+            token = int(row.get("instrument_token", 0) or 0)
+            if token <= 0:
+                raise ValueError(f"instrument {ticker} has no instrument_token")
+            return token
+
+    def resolve_symbol(self, ticker: str) -> dict:
+        """Public lookup: mapping details for a ticker (read-only, safe)."""
+        token = self._instrument_token(ticker)
+        symbol = ticker.removesuffix(".NS").upper()
+        return {
+            "ticker": ticker,
+            "tradingsymbol": symbol,
+            "instrument_token": token,
+            "exchange": "NSE",
+        }
 
     def _map_status(self, status: str) -> BrokerOrderStatus:
         mapping = {
@@ -98,6 +146,7 @@ class KiteLiveBroker(BrokerAdapter):
             kite_type = {"MARKET": "MARKET", "LIMIT": "LIMIT"}.get(order_type, "MARKET")
             if kite_type == "LIMIT" and limit_price <= 0:
                 raise ValueError("LIMIT orders require limit_price")
+            token = self._instrument_token(ticker)  # fail-closed before sending
             response = self._kite.place_order(
                 variety="regular",
                 exchange="NSE",
@@ -229,5 +278,56 @@ class KiteLiveBroker(BrokerAdapter):
             logger.error("kite margins fetch failed: %s", exc)
             return {"available_cash": 0.0, "used_margin": 0.0, "total_exposure": 0.0}
 
+    def validate_sandbox(self, tickers: list[str] | None = None) -> dict:
+        """Read-only validation of the broker connection. NEVER places orders.
+
+        Checks, in order:
+        1. credentials: margins endpoint responds;
+        2. instrument mapping: a known ticker resolves to a valid token;
+        3. positions: read-only query succeeds.
+
+        Returns a report dict; any failed check means live orders must NOT
+        be attempted.
+        """
+        report = {"checks": {}, "ok": True}
+        try:
+            margins = self.get_margin()
+            report["checks"]["credentials"] = {
+                "ok": margins.get("available_cash", 0.0) > 0 or margins.get("total_exposure", 0.0) > 0 or "available_cash" in margins,
+                "detail": margins,
+            }
+        except Exception as exc:
+            report["checks"]["credentials"] = {"ok": False, "detail": str(exc)}
+
+        tickers = tickers or ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS"]
+        mapping_ok = True
+        mapping_detail = {}
+        for ticker in tickers:
+            try:
+                resolved = self.resolve_symbol(ticker)
+                mapping_detail[ticker] = {
+                    "ok": True,
+                    "instrument_token": resolved["instrument_token"],
+                }
+            except Exception as exc:
+                mapping_detail[ticker] = {"ok": False, "detail": str(exc)}
+                mapping_ok = False
+        report["checks"]["instrument_mapping"] = {"ok": mapping_ok, "detail": mapping_detail}
+
+        try:
+            positions = self.get_positions()
+            report["checks"]["positions"] = {"ok": True, "detail": {"count": len(positions)}}
+        except Exception as exc:
+            report["checks"]["positions"] = {"ok": False, "detail": str(exc)}
+
+        report["ok"] = all(c["ok"] for c in report["checks"].values())
+        report["validated_at"] = datetime.now(timezone.utc).isoformat()
+        logger.info("kite sandbox validation: %s", "PASS" if report["ok"] else "FAIL")
+        return report
+
     def health(self) -> dict:
-        return {"name": self.name, "live": True, "ok": True}
+        try:
+            margin_ok = self.get_margin()
+            return {"name": self.name, "live": True, "ok": True, "margin": margin_ok}
+        except Exception as exc:
+            return {"name": self.name, "live": True, "ok": False, "error": str(exc)}

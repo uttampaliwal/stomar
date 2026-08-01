@@ -412,19 +412,11 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
         split = 0
 
     if lstm_model is not None:
-        save_models(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, ticker, lgb_model=lgb_model, cat_model=cat_model)
+        save_models(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, ticker, lgb_model=lgb_model, cat_model=cat_model, model_version="2")
     else:
-        # Save tree models and scaler only (no DL models)
-        import joblib
-        ticker_clean = ticker.replace(".", "_")
-        os.makedirs(MODELS_DIR, exist_ok=True)
-        joblib.dump(xgb_model, os.path.join(MODELS_DIR, f"{ticker_clean}_xgb.pkl"))
-        if lgb_model is not None:
-            joblib.dump(lgb_model, os.path.join(MODELS_DIR, f"{ticker_clean}_lgb.pkl"))
-        if cat_model is not None:
-            joblib.dump(cat_model, os.path.join(MODELS_DIR, f"{ticker_clean}_cat.pkl"))
-        joblib.dump(scaler, os.path.join(MODELS_DIR, f"{ticker_clean}_scaler.pkl"))
-        joblib.dump(lstm_features, os.path.join(MODELS_DIR, f"{ticker_clean}_features.pkl"))
+        # Tree-only bundle — still written through the manifest-aware path.
+        save_models(None, None, None, xgb_model, scaler, lstm_features, ticker,
+                    lgb_model=lgb_model, cat_model=cat_model, model_version="2")
 
     logger.info("training_complete ticker=%s xgb=%.4f lgb=%.4f lstm=%.4f gru=%.4f tf=%.4f ensemble=%.4f",
                 ticker, xgb_acc, lgb_acc, lstm_acc, gru_acc, tf_acc, ensemble_acc)

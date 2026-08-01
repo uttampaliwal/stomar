@@ -92,21 +92,40 @@ period. With those closed, the gate described in §3 can be opened.
 
 ## 3. Remaining before real money (blocking)
 
-1. **Retrain all models without `ichimoku_chikou`.** Deployed bundles were
-   trained with a feature that leaked the future. They are neutralized at
-   inference, but the honest baseline requires retraining with the v4
-   schema and re-promoting (bump `model_version`).
-2. **Live broker sandbox validation.** `KiteLiveBroker` is written but has
-   never run against the Zerodha sandbox: instrument-token mapping is
-   unimplemented (`_instrument_token` raises), and order lifecycle must be
-   exercised with ₹0 risk before any real account. Paper-run a full day
-   through `ExecutionManager` first.
+1. **Retrain all models without `ichimoku_chikou`** — IN PROGRESS.
+   Deployed bundles were trained with a feature that leaked the future. They
+   are neutralized at inference, but the honest baseline requires retraining
+   with the v4 schema and re-promoting (bump `model_version`).
+   - `trainer.py` now writes every bundle (including the tree-only fallback)
+     through the manifest-aware `save_models` with `model_version="2"`;
+     `save_models` tolerates missing DL models and only manifests artifacts
+     that exist (regression-tested in `tests/test_safety_persistence.py`).
+   - RELIANCE_NS retrained: 64 used features, model_version 2,
+     feature_schema_version 4, no chikou, full DL bundle + meta-learner.
+     Remaining 5 tickers (HDFCBANK_NS, HINDUNILVR_NS, ICICIBANK_NS,
+     INFY_NS, TCS_NS) are being retrained; the first run hit yahoo
+     throttling on the 5y fetch and was relaunched with primed caches.
+   - After completion: verify each manifest, inference smoke test,
+     `promote_model` to production, re-run the suite.
+2. **Live broker sandbox validation** — IN PROGRESS.
+   `KiteLiveBroker` instrument-token mapping is now implemented
+   (`_instrument_token`, `resolve_symbol`; TTL-cached NSE snapshot,
+   fail-closed on fetch failure/unknown symbol — 7 new regression tests in
+   `tests/test_safety_execution.py`), and `validate_sandbox()` performs
+   read-only checks (margins, mapping, positions; never places orders).
+   `scripts/validate_kite_sandbox.py` runs it. Still required: install
+   `kiteconnect` in `.venv-gcc`, run against the Zerodha sandbox with real
+   credentials, then paper-run a full day through `ExecutionManager`.
 3. **Operator credentials & checklist.** Set `STOMAR_API_KEY`, broker
    credentials, and the confirmation phrase deliberately; document who
    holds the kill-switch override.
-4. **Supervised dry-run period.** Run the paper path (broker-backed, not
-   the legacy `PaperTrader` shortcut) for ≥ 2 weeks; watch the audit log,
-   reconciliations, and risk counters daily.
+4. **Supervised dry-run period** — TOOLING READY, PERIOD NOT RUN.
+   `scripts/dry_run_supervision.py` runs the real execution path
+   (ExecutionManager → DryRunBroker → reconciler) from today's
+   orchestrator decisions, writes daily reports to `data/dry_run/`
+   (order audit JSONL + `state.json` with positions, margin, risk status,
+   gate state). `DryRunBroker` now honors `initial_cash`. Run it daily for
+   ≥ 2 weeks; watch the audit log, reconciliations, and risk counters.
 
 ## 4. Recommended (non-blocking)
 
@@ -119,6 +138,9 @@ period. With those closed, the gate described in §3 can be opened.
 - Wire `max_stale_quote_seconds`/liquidity fields from live quotes into
   the execution manager at runtime (gate supports it; data layer must
   supply them).
+- DuckDB stale-lock recovery (`store.py::_recover_stale_lock`) is
+  self-healing via `/proc` liveness checks; observed twice during suite
+  runs — consider a dedicated unit test for the stale-lock path.
 
 ## 5. Operational knobs (all env-gated, paper by default)
 

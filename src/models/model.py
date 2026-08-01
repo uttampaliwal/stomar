@@ -171,14 +171,18 @@ def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker,
     """Persist the full ticker bundle plus a SHA-256 manifest.
 
     Nothing is loadable later unless every file matches the manifest.
+    ``lstm``/``gru``/``transformer`` may be None (tree-only bundles);
+    only artifacts that exist are written and manifested.
     """
     ticker_clean = ticker.replace(".", "_")
     def base(name):
         return os.path.join(root, f"{ticker_clean}_{name}")
 
-    torch.save(lstm.state_dict(), base("lstm.pt"))
-    torch.save(gru.state_dict(), base("gru.pt"))
-    torch.save(transformer.state_dict(), base("transformer.pt"))
+    if lstm is not None:
+        torch.save(lstm.state_dict(), base("lstm.pt"))
+        torch.save(gru.state_dict(), base("gru.pt"))
+        torch.save(transformer.state_dict(), base("transformer.pt"))
+        joblib.dump(lstm.lstm.input_size, base("lstm_dim.pkl"))
     joblib.dump(xgb, base("xgb.pkl"))
     if lgb_model is not None:
         joblib.dump(lgb_model, base("lgb.pkl"))
@@ -186,7 +190,6 @@ def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker,
         joblib.dump(cat_model, base("cat.pkl"))
     joblib.dump(scaler, base("scaler.pkl"))
     joblib.dump(feature_cols, base("features.pkl"))
-    joblib.dump(lstm.lstm.input_size, base("lstm_dim.pkl"))
 
     files = []
     for ext in _TICKER_ARTIFACTS:

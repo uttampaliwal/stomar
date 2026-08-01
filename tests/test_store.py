@@ -267,3 +267,32 @@ class TestUniverseBookkeeping:
         store.upsert_daily("A.NS", _make_df(n=5), source="test")
         stats = store.stats()
         assert stats["ohlcv_daily"] == 5
+
+
+class TestStaleLockRecovery:
+    def test_recovery_moves_stale_db_aside_and_recreates(self, tmp_path, monkeypatch):
+        db_path = str(tmp_path / "stale.db")
+        # a stale lock cannot exist in reality (we are the only process),
+        # so simulate: the file is NOT open by any live process
+        store = MarketDataStore(db_path)
+        store.close()
+        assert os.path.exists(db_path)
+        assert MarketDataStore._file_is_open_by_process(db_path) is False
+        assert store._recover_stale_lock() is True
+        assert not os.path.exists(db_path)
+        backups = list(tmp_path.glob("stale.db.stale_*.bak"))
+        assert len(backups) == 1
+        # a fresh store opens fine on the recovered path
+        fresh = MarketDataStore(db_path)
+        fresh.close()
+
+    def test_recovery_refuses_when_file_open_by_live_process(self, tmp_path, monkeypatch):
+        db_path = str(tmp_path / "held.db")
+        store = MarketDataStore(db_path)
+        # simulate a live holder: /proc check reports the file open
+        monkeypatch.setattr(
+            MarketDataStore, "_file_is_open_by_process", lambda self, p: True,
+        )
+        assert store._recover_stale_lock() is False
+        assert os.path.exists(db_path)
+        store.close()

@@ -1,18 +1,19 @@
 {
   "manifest_version": 1,
   "bundle": "RELIANCE_NS",
-  "model_version": "1",
-  "feature_schema_version": "1",
+  "model_version": "2",
+  "feature_schema_version": "4",
   "training_dataset_hash": "",
-  "created_at": "2026-08-01T03:36:43.349706+00:00",
+  "created_at": "2026-08-01T04:29:08.435678+00:00",
   "files": {
-    "RELIANCE_NS_lstm.pt": "7eb4898a808458e65b58c46644a4203a9eaa30eac304c0c9cc8aa8c81c1b2fb6",
-    "RELIANCE_NS_gru.pt": "c007fd102ebd2319dae6742fefc8ef7914cf2293f010fc5450187dc040f66e35",
-    "RELIANCE_NS_transformer.pt": "633502533ceae8e928dab1d736c46bb81c1a1f694465237f6e40d8a9cbf4799e",
-    "RELIANCE_NS_xgb.pkl": "102dafd5e1e49afcc8f6aac20e5416e379c81987e5c99238b2ce4ab381661cf2",
-    "RELIANCE_NS_scaler.pkl": "85331382eb1839f712e471fd1716056040e41ce1a22c9476d630f5820f2282b8",
-    "RELIANCE_NS_features.pkl": "0c72662ef3e875c16c133858cb7400ccdd51b9fae0cd99622bae97bfa7edd57e",
-    "RELIANCE_NS_lstm_dim.pkl": "cc22f744a7122b564e5d703ebec8b4ac16b4cf6894c0402c1f6cfca4dce05a6f",
-    "RELIANCE_NS_lgb.pkl": "16f4e7be5bf3b43275784682c6307dcad154a1fc7b6e0d2cc8e339fe56732b3a"
+    "RELIANCE_NS_lstm.pt": "b234addb08c6f44eef86c982584219520cf9ffe1fe874bc14eee34e7b0e8fe21",
+    "RELIANCE_NS_gru.pt": "a0b9b45e6879b6975503e2442610965c53f5cf1ee83e2d49edd0428a500f925c",
+    "RELIANCE_NS_transformer.pt": "794bef1d1cfce16fb373dc6520a1c7fac3a8c162f516d40ac49c531c4ea228d2",
+    "RELIANCE_NS_xgb.pkl": "293415e3cc4527132b433134ed7aebe7fd828ae2f2d07f547c8bd4f3aaba476c",
+    "RELIANCE_NS_scaler.pkl": "cc03e34d8e6923ec914e4d772df9884020d2644fc7534522eb3ad40fd0b40559",
+    "RELIANCE_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "RELIANCE_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "RELIANCE_NS_lgb.pkl": "b82043c511274f6df618b1fcae14408aa222da968f6b0bc074b8499193adb0c2",
+    "RELIANCE_NS_cat.pkl": "fd3f3299c298e67cca0d2903132169d7991d722be5708b7c117cba9d7f4cdfff"
   }
 }

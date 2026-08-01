@@ -1,18 +1,19 @@
 {
   "manifest_version": 1,
   "bundle": "TCS_NS",
-  "model_version": "1",
-  "feature_schema_version": "1",
+  "model_version": "2",
+  "feature_schema_version": "4",
   "training_dataset_hash": "",
-  "created_at": "2026-08-01T03:36:43.393380+00:00",
+  "created_at": "2026-08-01T04:59:56.540145+00:00",
   "files": {
-    "TCS_NS_lstm.pt": "e72b477a421864f05e812ba9efa1f80fbef06deebb1587d0f2b7a3b83f2b1699",
-    "TCS_NS_gru.pt": "5056de3a7516c4d83fafd8aabef786969a2be00cdf69d44cf4d9f8b8da1504f3",
-    "TCS_NS_transformer.pt": "269d4ed61d663d2519b857a0ab417b70da8aa920ce80d4a4191e8c223570d0e9",
-    "TCS_NS_xgb.pkl": "ce0d0ea5eb7e429a22cdf69293e4fcc6ace03bb6ce0dac7216c8b8659725017e",
-    "TCS_NS_scaler.pkl": "a3aeb8aab09f4f780f3761a41c550158ee9c68993dd761f7c8619c1ba2d2e721",
-    "TCS_NS_features.pkl": "4303f8cb8bb17cf123a801cb333aee6bf0ee9ce013f9c7b6c16eb63a5e786d01",
-    "TCS_NS_lstm_dim.pkl": "eaf396d9c8e374ee91fe686e4a2cce02ebd61ccded0210e40bae8c00fa6def99",
-    "TCS_NS_lgb.pkl": "dfa4b807a7e18b1a8039521e7b8fb0ff8e026db730b37e174d9e725c486fb012"
+    "TCS_NS_lstm.pt": "3d3b3ec6a6aa8909b17306df3c5b8fb50fced71a0405fd66bdf0110265c1cb64",
+    "TCS_NS_gru.pt": "fd36ea75c32957b8f566ac9953b1eec2a5816d33697a69fff75eb83f48ff291a",
+    "TCS_NS_transformer.pt": "b75211ebe2c0626a0ca01629f27bf1a8cef548d567c8b4ca12b062f59b9453cc",
+    "TCS_NS_xgb.pkl": "c8bd75a69d320f685057ac52365c97cc9862391e1c27f83a9336ea3c4fc73e55",
+    "TCS_NS_scaler.pkl": "3df4e7e35b005507284d42fcef1695c4ead786f9a0c3d2a4c58fa07246757caa",
+    "TCS_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "TCS_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "TCS_NS_lgb.pkl": "6f2f7912742ce4c2534de10b0ffab1bd332e45ad0420033082e9b05f060793b2",
+    "TCS_NS_cat.pkl": "92bc20017e9f4650674a1a7249b880ba3d9a6620612e2c289b32f0f59e873c24"
   }
 }

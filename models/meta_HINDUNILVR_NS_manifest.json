@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_HINDUNILVR_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-01T04:45:54.732780+00:00",
+  "files": {
+    "meta_HINDUNILVR_NS.pkl": "74c5f2251874cd68b29fad75c12f9b3008a800df7f78e089a799f15dd1def316"
+  }
+}

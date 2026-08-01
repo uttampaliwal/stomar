@@ -42,7 +42,8 @@ class DryRunBroker(BrokerAdapter):
     def __init__(self, fill_delay_seconds: float = 0.0,
                  partial_fill_pct: float = 0.0,
                  reject_rate: float = 0.0,
-                 slippage_bps: float = 5.0):
+                 slippage_bps: float = 5.0,
+                 initial_cash: float = 1_000_000.0):
         self.fill_delay_seconds = max(0.0, fill_delay_seconds)
         self.partial_fill_pct = min(1.0, max(0.0, partial_fill_pct))
         self.reject_rate = min(1.0, max(0.0, reject_rate))
@@ -50,7 +51,7 @@ class DryRunBroker(BrokerAdapter):
         self._orders: dict[str, BrokerOrder] = {}
         self._fills: list[BrokerFill] = []
         self._positions: dict[str, BrokerPosition] = {}
-        self._cash: float = 1_000_000.0
+        self._cash: float = initial_cash
         self._lock = threading.RLock()
         self._next_fill_time: dict[str, float] = {}
         self._order_seq = 0
