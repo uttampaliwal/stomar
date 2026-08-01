@@ -224,11 +224,12 @@ class _FakeCacheResponse:
 
 
 def _run_cache(monkeypatch, path, query="", status=200, body=b'{"x": 1}',
-               content_type="application/json", max_entries=None):
+               content_type="application/json", max_entries=None, clear=True):
     import api.main as api_main
     from api.main import cache_middleware
 
-    api_main._response_cache.clear()
+    if clear:
+        api_main._response_cache.clear()
     monkeypatch.setattr(api_main, "_CACHE_TTL", 30.0)
     if max_entries is not None:
         monkeypatch.setattr(api_main.settings, "cache_max_entries", max_entries)
@@ -249,7 +250,7 @@ def test_cache_second_request_is_hit(monkeypatch):
     resp1, calls1 = _run_cache(monkeypatch, "/api/scanner/TCS")
     assert resp1.headers.get("X-Cache") == "MISS"
     assert calls1["n"] == 1
-    resp2, calls2 = _run_cache(monkeypatch, "/api/scanner/TCS")
+    resp2, calls2 = _run_cache(monkeypatch, "/api/scanner/TCS", clear=False)
     assert resp2.headers.get("X-Cache") == "HIT"
     assert calls2["n"] == 0, "cached request must not hit the endpoint"
     assert resp2.body == b'{"x": 1}'
@@ -284,12 +285,12 @@ def test_cache_skips_protected_paths(monkeypatch):
 
 def test_cache_evicts_lru_over_limit(monkeypatch):
     _run_cache(monkeypatch, "/api/scanner/A", max_entries=2)
-    _run_cache(monkeypatch, "/api/scanner/B", max_entries=2)
-    _run_cache(monkeypatch, "/api/scanner/C", max_entries=2)
+    _run_cache(monkeypatch, "/api/scanner/B", max_entries=2, clear=False)
+    _run_cache(monkeypatch, "/api/scanner/C", max_entries=2, clear=False)
     # A was evicted first -> must be recomputed, B/C are still cached
-    resp, calls = _run_cache(monkeypatch, "/api/scanner/A", max_entries=2)
-    assert calls["n"] == 1
-    resp_b, calls_b = _run_cache(monkeypatch, "/api/scanner/B", max_entries=2)
+    resp_b, calls_b = _run_cache(monkeypatch, "/api/scanner/B", max_entries=2, clear=False)
     assert calls_b["n"] == 0
-    resp_c, calls_c = _run_cache(monkeypatch, "/api/scanner/C", max_entries=2)
+    resp_c, calls_c = _run_cache(monkeypatch, "/api/scanner/C", max_entries=2, clear=False)
     assert calls_c["n"] == 0
+    resp, calls = _run_cache(monkeypatch, "/api/scanner/A", max_entries=2, clear=False)
+    assert calls["n"] == 1
