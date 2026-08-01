@@ -60,7 +60,7 @@ export default function App() {
             {/* Footer */}
             <div className="mt-8 border-t border-border pt-3 text-center">
               <p className="text-[0.6rem] font-mono text-muted-foreground">
-                STOMAR v0.0.6 — 5-Model Ensemble • Walk-Forward Backtest • Black-Litterman Optimizer
+                STOMAR v0.0.7 — 5-Model Ensemble • Walk-Forward Backtest • Black-Litterman Optimizer
               </p>
               <p className="text-[0.55rem] text-muted-foreground mt-0.5 opacity-40">
                 Educational purposes only — not financial advice.
