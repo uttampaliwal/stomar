@@ -60,7 +60,7 @@ _PROTECTED_PREFIXES = [
     "/api/risk-guard/",
 ]
 
-app = FastAPI(title="StoMar API", version="0.0.5")
+app = FastAPI(title="StoMar API", version="0.0.6")
 
 if settings.env == "production":
     _cors_origins = [
@@ -216,7 +216,7 @@ app.include_router(risk_guard.router, prefix="/api/risk-guard", tags=["Risk Guar
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "0.0.5"}
+    return {"status": "ok", "version": "0.0.6"}
 
 
 @app.get("/api/metrics")
@@ -224,5 +224,5 @@ def metrics_endpoint():
     """Prometheus-compatible metrics endpoint."""
     return Response(
         content=metrics.export_prometheus(),
-        media_type="text/plain; version=0.0.5; charset=utf-8",
+        media_type="text/plain; version=0.0.6; charset=utf-8",
     )
