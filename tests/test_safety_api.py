@@ -7,7 +7,7 @@ from src.core.settings import settings
 from api.main import (
     _PROTECTED_PREFIXES,
     _auth_verdict,
-    _is_protected_mutation,
+    _is_protected_path,
     _rate_limited,
 )
 
@@ -20,26 +20,32 @@ def test_protected_prefixes_cover_order_paths():
     assert any("/api/paper-trading/" in p for p in _PROTECTED_PREFIXES)
     assert any("/api/automation/" in p for p in _PROTECTED_PREFIXES)
     assert any("/api/ledger/" in p for p in _PROTECTED_PREFIXES)
+    # sensitive read-only endpoints must be protected too
+    assert any("/api/pipeline/status" in p for p in _PROTECTED_PREFIXES)
 
 
-def test_mutations_are_protected_reads_are_not():
-    for method in _MUTATING:
-        assert _is_protected_mutation(method, "/api/paper-trading/order") is True
-        assert _is_protected_mutation(method, "/api/ledger/anything") is True
-    for method in _READ:
-        assert _is_protected_mutation(method, "/api/paper-trading/state") is False
+def test_all_methods_on_protected_prefixes_require_auth():
+    # both mutating and read methods are gated on protected prefixes
+    for method in _MUTATING + _READ:
+        assert _is_protected_path("/api/paper-trading/order") is True
+        assert _is_protected_path("/api/paper-trading/state") is True
+        assert _is_protected_path("/api/ledger/anything") is True
+        assert _is_protected_path("/api/pipeline/status") is True
+    # unaffected read endpoints stay open
+    assert _is_protected_path("/api/health") is False
+    assert _is_protected_path("/api/market/status") is False
 
 
 def test_missing_api_key_fails_closed(monkeypatch):
     monkeypatch.setattr(settings, "api_key", "")
-    verdict = _auth_verdict("POST", "/api/paper-trading/order", "whatever")
+    verdict = _auth_verdict("/api/paper-trading/order", "whatever")
     assert verdict is not None
     assert verdict[0] == 503  # explicitly disabled, not silently open
 
 
 def test_wrong_key_rejected(monkeypatch):
     monkeypatch.setattr(settings, "api_key", "real-key")
-    verdict = _auth_verdict("POST", "/api/paper-trading/order", "wrong-key")
+    verdict = _auth_verdict("/api/paper-trading/state", "wrong-key")
     assert verdict is not None
     assert verdict[0] == 401
 
@@ -47,7 +53,8 @@ def test_wrong_key_rejected(monkeypatch):
 def test_correct_key_accepted(monkeypatch):
     key = settings.api_key or "test-key"
     monkeypatch.setattr(settings, "api_key", key)
-    assert _auth_verdict("POST", "/api/paper-trading/order", key) is None
+    assert _auth_verdict("/api/paper-trading/order", key) is None
+    assert _auth_verdict("/api/pipeline/status", key) is None
 
 
 def test_comparison_is_constant_time():

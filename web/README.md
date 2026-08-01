@@ -26,6 +26,13 @@ npm ci
 npm run dev
 ```
 
+> **API key:** protected endpoints (paper-trading, ledger, pipeline, automation, risk-guard)
+> require `X-API-Key`. `./start_dev.sh` seeds `web/.env.local` from `STOMAR_API_KEY`
+> in the root `.env` automatically. For manual setup, set `VITE_STOMAR_API_KEY` in
+> `web/.env.local` (see `web/.env.example`) to the same value as `STOMAR_API_KEY`.
+> The UI fetches are routed through `src/lib/api-client.ts`, which also honors a
+> runtime-injected `window.__STOMAR_API_KEY__` (keeps the key out of the bundle).
+
 ### URLs
 | Service | URL |
 |---------|-----|

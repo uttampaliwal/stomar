@@ -51,10 +51,14 @@ from api.routers import (
     risk_guard,
 )
 
-# Mutable endpoints on these prefixes require a valid API key via X-API-Key header.
+# Endpoints under these prefixes require a valid API key via X-API-Key header,
+# regardless of HTTP method: mutating endpoints change state, and the read
+# endpoints (state/positions/trades/ledger/pipeline status) expose sensitive
+# account data, so both are protected fail-closed.
 _PROTECTED_PREFIXES = [
     "/api/paper-trading/",
     "/api/automation/",
+    "/api/pipeline/status",
     "/api/pipeline/train/",
     "/api/pipeline/run",
     "/api/ledger/",
@@ -64,11 +68,11 @@ _PROTECTED_PREFIXES = [
 app = FastAPI(title="StoMar API", version="0.0.7")
 
 # Fail-closed: in production, a missing STOMAR_API_KEY is a hard error.
-# Without it every mutating endpoint would run unauthenticated.
+# Without it every protected endpoint would run unauthenticated.
 if settings.env == "production" and not settings.api_key:
     raise RuntimeError(
         "refusing to start in production without STOMAR_API_KEY set — "
-        "all mutating endpoints would be unauthenticated"
+        "all protected endpoints would be unauthenticated"
     )
 
 if settings.env == "production":
@@ -131,19 +135,21 @@ async def metrics_middleware(request: Request, call_next):
     return response
 
 
-def _is_protected_mutation(method: str, path: str) -> bool:
-    """True when a request must carry a valid API key (fail-closed)."""
-    if method not in ("POST", "PUT", "PATCH", "DELETE"):
-        return False
+def _is_protected_path(path: str) -> bool:
+    """True when a request must carry a valid API key (fail-closed).
+
+    Applies to every method. Reads under these prefixes leak account state
+    (positions, P&L, decisions), so they are protected exactly like mutations.
+    """
     return any(path.startswith(p) for p in _PROTECTED_PREFIXES)
 
 
-def _auth_verdict(method: str, path: str, provided_key: str) -> tuple[int, str] | None:
+def _auth_verdict(path: str, provided_key: str) -> tuple[int, str] | None:
     """Return (status, body) when the request must be rejected, else None.
 
-    Fail-closed: protected mutations are never open by configuration drift.
+    Fail-closed: protected endpoints are never open by configuration drift.
     """
-    if not _is_protected_mutation(method, path):
+    if not _is_protected_path(path):
         return None
     if not settings.api_key:
         return 503, '{"detail":"API key not configured; protected endpoints disabled"}'
@@ -154,7 +160,7 @@ def _auth_verdict(method: str, path: str, provided_key: str) -> tuple[int, str] 
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    verdict = _auth_verdict(request.method, request.url.path,
+    verdict = _auth_verdict(request.url.path,
                             request.headers.get("x-api-key", ""))
     if verdict is not None:
         status, body = verdict
@@ -236,6 +242,11 @@ _CACHEABLE_PREFIXES = [
 @app.middleware("http")
 async def cache_middleware(request: Request, call_next):
     path = request.url.path
+
+    if _is_protected_path(path):
+        # Never cache protected responses: this middleware runs before auth,
+        # so a cached 200 (or 401) would bypass or poison the API key check.
+        return await call_next(request)
 
     if request.method == "GET" and any(path.startswith(p) for p in _CACHEABLE_PREFIXES):
         cache_key = path

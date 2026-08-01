@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { apiFetch } from '@/lib/api-client'
 
 interface UseApiOptions {
   immediate?: boolean
@@ -25,7 +26,7 @@ export function useApi<T>(url: string, options: UseApiOptions = {}) {
     // Deduplicate in-flight requests
     let promise = _inflight.get(url)
     if (!promise) {
-      promise = fetch(url).then((res) => {
+      promise = apiFetch(url).then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json()
       })
@@ -71,7 +72,7 @@ export function usePostApi<T>(url: string) {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

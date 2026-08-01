@@ -6,6 +6,7 @@ import {
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { apiFetch } from '@/lib/api-client'
 import TradingViewChart, { type TradeMarker, type HorizontalLine } from '@/components/TradingViewChart'
 import { OrderPad } from '@/components/TerminalComponents'
 import type { PredictionResponse, FeatureImportanceResponse, TrainResponse } from '../lib/api-types'
@@ -101,11 +102,11 @@ export default function Predictions() {
     setTraining(true)
     setTrainResult(null)
     try {
-      const res = await fetch(`/api/pipeline/train/${ticker}`, { method: 'POST' })
+      const res = await apiFetch(`/api/pipeline/train/${ticker}`, { method: 'POST' })
       const data = await res.json()
       if (data.status === 'started') {
         const poll = setInterval(async () => {
-          const statusRes = await fetch(`/api/pipeline/train/${ticker}/status`)
+          const statusRes = await apiFetch(`/api/pipeline/train/${ticker}/status`)
           const status = await statusRes.json()
           if (status.status === 'done') {
             setTrainResult(status.result)

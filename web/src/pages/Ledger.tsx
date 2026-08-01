@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
+import { apiFetch } from '@/lib/api-client'
 import type { LedgerSummaryResponse, LedgerDecisionsResponse } from '../lib/api-types'
 
 export default function Ledger() {
@@ -13,13 +14,13 @@ export default function Ledger() {
     setRunning(true)
     setRunResult(null)
     try {
-      const res = await fetch('/api/pipeline/run', { method: 'POST' })
+      const res = await apiFetch('/api/pipeline/run', { method: 'POST' })
       const data = await res.json()
       if (data.status === 'started') {
         setRunResult(`Pipeline started for ${data.tickers?.length || 0} tickers. Monitoring...`)
         // Poll for completion
         const poll = setInterval(async () => {
-          const statusRes = await fetch('/api/pipeline/run/status')
+          const statusRes = await apiFetch('/api/pipeline/run/status')
           const status = await statusRes.json()
           if (status.status === 'done') {
             clearInterval(poll)
