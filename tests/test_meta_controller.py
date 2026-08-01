@@ -22,8 +22,18 @@ def ledger_with_data():
     lg = Ledger(db_path)
 
     np.random.seed(42)
+    # Realistic, noisy data: directions are random (slightly imbalanced)
+    # rather than the perfectly alternating pattern int(i % 2) — a
+    # controller that memorized the alternation could pass the old tests.
+    directions = np.random.choice([0, 1], size=600, p=[0.45, 0.55])
+    outcomes = np.random.choice([0, 1], size=600, p=[0.5, 0.5])
+    if len(set(directions)) == 1:
+        directions[0] = 1 - directions[0]  # both classes must exist
+    if len(set(outcomes)) == 1:
+        outcomes[0] = 1 - outcomes[0]
+
     for i in range(600):
-        direction = int(i % 2)  # Alternate 0/1 to guarantee both classes
+        direction = int(directions[i])
         signals = {
             "ensemble_direction": direction,
             "ensemble_confidence": np.random.uniform(0.4, 0.9),
@@ -47,8 +57,9 @@ def ledger_with_data():
             position_size=0.05,
             confidence=0.7,
         )
-        # Guarantee both classes in actual outcomes
-        actual_dir = int(i % 2)
+        # Outcome is NOT derived from the signal: realistic noise means the
+        # controller must actually generalize, not echo the fixture
+        actual_dir = int(outcomes[i])
         lg.log_outcome(decision_id, actual_return=np.random.randn() * 0.02, actual_direction=actual_dir)
 
     yield lg

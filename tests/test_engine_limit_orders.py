@@ -15,7 +15,6 @@ backtest-live parity:
   touching pending orders.
 """
 
-import pytest
 from unittest.mock import patch
 
 from src.trading.engine import (
