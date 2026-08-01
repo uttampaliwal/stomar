@@ -31,6 +31,7 @@ dependencies = [
     "nsepython>=1.0.6,<2",
     "shap>=0.47,<1",
     "catboost>=1.2,<2",
+    "filelock>=3.32.2",
 ]
 
 [dependency-groups]

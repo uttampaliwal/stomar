@@ -75,8 +75,9 @@ def test_order_quantity_bounds(monkeypatch):
     assert "Invalid ticker" in res["error"], res
 
 
-def test_reset_capital_bounds(monkeypatch):
+def test_reset_capital_bounds(monkeypatch, tmp_path):
     from api.routers import paper_trading as pt
+    from filelock import FileLock
 
     class _FakeTrader:
         initial_capital = 0
@@ -84,7 +85,10 @@ def test_reset_capital_bounds(monkeypatch):
         def reset(self):
             self.initial_capital = self.initial_capital
 
-        def save_state(self, *a, **k):
+        def load_state(self, path):
+            pass
+
+        def save_state(self, path):
             pass
 
         def get_summary(self):
@@ -92,12 +96,59 @@ def test_reset_capital_bounds(monkeypatch):
 
     fake = _FakeTrader()
     monkeypatch.setattr(pt, "get_trader", lambda: fake)
+    # hermetic lock: never touch the real data/paper_state.json.lock
+    monkeypatch.setattr(pt, "_state_lock", FileLock(str(tmp_path / "paper_state.json.lock")))
     for bad in [0, -1, -1000, 100_000_001, 1e15, "nan", "inf", "abc"]:
         res = pt.reset_paper_trading({"capital": bad})
         assert "error" in res, f"capital={bad} accepted"
     res = pt.reset_paper_trading({"capital": 200000})
     assert res.get("status") == "success"
     assert res.get("state", {}).get("capital") == 200000
+
+
+def test_paper_state_session_reads_and_persists(monkeypatch, tmp_path):
+    from api.routers import paper_trading as pt
+    from src.trading.paper_trader import PaperTrader
+    from filelock import FileLock
+
+    monkeypatch.setattr(pt, "PAPER_STATE_PATH", str(tmp_path / "paper_state.json"))
+    monkeypatch.setattr(pt, "_state_lock", FileLock(str(tmp_path / "paper_state.json.lock")))
+
+    trader = PaperTrader(initial_capital=200000)
+    trader.cash = 1000.0
+    trader.save_state(pt.PAPER_STATE_PATH)
+
+    # a session must reload the freshest disk state, then persist mutations
+    with pt._paper_state_session(trader):
+        assert trader.cash == 1000.0
+        trader.cash = 2000.0
+
+    other = PaperTrader(initial_capital=200000)
+    pt._refresh_trader(other)
+    assert other.cash == 2000.0, "session changes not persisted"
+
+
+def test_paper_state_lock_busy_fails_fast(monkeypatch, tmp_path):
+    from api.routers import paper_trading as pt
+    from src.trading.paper_trader import PaperTrader
+    from filelock import FileLock
+
+    monkeypatch.setattr(pt, "PAPER_STATE_PATH", str(tmp_path / "paper_state.json"))
+    monkeypatch.setattr(pt, "_state_lock", FileLock(str(tmp_path / "paper_state.json.lock"), timeout=1))
+
+    trader = PaperTrader(initial_capital=200000)
+    trader.save_state(pt.PAPER_STATE_PATH)
+
+    held = FileLock(str(tmp_path / "paper_state.json.lock"))
+    held.acquire()
+    try:
+        try:
+            pt._refresh_trader(trader)
+            raise AssertionError("expected busy error")
+        except RuntimeError as e:
+            assert "busy" in str(e)
+    finally:
+        held.release()
 
 
 def test_comparison_is_constant_time():

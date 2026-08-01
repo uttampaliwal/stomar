@@ -75,23 +75,22 @@ def _run_worker(tickers: list[str]):
         from src.trading.ledger import Ledger
         from src.signals.orchestrator import DailyOrchestrator
         from src.trading.paper_trader import PaperTrader
+        from src.core.constants import PAPER_STATE_PATH
+        from filelock import FileLock
 
         ledger = Ledger()
         trader = PaperTrader(initial_capital=200000)
-        # Load existing state
-        import os
-        state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "paper_state.json")
-        if os.path.exists(state_path):
-            try:
-                trader.load_state(state_path)
-            except Exception:
-                pass
 
-        orch = DailyOrchestrator(tickers=tickers, ledger=ledger, paper_trader=trader)
-        summary = orch.run()
-
-        # Save paper trading state
-        trader.save_state(state_path)
+        # Cross-process lock: the same paper_state.json is read-modify-written by
+        # every gunicorn worker's paper-trading router. Hold it for the whole
+        # run so a concurrent UI order can never be lost or applied to a stale
+        # snapshot mid-run.
+        state_lock = FileLock(PAPER_STATE_PATH + ".lock")
+        with state_lock:
+            trader.load_state(PAPER_STATE_PATH)
+            orch = DailyOrchestrator(tickers=tickers, ledger=ledger, paper_trader=trader)
+            summary = orch.run()
+            trader.save_state(PAPER_STATE_PATH)
         ledger.close()
 
         with _run_lock:

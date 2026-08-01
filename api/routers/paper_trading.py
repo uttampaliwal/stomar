@@ -5,14 +5,16 @@ system is in live mode, order placement here is refused and live orders
 must flow through the broker-backed execution path instead.
 """
 
-import os
 import re
 import math
 import threading
+from contextlib import contextmanager
 from fastapi import APIRouter, Body
+from filelock import FileLock, Timeout
 from src.trading.paper_trader import PaperTrader
 from src.trading.engine import OrderSide, OrderType
 from src.data.data_fetcher import NSE_STOCKS
+from src.core.constants import PAPER_STATE_PATH
 from src.core.trading_mode import get_trading_mode, mode_banner
 from src.trading.execution_manager import ExecutionManager
 from src.trading.risk_controls import RiskController, RiskLimits
@@ -24,7 +26,14 @@ _TICKER_RE = re.compile(r"^[A-Z0-9]{1,20}\.NS$")
 
 _trader = None
 _trader_lock = threading.Lock()
-_operation_lock = threading.Lock()  # Serializes order placement and reset
+_operation_lock = threading.Lock()  # Serializes order placement and reset in-process
+
+# Cross-process lock: gunicorn runs one module copy per worker, so in-memory
+# singletons diverge. Every read-modify-write of paper_state.json must hold
+# this lock across the full load → mutate → save span so workers stay coherent.
+# The timeout keeps a long pipeline run from hanging UI requests.
+_state_lock = FileLock(PAPER_STATE_PATH + ".lock", timeout=10)
+_BUSY_MSG = "Paper trading state is busy (pipeline run or another operation in progress); retry shortly"
 _manager: ExecutionManager | None = None
 
 
@@ -45,20 +54,45 @@ def get_trader():
     global _trader
     with _trader_lock:
         if _trader is None:
-            state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "paper_state.json")
             _trader = PaperTrader(initial_capital=200000)
-            if os.path.exists(state_path):
-                try:
-                    _trader.load_state(state_path)
-                except Exception:
-                    pass
+            _trader.load_state(PAPER_STATE_PATH)
         return _trader
+
+
+def _refresh_trader(trader) -> None:
+    """Reload the singleton from disk (cheap small JSON read).
+
+    Without this, a worker would serve/mutate its own stale snapshot and
+    clobber changes made by other workers.
+    """
+    try:
+        with _state_lock:
+            trader.load_state(PAPER_STATE_PATH)
+    except Timeout:
+        raise RuntimeError(_BUSY_MSG) from None
+
+
+@contextmanager
+def _paper_state_session(trader):
+    """Serialized read-modify-write on the shared paper state.
+
+    Holds the cross-process lock across load → yield → save, so concurrent
+    workers serialize on disk and no worker can overwrite another's changes.
+    """
+    try:
+        with _state_lock:
+            trader.load_state(PAPER_STATE_PATH)
+            yield
+            trader.save_state(PAPER_STATE_PATH)
+    except Timeout:
+        raise RuntimeError(_BUSY_MSG) from None
 
 
 @router.get("/state")
 def paper_state():
     try:
         trader = get_trader()
+        _refresh_trader(trader)
         state = trader.get_summary()
         mode = get_trading_mode()
         state["mode"] = mode.value
@@ -119,27 +153,24 @@ def place_order(data: dict = Body(...)):
             return {"error": f"Risk gate blocked order: {gate['reason']}"}
 
         with _operation_lock:
-            order = trader.place_order(ticker, side, order_type, quantity, price=price,
-                                       stop_price=limit_price or 0)
-            if order is None or order.status.name == "REJECTED":
-                return {"order_id": order.order_id if order else None, "status": "rejected", "price": price}
+            with _paper_state_session(trader):
+                order = trader.place_order(ticker, side, order_type, quantity, price=price,
+                                           stop_price=limit_price or 0)
+                if order is None or order.status.name == "REJECTED":
+                    return {"order_id": order.order_id if order else None, "status": "rejected", "price": price}
 
-            # For MARKET orders, fill immediately
-            if order_type == OrderType.MARKET:
-                trader.on_bar(ticker, o=price, h=price, low=price, c=price, volume=1_000_000)
-                try:
-                    trader.save_state()
-                except Exception:
-                    pass
+                # For MARKET orders, fill immediately
+                if order_type == OrderType.MARKET:
+                    trader.on_bar(ticker, o=price, h=price, low=price, c=price, volume=1_000_000)
 
-            return {
-                "order_id": order.order_id,
-                "status": order.status.value.lower() if hasattr(order.status, 'value') else str(order.status).lower(),
-                "price": price,
-                "filled_quantity": order.filled_quantity,
-                "filled_price": order.filled_price,
-                "summary": trader.get_summary(),
-            }
+                return {
+                    "order_id": order.order_id,
+                    "status": order.status.value.lower() if hasattr(order.status, 'value') else str(order.status).lower(),
+                    "price": price,
+                    "filled_quantity": order.filled_quantity,
+                    "filled_price": order.filled_price,
+                    "summary": trader.get_summary(),
+                }
     except Exception as e:
         return {"error": str(e)}
 
@@ -155,10 +186,9 @@ def reset_paper_trading(data: dict = Body(default={})):
         if not math.isfinite(capital) or capital <= 0 or capital > 100_000_000:
             return {"error": "Capital out of allowed range (1 to 100,000,000)"}
         with _operation_lock:
-            trader.initial_capital = capital
-            trader.reset()
-            state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "paper_state.json")
-            trader.save_state(state_path)
+            with _paper_state_session(trader):
+                trader.initial_capital = capital
+                trader.reset()
         return {
             "status": "success",
             "message": f"Paper trader reset with capital {capital}",
@@ -185,18 +215,17 @@ def close_position(data: dict = Body(...)):
             return {"error": f"Cannot get price for {ticker}"}
 
         with _operation_lock:
-            record = trader.close_position(ticker, price=price)
-            if record is None:
-                return {"error": f"Failed to close position for {ticker}"}
-            state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "paper_state.json")
-            trader.save_state(state_path)
-            return {
-                "status": "closed",
-                "ticker": ticker,
-                "price": price,
-                "pnl": round(record.pnl, 2),
-                "summary": trader.get_summary(),
-            }
+            with _paper_state_session(trader):
+                record = trader.close_position(ticker, price=price)
+                if record is None:
+                    return {"error": f"Failed to close position for {ticker}"}
+                return {
+                    "status": "closed",
+                    "ticker": ticker,
+                    "price": price,
+                    "pnl": round(record.pnl, 2),
+                    "summary": trader.get_summary(),
+                }
     except Exception as e:
         return {"error": str(e)}
 
@@ -205,6 +234,7 @@ def close_position(data: dict = Body(...)):
 def positions():
     try:
         trader = get_trader()
+        _refresh_trader(trader)
         pos = []
         for ticker, p in trader.positions.items():
             if p.quantity != 0:
@@ -226,6 +256,7 @@ def positions():
 def trade_log():
     try:
         trader = get_trader()
+        _refresh_trader(trader)
         trades = []
         for t in trader.trade_log[-50:]:
             trades.append({

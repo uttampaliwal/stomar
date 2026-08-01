@@ -36,12 +36,18 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
     from src.trading.risk_controls import RiskController
     from src.trading.paper_trader import PaperTrader
     from src.trading.engine import OrderSide, OrderType
+    from filelock import FileLock
 
     broker = get_broker()  # dry-run unless live gate fully passed (not used here)
     risk = RiskController()
     manager = ExecutionManager(broker, risk)
 
     trader = PaperTrader(initial_capital=capital)
+    # Same cross-process lock as the API: serialize with gunicorn workers that
+    # read-modify-write paper_state.json, or the script's snapshot would
+    # clobber (or be clobbered by) concurrent API mutations.
+    state_lock = FileLock(f"{state_path}.lock", timeout=30)
+    state_lock.acquire()
     trader.load_state(state_path)
 
     print("\n=== Paper Trading ===")
@@ -125,6 +131,7 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
             print(f"  {t}: {p['quantity']} @ Rs.{p['avg_cost']:.2f} (P&L: Rs.{p['unrealized_pnl']:,.0f})")
 
     trader.save_state(state_path)
+    state_lock.release()
     return summary
 
 

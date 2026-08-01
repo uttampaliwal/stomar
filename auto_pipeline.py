@@ -444,12 +444,14 @@ class AutoPipeline:
 
             # ── P0.4: reset daily P&L on the paper trader ─────────────────
             paper_trader = None
+            from src.core.constants import PAPER_STATE_PATH
+            from filelock import FileLock
+            state_lock = FileLock(os.path.join(os.path.dirname(PAPER_STATE_PATH), "paper_state.json.lock"), timeout=30)
             try:
                 from src.trading.paper_trader import PaperTrader
-                from src.core.constants import PAPER_STATE_PATH
+                state_lock.acquire()
                 paper_trader = PaperTrader(initial_capital=200_000)
-                if os.path.exists(PAPER_STATE_PATH):
-                    paper_trader.load_state()
+                paper_trader.load_state()
                 paper_trader.risk_controller.reset_daily()
                 self._log("Daily P&L counter reset on paper trader")
             except Exception as e:
@@ -471,6 +473,7 @@ class AutoPipeline:
             if paper_trader is not None:
                 try:
                     paper_trader.save_state()
+                    state_lock.release()
                 except Exception as e:
                     self._log(f"Paper trader save warning: {e}")
 
