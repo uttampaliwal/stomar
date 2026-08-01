@@ -42,6 +42,12 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+# shap's TreeExplainer triggers a PendingDeprecationWarning inside the
+# third-party plotting module (shap/plots/colors/_colors.py) — upstream,
+# not our code; keep the suite warning-free
+filterwarnings = [
+    "ignore::PendingDeprecationWarning:shap.plots.colors",
+]
 
 [tool.ruff]
 line-length = 120

@@ -425,7 +425,6 @@ class AutoPipeline:
         """
         self._log(f"Running daily orchestrator for {today}")
         try:
-            import joblib
             from src.signals.orchestrator import DailyOrchestrator
             from src.core.trading_mode import get_trading_mode, mode_banner
 

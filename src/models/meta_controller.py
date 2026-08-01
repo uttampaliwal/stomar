@@ -25,7 +25,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import TimeSeriesSplit
 
-from src.core.constants import MODELS_DIR
 from src.models.artifacts import (
     ArtifactBundle, ArtifactVerificationError, is_meta_controller_state,
 )

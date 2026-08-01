@@ -320,7 +320,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     # --- LightGBM ---
     logger.info("training_lightgbm ticker=%s", ticker)
     lgb_model = build_lgb_model()
-    lgb_model.fit(X_tr, y_tr, eval_set=[(X_te, y_te)])
+    lgb_model.fit(X_tr, y_tr, eval_X=X_te, eval_y=y_te)
     y_pr_lgb = lgb_model.predict(X_te)
     lgb_acc = accuracy_score(y_te, y_pr_lgb)
     logger.info("lgb_trained ticker=%s accuracy=%.4f", ticker, lgb_acc)

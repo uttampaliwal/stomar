@@ -277,7 +277,7 @@ class TestRegimeAdjustedEnsemble:
         xgb = build_xgb_model()
         xgb.fit(X[:n_tr], y[:n_tr], eval_set=[(X[n_tr:], y[n_tr:])], verbose=False)
         lgb = build_lgb_model()
-        lgb.fit(X[:n_tr], y[:n_tr], eval_set=[(X[n_tr:], y[n_tr:])])
+        lgb.fit(X[:n_tr], y[:n_tr], eval_X=X[n_tr:], eval_y=y[n_tr:])
         cat = build_catboost_model()
         cat.fit(X[:n_tr], y[:n_tr], eval_set=(X[n_tr:], y[n_tr:]))
 

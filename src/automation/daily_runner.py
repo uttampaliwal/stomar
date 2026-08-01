@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from src.data.data_fetcher import NSE_STOCKS

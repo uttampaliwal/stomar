@@ -156,10 +156,12 @@ def explain_prediction(ticker: str):
         df = fetch_stock_data(ticker)
         if df is None or df.empty:
             return {"error": f"No data for {ticker}"}
+        m = _load(ticker)
         index_df = load_index_history()
         df_feat = compute_features(df.copy(), ticker=ticker, index_df=index_df)
         df_feat = df_feat.replace([float("inf"), float("-inf")], None)
-        explanation = _explain(ticker, df_feat, FEATURE_COLS)
+        feature_cols = model_feature_cols(m)  # model's own trained schema
+        explanation = _explain(ticker, df_feat, feature_cols)
         return explanation
     except Exception as e:
         return {"error": str(e)}

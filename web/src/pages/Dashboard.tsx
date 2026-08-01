@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, PageHeader } from '@/components/UI'
+import { Card, Stat, SectionHeader, Spinner } from '@/components/UI'
 import { useApi, usePostApi } from '@/hooks/useApi'
 import { Brain, TrendingUp, Shield, Zap, Activity, Target } from 'lucide-react'
 import { SimpleRecommendationCard } from '@/components/SimpleRecommendationCard'
@@ -9,7 +9,6 @@ import {
   ConsensusCard,
   MLConsensusCard,
   PortfolioHealthCard,
-  Sparkline,
 } from '@/components/TerminalComponents'
 import type {
   PipelineStatusResponse,

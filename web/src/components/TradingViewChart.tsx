@@ -122,6 +122,9 @@ export default function TradingViewChart({
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  // keep the latest callback without recreating the chart on every render
+  const onCrosshairMoveRef = useRef(onCrosshairMove)
+  onCrosshairMoveRef.current = onCrosshairMove
 
   const handleResize = useCallback(() => {
     if (chartRef.current && containerRef.current) {
@@ -145,7 +148,8 @@ export default function TradingViewChart({
     chartRef.current = chart
 
     // Crosshair callback
-    if (onCrosshairMove) {
+    const onCrosshairMoveCurrent = onCrosshairMoveRef.current
+    if (onCrosshairMoveCurrent) {
       chart.subscribeCrosshairMove((param) => {
         if (param.time && param.point) {
           const pane = chart.panes()[0]
@@ -154,7 +158,7 @@ export default function TradingViewChart({
             if (series.length > 0) {
               const seriesData = param.seriesData.get(series[0])
               if (seriesData && 'close' in (seriesData as object)) {
-                onCrosshairMove(
+                onCrosshairMoveCurrent(
                   String(param.time),
                   (seriesData as CandlestickData<Time>).close as number,
                 )

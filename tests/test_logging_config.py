@@ -23,7 +23,14 @@ class TestSetupLogging:
         logger1 = setup_logging()
         logger2 = setup_logging()
         assert logger1 is logger2
-        assert len(logger1.handlers) <= 2
+        # pytest's caplog may attach LogCaptureHandler(s) to this logger
+        # during a full-suite run; setup_logging must never add a second
+        # StreamHandler of its own
+        own_handlers = [h for h in logger1.handlers
+                        if type(h).__name__ != "LogCaptureHandler"]
+        stream_handlers = [h for h in own_handlers
+                           if isinstance(h, logging.StreamHandler)]
+        assert len(stream_handlers) == 1
 
     def test_json_output(self):
         logger = setup_logging(json_output=True)
