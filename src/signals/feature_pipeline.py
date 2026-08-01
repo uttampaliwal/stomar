@@ -23,6 +23,8 @@ Usage:
 from __future__ import annotations
 
 import logging
+import threading
+import time
 
 import numpy as np
 import pandas as pd
@@ -349,6 +351,47 @@ def compute_features(
 
     out = out.replace([np.inf, -np.inf], np.nan)
     return out
+
+
+# ─── cached prediction features ──────────────────────────────────────────────
+
+_FEATURES_CACHE_TTL = 60.0  # seconds
+_FEATURES_CACHE_MAX = 32  # tickers before LRU eviction
+_features_cache: dict[str, tuple[float, pd.DataFrame]] = {}
+_features_cache_lock = threading.Lock()
+
+
+def get_cached_features(
+    df: pd.DataFrame,
+    ticker: str | None = None,
+    index_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """compute_features() with a short-TTL cache keyed by (ticker, last date).
+
+    Recomputed only when a new bar arrives (or 60s elapsed). Returns a copy
+    so callers may mutate the frame without poisoning the cache.
+    """
+    if df is None or df.empty:
+        return compute_features(df, ticker=ticker, index_df=index_df)
+    key = f"{ticker}:{df.index[-1]}"
+    now = time.time()
+    with _features_cache_lock:
+        cached = _features_cache.get(key)
+        if cached is not None and now - cached[0] < _FEATURES_CACHE_TTL:
+            return cached[1].copy()
+    df_feat = compute_features(df.copy(), ticker=ticker, index_df=index_df)
+    with _features_cache_lock:
+        if len(_features_cache) >= _FEATURES_CACHE_MAX:
+            oldest = min(_features_cache, key=lambda k: _features_cache[k][0])
+            del _features_cache[oldest]
+        _features_cache[key] = (time.time(), df_feat)
+    return df_feat.copy()
+
+
+def clear_features_cache():
+    """Drop all cached feature frames (tests / manual refresh)."""
+    with _features_cache_lock:
+        _features_cache.clear()
 
 
 def _atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int) -> pd.Series:

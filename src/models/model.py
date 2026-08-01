@@ -1,4 +1,5 @@
 import logging
+import sys
 import torch
 import torch.nn as nn
 import joblib
@@ -7,6 +8,7 @@ import time
 import json
 
 from src.core.constants import MODELS_DIR
+from src.core.settings import settings
 from src.models.artifacts import ArtifactBundle, ArtifactVerificationError, has_predict, has_transform
 
 os.makedirs(MODELS_DIR, exist_ok=True)
@@ -14,9 +16,10 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 logger = logging.getLogger(__name__)
 
-_model_cache: dict[str, tuple[float, tuple]] = {}
+_model_cache: dict[str, tuple[float, int, tuple]] = {}
 _MODEL_CACHE_TTL = 3600  # 1 hour
 _MODEL_CACHE_MAX = 10  # Max cached model sets (each ~200-500 MB)
+_MODEL_CACHE_MEMORY_BUDGET_MB = 2048  # soft RAM budget; settings can override
 
 # Feature schema version. Bump whenever FEATURE_COLS changes meaning.
 FEATURE_SCHEMA_VERSION = "4"
@@ -222,6 +225,70 @@ def load_cat_model(ticker: str, root: str = MODELS_DIR):
     return cat
 
 
+def _estimate_model_bytes(model) -> int:
+    """Cheap estimate of a model's resident memory in bytes.
+
+    torch modules: sum of parameter element bytes.
+    xgboost booster: length of the raw dump (compressed, good proxy).
+    lightgbm booster: length of the model_to_string dump.
+    Fallback: sys.getsizeof (underestimates nested objects, but the heavy
+    members above dominate real usage).
+    """
+    params = getattr(model, "parameters", None)
+    if callable(params):
+        try:
+            total = sum(p.numel() * p.element_size() for p in params())
+            if total > 0:
+                return total
+        except Exception:
+            pass
+    get_booster = getattr(model, "get_booster", None)
+    if callable(get_booster):
+        try:
+            raw = get_booster().save_raw()
+            if raw:
+                return len(raw)
+        except Exception:
+            pass
+    booster = getattr(model, "booster_", None)  # lightgbm sklearn wrapper
+    if booster is not None:
+        try:
+            dump = booster.model_to_string()
+            if dump:
+                return len(dump)
+        except Exception:
+            pass
+    return sys.getsizeof(model)
+
+
+def _model_cache_budget_bytes() -> int:
+    """Memory budget for the model cache (settings override the default)."""
+    return max(1, settings.model_cache_memory_budget_mb) * 1024 * 1024
+
+
+def _evict_model_cache(now: float, ts_threshold: float) -> None:
+    """Evict stale entries, then oldest-first until count and memory budgets fit.
+
+    Entry format: key -> (timestamp, estimated_bytes, models).
+    """
+    for key in [k for k, (ts, _size, _m) in _model_cache.items() if ts < ts_threshold]:
+        del _model_cache[key]
+    while _model_cache and len(_model_cache) > _MODEL_CACHE_MAX:
+        _evict_oldest_model_cache()
+    budget = _model_cache_budget_bytes()
+    while _model_cache:
+        total = sum(size for _ts, size, _m in _model_cache.values())
+        if total <= budget:
+            break
+        _evict_oldest_model_cache()
+
+
+def _evict_oldest_model_cache() -> None:
+    oldest = min(_model_cache, key=lambda k: _model_cache[k][0])
+    logger.debug("Evicted model cache entry: %s", oldest)
+    del _model_cache[oldest]
+
+
 def load_models(ticker: str, root: str = MODELS_DIR):
     """Load a ticker's model bundle — every artifact hash-verified first.
 
@@ -231,7 +298,7 @@ def load_models(ticker: str, root: str = MODELS_DIR):
     """
     cache_key = f"{ticker}:{root}"
     if cache_key in _model_cache:
-        ts, models = _model_cache[cache_key]
+        ts, _size, models = _model_cache[cache_key]
         if time.time() - ts < _MODEL_CACHE_TTL:
             return models
         del _model_cache[cache_key]
@@ -263,12 +330,10 @@ def load_models(ticker: str, root: str = MODELS_DIR):
         lgb_model = bundle.load_joblib(lgb_name, type_check=has_predict)
 
     result = lstm, gru, transformer, xgb, scaler, features, lgb_model
-    # Evict oldest entries if cache is full
-    if len(_model_cache) >= _MODEL_CACHE_MAX:
-        oldest_key = min(_model_cache, key=lambda k: _model_cache[k][0])
-        del _model_cache[oldest_key]
-        logger.debug("Evicted model cache: %s", oldest_key)
-    _model_cache[cache_key] = (time.time(), result)
+    estimated_bytes = sum(_estimate_model_bytes(m) for m in result if m is not None)
+    # Evict until count and memory budgets are respected (oldest first)
+    _evict_model_cache(time.time(), time.time() - _MODEL_CACHE_TTL)
+    _model_cache[cache_key] = (time.time(), estimated_bytes, result)
     return result
 
 

@@ -18,8 +18,10 @@ from src.signals.feature_pipeline import (
     add_vol_adjusted_momentum,
     add_volatility_zscore,
     all_factor_names,
+    clear_features_cache,
     compute_features,
     factor_count,
+    get_cached_features,
     load_index_history,
 )
 
@@ -290,6 +292,61 @@ class TestComputeFeatures:
     def test_preserves_index(self, ohlcv):
         df = compute_features(ohlcv.copy(), include_external=False)
         pd.testing.assert_index_equal(df.index, ohlcv.index)
+
+
+class TestCachedFeatures:
+    def test_second_call_hits_cache(self, ohlcv, monkeypatch):
+        clear_features_cache()
+        calls = {"n": 0}
+        original = compute_features
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr("src.signals.feature_pipeline.compute_features", counting)
+        a = get_cached_features(ohlcv.copy(), ticker=None)
+        b = get_cached_features(ohlcv.copy(), ticker=None)
+        assert calls["n"] == 1, "compute_features must not run twice within TTL"
+        assert a.equals(b)
+
+    def test_new_last_date_recomputes(self, ohlcv, monkeypatch):
+        clear_features_cache()
+        calls = {"n": 0}
+        original = compute_features
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr("src.signals.feature_pipeline.compute_features", counting)
+        get_cached_features(ohlcv.copy(), ticker=None)
+        new = ohlcv.copy()
+        new.index = new.index + pd.Timedelta(days=1)  # new last bar -> new key
+        get_cached_features(new, ticker=None)
+        assert calls["n"] == 2
+
+    def test_returns_copy_not_shared(self, ohlcv):
+        clear_features_cache()
+        a = get_cached_features(ohlcv.copy(), ticker=None)
+        a.loc[a.index[-1], "close"] = -999.0
+        b = get_cached_features(ohlcv.copy(), ticker=None)
+        assert b.loc[b.index[-1], "close"] != -999.0
+
+    def test_clear_resets(self, ohlcv, monkeypatch):
+        clear_features_cache()
+        calls = {"n": 0}
+        original = compute_features
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr("src.signals.feature_pipeline.compute_features", counting)
+        get_cached_features(ohlcv.copy(), ticker=None)
+        clear_features_cache()
+        get_cached_features(ohlcv.copy(), ticker=None)
+        assert calls["n"] == 2
 
 
 class TestLoadIndexHistory:

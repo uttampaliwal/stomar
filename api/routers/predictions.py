@@ -105,13 +105,13 @@ def get_ensemble_prediction(ticker: str):
         if not models_exist(ticker):
             return {"error": "Models not trained"}
 
-        from src.signals.feature_pipeline import compute_features, load_index_history
+        from src.signals.feature_pipeline import get_cached_features, load_index_history
         index_df = None
         try:
             index_df = load_index_history()
         except Exception:
             pass
-        df_feat = compute_features(df.copy(), ticker=ticker, index_df=index_df)
+        df_feat = get_cached_features(df, ticker=ticker, index_df=index_df)
         df_feat = df_feat.dropna(axis=1, how="all").replace([float("inf"), float("-inf")], None)
 
         m = _load(ticker)
@@ -151,14 +151,14 @@ def explain_prediction(ticker: str):
     """
     try:
         from src.signals.interpretability import explain_prediction as _explain
-        from src.signals.feature_pipeline import compute_features, load_index_history
+        from src.signals.feature_pipeline import get_cached_features, load_index_history
 
         df = fetch_stock_data(ticker)
         if df is None or df.empty:
             return {"error": f"No data for {ticker}"}
         m = _load(ticker)
         index_df = load_index_history()
-        df_feat = compute_features(df.copy(), ticker=ticker, index_df=index_df)
+        df_feat = get_cached_features(df, ticker=ticker, index_df=index_df)
         df_feat = df_feat.replace([float("inf"), float("-inf")], None)
         feature_cols = model_feature_cols(m)  # model's own trained schema
         explanation = _explain(ticker, df_feat, feature_cols)

@@ -228,7 +228,7 @@ async def audit_middleware(request: Request, call_next):
         return response
     return await call_next(request)
 
-_response_cache: OrderedDict[str, tuple[float, bytes]] = {}
+_response_cache: OrderedDict[str, tuple[float, bytes]] = OrderedDict()
 _CACHE_TTL = settings.cache_ttl
 
 # Endpoints that are expensive and safe to cache briefly
@@ -248,7 +248,12 @@ async def cache_middleware(request: Request, call_next):
         # so a cached 200 (or 401) would bypass or poison the API key check.
         return await call_next(request)
 
-    if request.method == "GET" and any(path.startswith(p) for p in _CACHEABLE_PREFIXES):
+    cacheable = (
+        request.method == "GET"
+        and any(path.startswith(p) for p in _CACHEABLE_PREFIXES)
+    )
+
+    if cacheable:
         cache_key = path
         if request.url.query:
             cache_key += "?" + request.url.query
@@ -261,13 +266,22 @@ async def cache_middleware(request: Request, call_next):
 
     response = await call_next(request)
 
-    if request.method == "GET" and any(path.startswith(p) for p in _CACHEABLE_PREFIXES):
-        cache_key = path
-        if request.url.query:
-            cache_key += "?" + request.url.query
+    # Only cache successful JSON GETs: a cached 500/404 would poison the TTL
+    # window, and re-labeling a non-JSON body as application/json is wrong.
+    if not (cacheable and response.status_code == 200
+            and response.headers.get("content-type", "").startswith("application/json")):
+        return response
+
+    try:
         body = b""
         async for chunk in response.body_iterator:
             body += chunk if isinstance(chunk, bytes) else chunk.encode()
+    except Exception:
+        # Caching must never break the request path; if the stream cannot be
+        # captured (e.g. already consumed), pass the response through.
+        return response
+
+    if body:
         _response_cache[cache_key] = (time.time(), body)
         # Evict stale entries, then LRU if still over limit
         if len(_response_cache) > settings.cache_max_entries:
@@ -278,10 +292,12 @@ async def cache_middleware(request: Request, call_next):
             # If still over limit, evict oldest (LRU) entries
             while len(_response_cache) > settings.cache_max_entries:
                 _response_cache.popitem(last=False)
-        metrics.inc("cache_misses_total")
-        return Response(content=body, media_type="application/json", headers={"X-Cache": "MISS"})
-
-    return response
+    metrics.inc("cache_misses_total")
+    return Response(
+        content=body,
+        media_type=response.media_type or "application/json",
+        headers={"X-Cache": "MISS"},
+    )
 
 
 app.include_router(market.router, prefix="/api/market", tags=["Market"])

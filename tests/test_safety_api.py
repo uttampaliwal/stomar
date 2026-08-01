@@ -190,3 +190,106 @@ def test_audit_log_written_on_mutation(tmp_path, monkeypatch):
     content = files[0].read_text()
     assert "paper-trading" in content
     assert "req-123" in content
+
+
+# ── response cache middleware ───────────────────────────────────────────────
+
+class _BodyIter:
+    """Async iterator over response chunks (mimics body_iterator)."""
+
+    def __init__(self, chunks):
+        self._chunks = list(chunks)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self._chunks:
+            raise StopAsyncIteration
+        return self._chunks.pop(0)
+
+
+class _FakeCacheRequest:
+    def __init__(self, path, query=""):
+        self.method = "GET"
+        self.url = type("U", (), {"path": path, "query": query})()
+
+
+class _FakeCacheResponse:
+    def __init__(self, status=200, body=b'{"x": 1}', content_type="application/json"):
+        self.status_code = status
+        self.media_type = "application/json" if "json" in content_type else "text/plain"
+        self.headers = {"content-type": content_type}
+        self.body_iterator = _BodyIter([body])
+
+
+def _run_cache(monkeypatch, path, query="", status=200, body=b'{"x": 1}',
+               content_type="application/json", max_entries=None):
+    import api.main as api_main
+    from api.main import cache_middleware
+
+    api_main._response_cache.clear()
+    monkeypatch.setattr(api_main, "_CACHE_TTL", 30.0)
+    if max_entries is not None:
+        monkeypatch.setattr(api_main.settings, "cache_max_entries", max_entries)
+
+    calls = {"n": 0}
+
+    async def _call_next(request):
+        calls["n"] += 1
+        return _FakeCacheResponse(status=status, body=body, content_type=content_type)
+
+    import asyncio
+    resp = asyncio.run(cache_middleware(
+        _FakeCacheRequest(path, query), _call_next))
+    return resp, calls
+
+
+def test_cache_second_request_is_hit(monkeypatch):
+    resp1, calls1 = _run_cache(monkeypatch, "/api/scanner/TCS")
+    assert resp1.headers.get("X-Cache") == "MISS"
+    assert calls1["n"] == 1
+    resp2, calls2 = _run_cache(monkeypatch, "/api/scanner/TCS")
+    assert resp2.headers.get("X-Cache") == "HIT"
+    assert calls2["n"] == 0, "cached request must not hit the endpoint"
+    assert resp2.body == b'{"x": 1}'
+
+
+def test_cache_distinguishes_query_strings(monkeypatch):
+    _run_cache(monkeypatch, "/api/scanner", query="a=1")
+    resp, calls = _run_cache(monkeypatch, "/api/scanner", query="a=2")
+    assert calls["n"] == 1, "different query strings are distinct keys"
+
+
+def test_cache_skips_error_responses(monkeypatch):
+    resp1, calls1 = _run_cache(monkeypatch, "/api/scanner/TCS", status=500)
+    assert calls1["n"] == 1
+    resp2, calls2 = _run_cache(monkeypatch, "/api/scanner/TCS", status=500)
+    assert calls2["n"] == 1, "error responses must not be cached"
+    assert resp2.headers.get("X-Cache") is None
+
+
+def test_cache_skips_non_json(monkeypatch):
+    _run_cache(monkeypatch, "/api/scanner/TCS", content_type="text/html")
+    resp, calls = _run_cache(monkeypatch, "/api/scanner/TCS", content_type="text/html")
+    assert calls["n"] == 1, "non-JSON responses must not be cached"
+
+
+def test_cache_skips_protected_paths(monkeypatch):
+    resp, calls = _run_cache(monkeypatch, "/api/paper-trading/state")
+    assert calls["n"] == 1
+    resp2, calls2 = _run_cache(monkeypatch, "/api/paper-trading/state")
+    assert calls2["n"] == 1, "protected responses must never be cached"
+
+
+def test_cache_evicts_lru_over_limit(monkeypatch):
+    _run_cache(monkeypatch, "/api/scanner/A", max_entries=2)
+    _run_cache(monkeypatch, "/api/scanner/B", max_entries=2)
+    _run_cache(monkeypatch, "/api/scanner/C", max_entries=2)
+    # A was evicted first -> must be recomputed, B/C are still cached
+    resp, calls = _run_cache(monkeypatch, "/api/scanner/A", max_entries=2)
+    assert calls["n"] == 1
+    resp_b, calls_b = _run_cache(monkeypatch, "/api/scanner/B", max_entries=2)
+    assert calls_b["n"] == 0
+    resp_c, calls_c = _run_cache(monkeypatch, "/api/scanner/C", max_entries=2)
+    assert calls_c["n"] == 0

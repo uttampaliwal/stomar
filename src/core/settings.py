@@ -59,6 +59,9 @@ if _HAS_PYDANTIC_SETTINGS:
         # ── Data Cache ─────────────────────────────────────────────────────
         fetch_cache_ttl: int = Field(default=600, description="In-memory data cache TTL (seconds)")
         model_cache_ttl: int = Field(default=3600, description="Model cache TTL (seconds)")
+        model_cache_memory_budget_mb: int = Field(
+            default=2048, description="Model cache memory budget (MB); oldest entries are evicted first"
+        )
 
         # ── Meta-Controller ────────────────────────────────────────────────
         max_position_pct: float = Field(default=0.10, description="Max position size as fraction of equity")
@@ -160,6 +163,9 @@ else:
             self.cache_max_entries = int(os.environ.get("STOMAR_CACHE_MAX_ENTRIES", "50"))
             self.fetch_cache_ttl = int(os.environ.get("STOMAR_FETCH_CACHE_TTL", "600"))
             self.model_cache_ttl = int(os.environ.get("STOMAR_MODEL_CACHE_TTL", "3600"))
+            self.model_cache_memory_budget_mb = int(
+                os.environ.get("STOMAR_MODEL_CACHE_MEMORY_BUDGET_MB", "2048")
+            )
             self.max_position_pct = float(os.environ.get("STOMAR_MAX_POSITION_PCT", "0.10"))
             self.buy_threshold = float(os.environ.get("STOMAR_BUY_THRESHOLD", "0.6"))
             self.sell_threshold = float(os.environ.get("STOMAR_SELL_THRESHOLD", "0.4"))
