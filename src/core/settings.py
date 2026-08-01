@@ -45,6 +45,15 @@ if _HAS_PYDANTIC_SETTINGS:
 
         # ── Risk Parameters ────────────────────────────────────────────────
         risk_free_rate: float = Field(default=0.065, description="Risk-free rate (Indian G-Sec yield)")
+        max_daily_loss_pct: float = Field(default=0.02, description="Max daily loss as fraction of equity")
+        max_weekly_loss_pct: float = Field(default=0.05, description="Max weekly loss as fraction of equity")
+        max_drawdown_pct: float = Field(default=0.15, description="Max drawdown from peak equity")
+        risk_override_token: str = Field(default="", description="Token that unlocks risk-guard overrides")
+        guard_daily_loss_pct: float = Field(default=0.02, description="Daily loss guard threshold")
+        guard_max_drawdown_pct: float = Field(default=0.08, description="Drawdown guard threshold")
+        guard_max_stock_allocation_pct: float = Field(default=0.15, description="Max single-stock allocation guard")
+        guard_vix_threshold: float = Field(default=22, description="VIX threshold for volatility guard")
+        guard_atr_expansion_threshold: float = Field(default=2.0, description="ATR expansion ratio threshold")
 
         # ── Model Training ─────────────────────────────────────────────────
         default_seq_length: int = Field(default=60, description="LSTM/GRU/Transformer sequence length")
