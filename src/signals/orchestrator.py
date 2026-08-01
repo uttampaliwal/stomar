@@ -51,6 +51,10 @@ class DailyOrchestrator:
             logger.warning("No tickers configured for daily run")
             return {"date": date, "decisions": [], "trades": [], "errors": []}
 
+        from src.core.trading_mode import get_trading_mode
+        mode = get_trading_mode()
+        logger.info("orchestrator mode: %s (dry_run=%s)", mode.value, dry_run)
+
         # Pre-fetch market-wide signals (same for all tickers)
         self._flow_signals = self._run_flow()
         self._pcr_signals = self._run_pcr()
@@ -279,9 +283,8 @@ class DailyOrchestrator:
         """Run ensemble prediction, using a per-ticker meta-learner when available."""
         try:
             from src.data.features import add_technical_indicators
-            from src.models.model import load_models, models_exist
+            from src.models.model import load_models, models_exist, model_feature_cols
             from src.models.ensemble import predict_ensemble, load_meta_model
-            from src.models.trainer import FEATURE_COLS
             from src.core.constants import MODELS_DIR
             import os
 
@@ -293,6 +296,7 @@ class DailyOrchestrator:
                 "lstm": tup[0], "gru": tup[1], "transformer": tup[2],
                 "xgb": tup[3], "scaler": tup[4], "features": tup[5], "lgb": tup[6],
             }
+            feature_cols = model_feature_cols(models)  # model's own trained schema
 
             # Load per-ticker meta-learner if available (trained in trainer.py)
             meta_model = None
@@ -317,16 +321,16 @@ class DailyOrchestrator:
                 "mtf_signal": "mtf_signal",
             }
             for feat_name, sig_name in signal_map.items():
-                if feat_name in FEATURE_COLS and feat_name not in df_feat.columns:
+                if feat_name in feature_cols and feat_name not in df_feat.columns:
                     val = (signals or {}).get(sig_name, 0) or 0
                     df_feat[feat_name] = val
 
             # Fill any remaining missing model features with 0
-            for col in FEATURE_COLS:
+            for col in feature_cols:
                 if col not in df_feat.columns:
                     df_feat[col] = 0
 
-            existing_feats = [c for c in FEATURE_COLS if c in df_feat.columns]
+            existing_feats = [c for c in feature_cols if c in df_feat.columns]
             df_feat = df_feat.dropna(subset=[c for c in existing_feats if c in df_feat.columns] + ["target"])
 
             if len(df_feat) < 2:
@@ -336,7 +340,7 @@ class DailyOrchestrator:
 
             ensemble_dir, confidence, details = predict_ensemble(
                 models["lstm"], models["gru"], models["transformer"],
-                models["xgb"], models["scaler"], FEATURE_COLS, df_feat,
+                models["xgb"], models["scaler"], feature_cols, df_feat,
                 lgb_model=models["lgb"],
                 meta_model=meta_model,
                 regime=regime,

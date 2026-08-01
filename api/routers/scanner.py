@@ -3,9 +3,8 @@
 from fastapi import APIRouter
 from src.data.data_fetcher import fetch_stock_data, NSE_STOCKS
 from src.data.features import add_technical_indicators
-from src.models.model import load_models, models_exist
+from src.models.model import load_models, models_exist, model_feature_cols
 from src.models.ensemble import predict_ensemble
-from src.models.trainer import FEATURE_COLS
 from api.utils import parallel_fetch
 
 router = APIRouter()
@@ -27,10 +26,11 @@ def _scan_one(ticker):
     if not models_exist(ticker):
         return None
     m = _load(ticker)
+    feature_cols = model_feature_cols(m)  # model's own trained schema
 
     direction, confidence, details = predict_ensemble(
         m["lstm"], m["gru"], m["transformer"],
-        m["xgb"], m["scaler"], FEATURE_COLS, df_feat,
+        m["xgb"], m["scaler"], feature_cols, df_feat,
         lgb_model=m["lgb"],
     )
     direction_label = "BUY" if direction == 1 else "SELL"

@@ -44,7 +44,7 @@ FACTOR_GROUPS = {
         "sma_10", "sma_20", "sma_50", "ema_12", "ema_26", "macd", "macd_signal",
         "adx", "supertrend", "supertrend_dir", "vwap",
         "ichimoku_tenkan", "ichimoku_kijun", "ichimoku_senkou_a",
-        "ichimoku_senkou_b", "ichimoku_chikou",
+        "ichimoku_senkou_b",
     ],
     "momentum": [
         "rsi", "stoch_k", "stoch_d", "williams_r", "cci", "mfi",

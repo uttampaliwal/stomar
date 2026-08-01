@@ -25,6 +25,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import TimeSeriesSplit
 
+from src.core.constants import MODELS_DIR
+from src.models.artifacts import (
+    ArtifactBundle, ArtifactVerificationError, is_meta_controller_state,
+)
+
 logger = logging.getLogger(__name__)
 
 SIGNAL_NAMES = [
@@ -370,8 +375,13 @@ class MetaController:
             return {}
         return dict(sorted(self.weights.items(), key=lambda x: abs(x[1]), reverse=True))
 
-    def save(self, path: str = None):
-        """Save trained model to disk."""
+    def save(self, path: str = None, *, model_version: str = "1",
+             feature_schema_version: str = "1",
+             training_dataset_hash: str = "") -> str:
+        """Save trained model to disk as a hash-verified artifact bundle.
+
+        Returns the path of the written artifact.
+        """
         if path is None:
             from src.core.constants import META_CONTROLLER_PATH
             path = META_CONTROLLER_PATH
@@ -382,10 +392,24 @@ class MetaController:
             "weights": self.weights,
             "is_calibrated": self.is_calibrated,
         }, path)
+        bundle_name = Path(path).stem
+        ArtifactBundle.create(
+            str(Path(path).parent),
+            bundle_name,
+            {Path(path).name: ""},
+            model_version=model_version,
+            feature_schema_version=feature_schema_version,
+            training_dataset_hash=training_dataset_hash,
+        )
         logger.info("Meta-controller saved to %s (calibrated=%s)", path, self.is_calibrated)
+        return path
 
     def load(self, path: str = None) -> bool:
-        """Load trained model from disk. Returns True if loaded."""
+        """Load trained model from disk. Returns True if loaded.
+
+        The artifact is only deserialized after its SHA-256 digest matches
+        the adjacent manifest. Legacy files without a manifest are refused.
+        """
         if path is None:
             from src.core.constants import META_CONTROLLER_PATH
             path = META_CONTROLLER_PATH
@@ -393,8 +417,9 @@ class MetaController:
         if not os.path.exists(path):
             return False
         try:
-            import joblib
-            state = joblib.load(path)
+            bundle_name = Path(path).stem
+            bundle = ArtifactBundle.load(str(Path(path).parent), bundle_name)
+            state = bundle.load_joblib(Path(path).name, type_check=is_meta_controller_state)
             if not isinstance(state, dict) or "model" not in state or "weights" not in state:
                 logger.warning("Invalid meta-controller state in %s — missing required keys", path)
                 return False
@@ -403,6 +428,9 @@ class MetaController:
             self.is_calibrated = state.get("is_calibrated", False)
             logger.info("Meta-controller loaded from %s (calibrated=%s)", path, self.is_calibrated)
             return True
+        except ArtifactVerificationError as e:
+            logger.warning("Refusing to load meta-controller %s: %s", path, e)
+            return False
         except Exception as e:
             logger.warning("Failed to load meta-controller: %s", e)
             return False

@@ -116,6 +116,23 @@ if _HAS_PYDANTIC_SETTINGS:
             description="Symbols polled by the live engine",
         )
 
+        # ── Live Trading Gate (hard opt-in, default OFF) ───────────────────
+        # Paper trading is the default and the only mode that can activate
+        # accidentally. Live trading requires ALL of these to be set
+        # explicitly — see src/core/trading_mode.py.
+        live_trading: bool = Field(default=False, description="Master switch: STOMAR_LIVE_TRADING=true required for live mode")
+        live_account_approved: bool = Field(default=False, description="Broker sandbox or approved live account confirmed (STOMAR_LIVE_ACCOUNT_APPROVED=true)")
+        live_confirmation: str = Field(default="", description="Must equal the exact phrase in trading_mode.LIVE_CONFIRMATION_PHRASE")
+        live_broker: str = Field(default="kite", description="Live broker adapter name (only 'kite' is implemented)")
+        live_account_id: str = Field(default="", description="Broker account id used in order audit logs")
+
+        # ── Execution / staleness / liquidity risk (hard limits) ───────────
+        max_stale_quote_seconds: float = Field(default=15.0, description="Quote older than this blocks trading decisions")
+        max_daily_orders: int = Field(default=10, description="Max broker orders per day across all tickers")
+        min_daily_volume_rs: float = Field(default=1_000_000, description="Min average daily traded value (INR) for tradeable symbols")
+        max_expected_slippage_bps: float = Field(default=30.0, description="Max acceptable slippage estimate in basis points")
+        max_gap_pct: float = Field(default=5.0, description="Max gap vs previous close (percent) before trading is blocked")
+
 
     settings = Settings()
 else:
@@ -188,5 +205,16 @@ else:
                 ).split(",")
                 if s.strip()
             ]
+            # Live trading gate (default OFF)
+            self.live_trading = os.environ.get("STOMAR_LIVE_TRADING", "false").strip().lower() in ("1", "true", "yes", "on")
+            self.live_account_approved = os.environ.get("STOMAR_LIVE_ACCOUNT_APPROVED", "false").strip().lower() in ("1", "true", "yes", "on")
+            self.live_confirmation = os.environ.get("STOMAR_LIVE_CONFIRMATION", "")
+            self.live_broker = os.environ.get("STOMAR_LIVE_BROKER", "kite")
+            self.live_account_id = os.environ.get("STOMAR_LIVE_ACCOUNT_ID", "")
+            self.max_stale_quote_seconds = float(os.environ.get("STOMAR_MAX_STALE_QUOTE_SECONDS", "15"))
+            self.max_daily_orders = int(os.environ.get("STOMAR_MAX_DAILY_ORDERS", "10"))
+            self.min_daily_volume_rs = float(os.environ.get("STOMAR_MIN_DAILY_VOLUME_RS", "1000000"))
+            self.max_expected_slippage_bps = float(os.environ.get("STOMAR_MAX_EXPECTED_SLIPPAGE_BPS", "30"))
+            self.max_gap_pct = float(os.environ.get("STOMAR_MAX_GAP_PCT", "5"))
 
     settings = _FallbackSettings()

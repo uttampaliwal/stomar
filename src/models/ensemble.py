@@ -22,7 +22,6 @@ Usage:
 """
 
 import logging
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -33,6 +32,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
 
 from src.models.model import DEVICE
+from src.models.artifacts import has_fit_predict
 
 logger = logging.getLogger(__name__)
 
@@ -152,24 +152,39 @@ def evaluate_metalearner(meta_X_test: np.ndarray, y_test: np.ndarray,
     return result
 
 
-def save_meta_model(meta_model: Pipeline, path: str):
-    """Save meta-learner to disk."""
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
+def save_meta_model(meta_model: Pipeline, path: str, *,
+                    feature_schema_version: str = "1",
+                    training_dataset_hash: str = ""):
+    """Save meta-learner to disk as a hash-verified artifact bundle."""
+    from pathlib import Path as _Path
+    _Path(path).parent.mkdir(parents=True, exist_ok=True)
     import joblib
+    from src.models.artifacts import ArtifactBundle
     joblib.dump(meta_model, path)
+    ArtifactBundle.create(
+        str(_Path(path).parent),
+        _Path(path).stem,
+        {_Path(path).name: ""},
+        model_version="1",
+        feature_schema_version=feature_schema_version,
+        training_dataset_hash=training_dataset_hash,
+    )
     logger.info("Meta-learner saved to %s", path)
 
 
 def load_meta_model(path: str) -> Pipeline:
-    """Load meta-learner from disk."""
-    import joblib
-    import warnings
+    """Load meta-learner from disk — hash-verified via the bundle manifest.
+
+    Refuses to deserialize any file whose digest does not match the
+    adjacent manifest.
+    """
+    from pathlib import Path as _Path
+    from src.models.artifacts import ArtifactBundle
     import os
     if not os.path.exists(path):
         raise FileNotFoundError(f"Meta-learner file not found: {path}")
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        meta_model = joblib.load(path)
+    bundle = ArtifactBundle.load(str(_Path(path).parent), _Path(path).stem)
+    meta_model = bundle.load_joblib(_Path(path).name, type_check=has_fit_predict)
     if not hasattr(meta_model, "predict") or not hasattr(meta_model, "fit"):
         raise TypeError(f"Loaded object from {path} is not a valid sklearn estimator")
     logger.info("Meta-learner loaded from %s", path)
@@ -177,6 +192,35 @@ def load_meta_model(path: str) -> Pipeline:
 
 
 # ── Ensemble Prediction ──
+
+# Features that look into the future (leakage) — never allowed as model input.
+# Legacy models were trained on some of these; at inference the column is
+# neutralized with past-only values so the model still receives its expected
+# input shape WITHOUT any future information. Retraining must exclude them
+# entirely (see trainer.FEATURE_COLS).
+BANNED_LOOKAHEAD_FEATURES = frozenset({"ichimoku_chikou"})
+
+
+def _neutralize_lookahead_features(df_feat: pd.DataFrame, feature_cols: list[str]) -> list[str]:
+    """Replace banned look-ahead columns with past-only data and log loudly.
+
+    Returns the (possibly shortened) feature list actually safe to use.
+    """
+    safe = []
+    for col in feature_cols:
+        if col in BANNED_LOOKAHEAD_FEATURES:
+            if col in df_feat.columns:
+                # close.shift(-26) is future data; close (shift 0) is the
+                # latest past value available at decision time.
+                df_feat[col] = df_feat["close"]
+                logger.warning(
+                    "look-ahead feature %r requested by model — neutralized "
+                    "with past-only values; retrain without it", col,
+                )
+            continue
+        safe.append(col)
+    return safe
+
 
 def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
                      recent_weights=None, lgb_model=None, cat_model=None,
@@ -190,6 +234,7 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
             When provided with meta_model=None, uses regime-specific weights.
         cat_model: Optional CatBoost classifier (5th base model).
     """
+    feature_cols = _neutralize_lookahead_features(df_feat, list(feature_cols))
     feature_cols = [c for c in feature_cols if c in df_feat.columns]
     latest_data = df_feat[feature_cols].dropna()
     if len(latest_data) < 60:

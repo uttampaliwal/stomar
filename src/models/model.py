@@ -1,12 +1,14 @@
-import warnings
 import logging
 import torch
 import torch.nn as nn
 import joblib
 import os
 import time
+import json
 
 from src.core.constants import MODELS_DIR
+from src.models.artifacts import ArtifactBundle, ArtifactVerificationError, has_predict, has_transform
+
 os.makedirs(MODELS_DIR, exist_ok=True)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -16,44 +18,26 @@ _model_cache: dict[str, tuple[float, tuple]] = {}
 _MODEL_CACHE_TTL = 3600  # 1 hour
 _MODEL_CACHE_MAX = 10  # Max cached model sets (each ~200-500 MB)
 
-# Allowed types for joblib-loaded objects (defense against pickle payloads)
-_ALLOWED_JOBLIB_TYPES = {
-    "lstm_dim.pkl": (int, float),
-    "xgb.pkl": None,  # XGBClassifier — checked via hasattr
-    "lgb.pkl": None,   # LGBMClassifier — checked via hasattr
-    "scaler.pkl": None,  # MinMaxScaler — checked via hasattr
-    "features.pkl": (list, tuple),
-}
+# Feature schema version. Bump whenever FEATURE_COLS changes meaning.
+FEATURE_SCHEMA_VERSION = "4"
+
+# File layout of a per-ticker bundle.
+_TICKER_ARTIFACTS = [
+    "lstm.pt", "gru.pt", "transformer.pt", "xgb.pkl", "scaler.pkl",
+    "features.pkl", "lstm_dim.pkl", "lgb.pkl", "cat.pkl",
+]
+
+# ── deprecated legacy loader (never used by the runtime path) ────────────────
+#
+# Kept only so old code that imported it fails loudly instead of silently
+# deserializing. New code must go through ArtifactBundle.
 
 
-def safe_joblib_load(path: str, expected_key: str = None):
-    """Load a joblib file with type validation.
-
-    Validates the loaded object is an expected type to prevent
-    arbitrary code execution via crafted pickle payloads.
-    """
-    raw = joblib.load(path)
-
-    if expected_key and expected_key in _ALLOWED_JOBLIB_TYPES:
-        allowed = _ALLOWED_JOBLIB_TYPES[expected_key]
-        if allowed is not None and not isinstance(raw, allowed):
-            raise TypeError(
-                f"Unexpected type {type(raw).__name__} in {path} "
-                f"(expected {allowed})"
-            )
-        elif allowed is None and expected_key in ("xgb.pkl", "lgb.pkl"):
-            if not hasattr(raw, "predict") or not hasattr(raw, "predict_proba"):
-                raise TypeError(
-                    f"Object in {path} lacks predict/predict_proba — "
-                    f"not a valid classifier"
-                )
-        elif allowed is None and expected_key == "scaler.pkl":
-            if not hasattr(raw, "transform"):
-                raise TypeError(
-                    f"Object in {path} lacks transform — not a valid scaler"
-                )
-
-    return raw
+def safe_joblib_load(path: str, expected_key: str = None):  # pragma: no cover - legacy API
+    raise RuntimeError(
+        "safe_joblib_load() is disabled: it deserialized before verification. "
+        "Use src.models.artifacts.ArtifactBundle instead."
+    )
 
 
 class StockLSTM(nn.Module):
@@ -173,10 +157,25 @@ def build_catboost_model():
     )
 
 
-def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker, lgb_model=None, cat_model=None):
+def _base(root: str, ticker: str, name: str) -> str:
+    ticker_clean = ticker.replace(".", "_")
+    return os.path.join(root, f"{ticker_clean}_{name}")
+
+
+def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker,
+                lgb_model=None, cat_model=None, *,
+                model_version: str = "1",
+                feature_schema_version: str = FEATURE_SCHEMA_VERSION,
+                training_dataset_hash: str = "",
+                root: str = MODELS_DIR):
+    """Persist the full ticker bundle plus a SHA-256 manifest.
+
+    Nothing is loadable later unless every file matches the manifest.
+    """
     ticker_clean = ticker.replace(".", "_")
     def base(name):
-        return os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
+        return os.path.join(root, f"{ticker_clean}_{name}")
+
     torch.save(lstm.state_dict(), base("lstm.pt"))
     torch.save(gru.state_dict(), base("gru.pt"))
     torch.save(transformer.state_dict(), base("transformer.pt"))
@@ -189,62 +188,76 @@ def save_models(lstm, gru, transformer, xgb, scaler, feature_cols, ticker, lgb_m
     joblib.dump(feature_cols, base("features.pkl"))
     joblib.dump(lstm.lstm.input_size, base("lstm_dim.pkl"))
 
+    files = []
+    for ext in _TICKER_ARTIFACTS:
+        if os.path.exists(base(ext)):
+            files.append(f"{ticker_clean}_{ext}")
+    ArtifactBundle.create(
+        root, ticker_clean,
+        {name: "" for name in files},
+        model_version=model_version,
+        feature_schema_version=feature_schema_version,
+        training_dataset_hash=training_dataset_hash,
+    )
+    return files
 
-def load_cat_model(ticker: str):
-    """Load the optional CatBoost model (5th ensemble member).
+
+def load_cat_model(ticker: str, root: str = MODELS_DIR):
+    """Load the optional CatBoost model (5th ensemble member) via manifest.
 
     Returns None when the model file is absent (legacy / tree-only models).
+    Raises ArtifactVerificationError if present but unverifiable.
     """
-    ticker_clean = ticker.replace(".", "_")
-    path = os.path.join(MODELS_DIR, f"{ticker_clean}_cat.pkl")
-    if not os.path.exists(path):
+    try:
+        bundle = ArtifactBundle.for_ticker(root, ticker)
+    except ArtifactVerificationError:
         return None
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        cat = safe_joblib_load(path, "cat.pkl")
-    if not hasattr(cat, "predict_proba"):
-        logger.warning("cat.pkl for %s is not a valid classifier", ticker)
+    name = f"{ticker.replace('.', '_')}_cat.pkl"
+    if name not in bundle.listed_files():
         return None
+    cat = bundle.load_joblib(name, type_check=has_predict)
     return cat
 
 
-def load_models(ticker: str):
-    cache_key = ticker
+def load_models(ticker: str, root: str = MODELS_DIR):
+    """Load a ticker's model bundle — every artifact hash-verified first.
+
+    Raises ArtifactVerificationError when the bundle is missing, tampered,
+    or when a file changed after verification. This is the ONLY runtime
+    entry point for loading ticker models.
+    """
+    cache_key = f"{ticker}:{root}"
     if cache_key in _model_cache:
         ts, models = _model_cache[cache_key]
         if time.time() - ts < _MODEL_CACHE_TTL:
             return models
         del _model_cache[cache_key]
 
+    bundle = ArtifactBundle.for_ticker(root, ticker)
     ticker_clean = ticker.replace(".", "_")
-    def base(name):
-        return os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        input_dim = safe_joblib_load(base("lstm_dim.pkl"), "lstm_dim.pkl")
+
+    input_dim = bundle.load_joblib(f"{ticker_clean}_lstm_dim.pkl")
 
     lstm = StockLSTM(input_dim=input_dim).to(DEVICE)
-    lstm.load_state_dict(torch.load(base("lstm.pt"), map_location=DEVICE, weights_only=True))
+    lstm.load_state_dict(bundle.load_torch(f"{ticker_clean}_lstm.pt"))
     lstm.eval()
 
     gru = StockGRU(input_dim=input_dim).to(DEVICE)
-    gru.load_state_dict(torch.load(base("gru.pt"), map_location=DEVICE, weights_only=True))
+    gru.load_state_dict(bundle.load_torch(f"{ticker_clean}_gru.pt"))
     gru.eval()
 
     transformer = StockTransformer(input_dim=input_dim).to(DEVICE)
-    transformer.load_state_dict(torch.load(base("transformer.pt"), map_location=DEVICE, weights_only=True))
+    transformer.load_state_dict(bundle.load_torch(f"{ticker_clean}_transformer.pt"))
     transformer.eval()
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        xgb = safe_joblib_load(base("xgb.pkl"), "xgb.pkl")
-        scaler = safe_joblib_load(base("scaler.pkl"), "scaler.pkl")
-        features = safe_joblib_load(base("features.pkl"), "features.pkl")
+    xgb = bundle.load_joblib(f"{ticker_clean}_xgb.pkl", type_check=has_predict)
+    scaler = bundle.load_joblib(f"{ticker_clean}_scaler.pkl", type_check=has_transform)
+    features = bundle.load_joblib(f"{ticker_clean}_features.pkl")
 
-        lgb_model = None
-        lgb_path = base("lgb.pkl")
-        if os.path.exists(lgb_path):
-            lgb_model = safe_joblib_load(lgb_path, "lgb.pkl")
+    lgb_model = None
+    lgb_name = f"{ticker_clean}_lgb.pkl"
+    if lgb_name in bundle.listed_files():
+        lgb_model = bundle.load_joblib(lgb_name, type_check=has_predict)
 
     result = lstm, gru, transformer, xgb, scaler, features, lgb_model
     # Evict oldest entries if cache is full
@@ -256,50 +269,114 @@ def load_models(ticker: str):
     return result
 
 
-def models_exist(ticker: str) -> bool:
+def model_feature_cols(models: dict) -> list[str]:
+    """Feature list to use for inference with a loaded model bundle.
+
+    ALWAYS prefers the feature list stored with the model: the scaler and
+    tree models were fitted on exactly that column set, and the current
+    trainer.FEATURE_COLS may have evolved (new/removed factors) since
+    training. Falling back to the current schema would silently break
+    shape alignment or feed columns the model never saw.
+    """
+    from src.models.trainer import FEATURE_COLS
+    stored = models.get("features") if isinstance(models, dict) else None
+    if isinstance(stored, list) and stored:
+        return stored
+    return FEATURE_COLS
+
+
+def models_exist(ticker: str, root: str = MODELS_DIR) -> bool:
+    """True only when the full verified bundle (incl. manifest) is present."""
+    try:
+        bundle = ArtifactBundle.for_ticker(root, ticker)
+    except ArtifactVerificationError:
+        return False
     ticker_clean = ticker.replace(".", "_")
-    def base(name):
-        return os.path.join(MODELS_DIR, f"{ticker_clean}_{name}")
-    exts = ["lstm.pt", "gru.pt", "transformer.pt", "xgb.pkl", "scaler.pkl", "features.pkl", "lstm_dim.pkl"]
-    return all(os.path.exists(base(e)) for e in exts)
+    required = ["lstm.pt", "gru.pt", "transformer.pt", "xgb.pkl",
+                "scaler.pkl", "features.pkl", "lstm_dim.pkl"]
+    return all(f"{ticker_clean}_{ext}" in bundle.listed_files() for ext in required)
 
 
-def promote_model(ticker: str, feature_hash: str = None) -> dict:
-    """Promote a trained model to production.
+def promote_model(ticker: str, feature_hash: str = None, metrics: dict = None,
+                  approval_state: str = "approved") -> dict:
+    """Promote a trained bundle to the production directory.
 
-    Copies model files to production paths and records metadata.
-    Full registry integration added in Task 6.
+    Copies the manifest together with every artifact so the promoted
+    bundle remains hash-verified, and records the promotion in the model
+    registry (see src.models.model_registry).
 
     Args:
         ticker: Stock ticker
         feature_hash: Feature version hash for compatibility tracking
+        metrics: Performance metrics recorded at promotion time
+        approval_state: "approved" or "rejected"
 
     Returns:
-        Dict with status, ticker, model_path
+        Dict with status, ticker, model_path, model_version
     """
     import shutil
+    from src.models.model_registry import ModelRegistry
+
+    src_bundle = ArtifactBundle.for_ticker(MODELS_DIR, ticker)
     ticker_clean = ticker.replace(".", "_")
     dest_dir = os.path.join(MODELS_DIR, "production")
     os.makedirs(dest_dir, exist_ok=True)
 
-    src_dir = MODELS_DIR
     copied = []
-    for ext in ["lstm.pt", "gru.pt", "transformer.pt", "xgb.pkl", "scaler.pkl", "features.pkl", "lstm_dim.pkl"]:
-        src = os.path.join(src_dir, f"{ticker_clean}_{ext}")
-        dst = os.path.join(dest_dir, f"{ticker_clean}_{ext}")
-        if os.path.exists(src):
-            shutil.copy2(src, dst)
-            copied.append(ext)
+    for name in src_bundle.listed_files():
+        src = src_bundle.file_path(name)
+        dst = os.path.join(dest_dir, name)
+        shutil.copy2(src, dst)
+        copied.append(name)
+    shutil.copy2(src_bundle.manifest_path, os.path.join(dest_dir, f"{ticker_clean}_manifest.json"))
 
-    meta = {
+    # Re-verify the promoted bundle byte-for-byte.
+    promoted = ArtifactBundle.for_ticker(dest_dir, ticker)
+    if not promoted.listed_files():
+        raise ArtifactVerificationError("promoted bundle is empty")
+
+    registry = ModelRegistry()
+    record = registry.register(
+        ticker=ticker,
+        model_path=os.path.join(dest_dir, f"{ticker_clean}_xgb.pkl"),
+        feature_hash=feature_hash or promoted.feature_schema_version,
+        metrics={
+            "model_version": promoted.model_version,
+            "feature_schema_version": promoted.feature_schema_version,
+            "training_dataset_hash": promoted.training_dataset_hash,
+            **(metrics or {}),
+        },
+        notes=f"approval_state={approval_state}",
+    )
+
+    meta_path = os.path.join(dest_dir, f"{ticker_clean}_meta.json")
+    with open(meta_path, "w") as f:
+        json.dump({
+            "status": "promoted",
+            "ticker": ticker,
+            "feature_hash": feature_hash,
+            "files_promoted": copied,
+            "model_version": promoted.model_version,
+            "registry_version": record.version,
+            "approval_state": approval_state,
+        }, f, indent=2)
+
+    logger.info("Promoted %s v%s to production (registry version %d)",
+                ticker, promoted.model_version, record.version)
+    return {
         "status": "promoted",
         "ticker": ticker,
         "feature_hash": feature_hash,
         "files_promoted": copied,
+        "model_version": promoted.model_version,
+        "registry_version": record.version,
+        "approval_state": approval_state,
     }
-    import json
-    meta_path = os.path.join(dest_dir, f"{ticker_clean}_meta.json")
-    with open(meta_path, "w") as f:
-        json.dump(meta, f, indent=2)
 
-    return meta
+
+def load_production_models(ticker: str):
+    """Load the production bundle (models/production) if one exists."""
+    prod_dir = os.path.join(MODELS_DIR, "production")
+    if os.path.isdir(prod_dir) and models_exist(ticker, root=prod_dir):
+        return load_models(ticker, root=prod_dir)
+    raise ArtifactVerificationError(f"no verified production bundle for {ticker}")

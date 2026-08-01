@@ -1,0 +1,18 @@
+{
+  "manifest_version": 1,
+  "bundle": "TCS_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-01T03:36:43.393380+00:00",
+  "files": {
+    "TCS_NS_lstm.pt": "e72b477a421864f05e812ba9efa1f80fbef06deebb1587d0f2b7a3b83f2b1699",
+    "TCS_NS_gru.pt": "5056de3a7516c4d83fafd8aabef786969a2be00cdf69d44cf4d9f8b8da1504f3",
+    "TCS_NS_transformer.pt": "269d4ed61d663d2519b857a0ab417b70da8aa920ce80d4a4191e8c223570d0e9",
+    "TCS_NS_xgb.pkl": "ce0d0ea5eb7e429a22cdf69293e4fcc6ace03bb6ce0dac7216c8b8659725017e",
+    "TCS_NS_scaler.pkl": "a3aeb8aab09f4f780f3761a41c550158ee9c68993dd761f7c8619c1ba2d2e721",
+    "TCS_NS_features.pkl": "4303f8cb8bb17cf123a801cb333aee6bf0ee9ce013f9c7b6c16eb63a5e786d01",
+    "TCS_NS_lstm_dim.pkl": "eaf396d9c8e374ee91fe686e4a2cce02ebd61ccded0210e40bae8c00fa6def99",
+    "TCS_NS_lgb.pkl": "dfa4b807a7e18b1a8039521e7b8fb0ff8e026db730b37e174d9e725c486fb012"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 1,
+  "bundle": "HINDUNILVR_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-01T03:36:43.218169+00:00",
+  "files": {
+    "HINDUNILVR_NS_lstm.pt": "11a356279765b42f6c7567be966c1b13df409344356a0e61521611ad00304557",
+    "HINDUNILVR_NS_gru.pt": "9de377d93f11f1a9464bc0c3ebbfb321b8f88101122630a80e6690ef66fa6d33",
+    "HINDUNILVR_NS_transformer.pt": "4d787324fad6de9e9b1ce05a857300b1642af5803b249e4804d44685ca9a1b37",
+    "HINDUNILVR_NS_xgb.pkl": "18caf34825ebe99d72c4406c59a180e2e6ff83020a7555466c45fd356aa2fd0b",
+    "HINDUNILVR_NS_scaler.pkl": "ac36543be34a5b56ae250b78945d5aad0220f66acff3dcd58c2e5c94f6098bed",
+    "HINDUNILVR_NS_features.pkl": "4303f8cb8bb17cf123a801cb333aee6bf0ee9ce013f9c7b6c16eb63a5e786d01",
+    "HINDUNILVR_NS_lstm_dim.pkl": "eaf396d9c8e374ee91fe686e4a2cce02ebd61ccded0210e40bae8c00fa6def99",
+    "HINDUNILVR_NS_lgb.pkl": "ed14e9232eb68f86f34aa826990300816381b5df9d70e496165d21dadde5e7e9"
+  }
+}

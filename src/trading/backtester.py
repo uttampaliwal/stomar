@@ -7,7 +7,18 @@ from src.core.logging_config import get_logger
 logger = get_logger("backtester")
 
 
-def walk_forward_split(df, train_years=3, test_years=1, step_months=6):
+def walk_forward_split(df, train_years=3, test_years=1, step_months=6,
+                       purge_days=60, embargo_days=20):
+    """Walk-forward splits with purge + embargo to prevent label leakage.
+
+    The last ``purge_days`` of each training window are dropped because
+    their labels (next-day direction) overlap the start of the test
+    window — training on them leaks test information into the model.
+    The first ``embargo_days`` of each test window are skipped so that
+    no sample remains correlated with the purged training data.
+
+    Both default to sane daily-horizon values; pass 0 to disable.
+    """
     train_days = train_years * 252
     test_days = test_years * 252
     step_days = step_months * 21
@@ -15,12 +26,15 @@ def walk_forward_split(df, train_years=3, test_years=1, step_months=6):
     splits = []
     start = 0
     while start + train_days + test_days <= len(df):
-        train_end = start + train_days
-        test_end = train_end + test_days
-        splits.append({
-            "train": df.iloc[start:train_end].index,
-            "test": df.iloc[train_end:test_end].index,
-        })
+        train_start = start
+        train_end = start + train_days - purge_days  # purge overlaps test labels
+        test_start = train_end + purge_days + embargo_days
+        test_end = start + train_days + test_days
+        if test_start < test_end and train_start < train_end:
+            splits.append({
+                "train": df.iloc[train_start:train_end].index,
+                "test": df.iloc[test_start:test_end].index,
+            })
         start += step_days
 
     return splits

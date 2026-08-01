@@ -16,6 +16,7 @@ except ImportError:
     pass
 
 from src.core.settings import settings
+from src.core.secure_io import atomic_append_jsonl
 from src.core.logging_config import (
     metrics, set_request_id,
 )
@@ -61,6 +62,14 @@ _PROTECTED_PREFIXES = [
 ]
 
 app = FastAPI(title="StoMar API", version="0.0.6")
+
+# Fail-closed: in production, a missing STOMAR_API_KEY is a hard error.
+# Without it every mutating endpoint would run unauthenticated.
+if settings.env == "production" and not settings.api_key:
+    raise RuntimeError(
+        "refusing to start in production without STOMAR_API_KEY set — "
+        "all mutating endpoints would be unauthenticated"
+    )
 
 if settings.env == "production":
     _cors_origins = [
@@ -122,18 +131,95 @@ async def metrics_middleware(request: Request, call_next):
     return response
 
 
+def _is_protected_mutation(method: str, path: str) -> bool:
+    """True when a request must carry a valid API key (fail-closed)."""
+    if method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return False
+    return any(path.startswith(p) for p in _PROTECTED_PREFIXES)
+
+
+def _auth_verdict(method: str, path: str, provided_key: str) -> tuple[int, str] | None:
+    """Return (status, body) when the request must be rejected, else None.
+
+    Fail-closed: protected mutations are never open by configuration drift.
+    """
+    if not _is_protected_mutation(method, path):
+        return None
+    if not settings.api_key:
+        return 503, '{"detail":"API key not configured; protected endpoints disabled"}'
+    if not hmac.compare_digest(provided_key or "", settings.api_key):
+        return 401, '{"detail":"Invalid or missing API key"}'
+    return None
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    if settings.api_key and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+    verdict = _auth_verdict(request.method, request.url.path,
+                            request.headers.get("x-api-key", ""))
+    if verdict is not None:
+        status, body = verdict
+        return Response(content=body, status_code=status, media_type="application/json")
+    return await call_next(request)
+
+
+# ── rate limiting (in-memory, per-IP, on protected mutating endpoints) ──
+
+_RATE_LIMIT_MAX = 60  # requests per window
+_RATE_LIMIT_WINDOW = 60.0  # seconds
+_rate_buckets: dict[str, list[float]] = {}
+
+
+def _rate_limited(key: str) -> bool:
+    now = time.time()
+    bucket = _rate_buckets.setdefault(key, [])
+    bucket[:] = [ts for ts in bucket if now - ts < _RATE_LIMIT_WINDOW]
+    if len(bucket) >= _RATE_LIMIT_MAX:
+        return True
+    bucket.append(now)
+    return False
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         path = request.url.path
         if any(path.startswith(p) for p in _PROTECTED_PREFIXES):
-            provided = request.headers.get("x-api-key", "")
-            if not hmac.compare_digest(provided, settings.api_key):
+            client_ip = request.client.host if request.client else "unknown"
+            if _rate_limited(f"{client_ip}:{request.method}"):
                 return Response(
-                    content='{"detail":"Invalid or missing API key"}',
-                    status_code=401,
+                    content='{"detail":"Rate limit exceeded"}',
+                    status_code=429,
                     media_type="application/json",
                 )
+    return await call_next(request)
+
+
+# ── audit log for every mutating request ────────────────────────────────
+
+_AUDIT_LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "api_audit")
+
+
+@app.middleware("http")
+async def audit_middleware(request: Request, call_next):
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        response = await call_next(request)
+        try:
+            os.makedirs(_AUDIT_LOG_DIR, exist_ok=True)
+            day = time.strftime("%Y-%m-%d")
+            entry = {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "client": request.client.host if request.client else "unknown",
+                "request_id": request.headers.get("x-request-id", ""),
+            }
+            atomic_append_jsonl(
+                os.path.join(_AUDIT_LOG_DIR, f"mutations-{day}.jsonl"), entry
+            )
+        except Exception:
+            pass  # audit must never break the request path
+        return response
     return await call_next(request)
 
 _response_cache: OrderedDict[str, tuple[float, bytes]] = {}

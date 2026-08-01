@@ -1,0 +1,18 @@
+{
+  "manifest_version": 1,
+  "bundle": "HDFCBANK_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-01T03:36:43.173591+00:00",
+  "files": {
+    "HDFCBANK_NS_lstm.pt": "e55d16258b4c793724904efdfef95109427f3b64d997c9f03806259dc1a0ea99",
+    "HDFCBANK_NS_gru.pt": "6d5c3b8982c4a31d470780076cd038461bde10b998b4a006ff523a263163623f",
+    "HDFCBANK_NS_transformer.pt": "a5f677833c93af945462fbb77938745d7303de3dae0315908d9082b1b5ee2500",
+    "HDFCBANK_NS_xgb.pkl": "b0e97b9c5bd7c24918ffcfdce87c4d78dc3d2a46116aad04764ffdd86b5ef461",
+    "HDFCBANK_NS_scaler.pkl": "8b0de8e4b949e741f54484f96092ea908186cd868e73e4a9af3bdc454c5f0ccc",
+    "HDFCBANK_NS_features.pkl": "4303f8cb8bb17cf123a801cb333aee6bf0ee9ce013f9c7b6c16eb63a5e786d01",
+    "HDFCBANK_NS_lstm_dim.pkl": "eaf396d9c8e374ee91fe686e4a2cce02ebd61ccded0210e40bae8c00fa6def99",
+    "HDFCBANK_NS_lgb.pkl": "3ca7e2c54799561e7f979aa2e4c2afa2c4ec8b354dc6f34186feae59531d1228"
+  }
+}

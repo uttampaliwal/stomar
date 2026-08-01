@@ -386,14 +386,15 @@ class AutoPipeline:
         """Load or train meta-controller."""
         result = {"status": "not_needed"}
         try:
-            import joblib
             from src.models.meta_controller import MetaController
 
             if os.path.exists(META_CONTROLLER_PATH):
-                mc = joblib.load(META_CONTROLLER_PATH)
-                self._log("Loaded pre-trained meta-controller")
-                result["status"] = "loaded"
-                return result
+                mc = MetaController()
+                if mc.load():
+                    self._log("Loaded pre-trained meta-controller")
+                    result["status"] = "loaded"
+                    return result
+                self._log("Meta-controller artifact failed verification — retraining")
 
             # Train fresh
             self._log("No meta-controller found, training...")
@@ -402,7 +403,7 @@ class AutoPipeline:
 
             if train_result["status"] == "trained":
                 os.makedirs(MODELS_DIR, exist_ok=True)
-                joblib.dump(mc, META_CONTROLLER_PATH)
+                mc.save()
                 self._log(f"Meta-controller trained: accuracy={train_result['accuracy']:.1%}")
                 result["status"] = "trained"
                 result["accuracy"] = train_result["accuracy"]
@@ -426,10 +427,21 @@ class AutoPipeline:
         try:
             import joblib
             from src.signals.orchestrator import DailyOrchestrator
+            from src.core.trading_mode import get_trading_mode, mode_banner
+
+            mode = get_trading_mode()
+            self._log(f"Trading mode: {mode.value}")
+            if mode.value == "live":
+                self._log(mode_banner(mode))
+                from src.core.trading_mode import require_live_allowed
+                require_live_allowed()
 
             meta_controller = None
             if os.path.exists(META_CONTROLLER_PATH):
-                meta_controller = joblib.load(META_CONTROLLER_PATH)
+                from src.models.meta_controller import MetaController
+                meta_controller = MetaController()
+                if not meta_controller.load():
+                    meta_controller = None
 
             # ── P0.4: reset daily P&L on the paper trader ─────────────────
             paper_trader = None

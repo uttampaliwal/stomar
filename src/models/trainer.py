@@ -37,7 +37,7 @@ FEATURE_COLS = [
     # SOTA factor pipeline (appended to preserve alignment with legacy models)
     "supertrend", "supertrend_dir",
     "ichimoku_tenkan", "ichimoku_kijun", "ichimoku_senkou_a",
-    "ichimoku_senkou_b", "ichimoku_chikou",
+    "ichimoku_senkou_b",
     "cmf", "ofi", "vol_zscore", "pcr_slope", "fii_momentum",
     "mom_1m_voladj", "mom_3m_voladj", "mom_6m_voladj", "mom_12m_voladj",
     "rel_strength_1m", "rel_strength_3m", "high_low_spread",

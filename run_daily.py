@@ -17,7 +17,6 @@ import signal
 import sys
 import os
 import time
-import warnings
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -25,13 +24,22 @@ from src.data.data_fetcher import NSE_STOCKS
 from src.trading.ledger import Ledger
 from src.signals.orchestrator import DailyOrchestrator
 from src.models.meta_controller import MetaController
+from src.core.constants import META_CONTROLLER_PATH
+from src.core.trading_mode import get_trading_mode, mode_banner, require_live_allowed
 
 
 def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
                      state_path: str = None):
     """Auto-execute paper trades based on orchestrator decisions."""
+    from src.brokers import get_broker
+    from src.trading.execution_manager import ExecutionManager
+    from src.trading.risk_controls import RiskController
     from src.trading.paper_trader import PaperTrader
     from src.trading.engine import OrderSide, OrderType
+
+    broker = get_broker()  # dry-run unless live gate fully passed (not used here)
+    risk = RiskController()
+    manager = ExecutionManager(broker, risk)
 
     trader = PaperTrader(initial_capital=capital)
     trader.load_state(state_path)
@@ -58,6 +66,12 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
         equity = trader.get_equity()
         invest_amount = equity * size_pct
         qty = max(1, int(invest_amount / price))
+
+        gate = manager.gate_order(ticker, action, qty,
+                                  order_value=invest_amount)
+        if not gate["approved"]:
+            print(f"  BLOCK {ticker:15s} gate: {gate['reason']}")
+            continue
 
         if action == "BUY":
             from src.data.data_fetcher import get_live_price
@@ -207,11 +221,9 @@ def main():
                 direction = "positive" if weight > 0 else "negative"
                 print(f"  {name}: {weight:+.4f} ({direction})")
 
-            # Save trained model
-            import joblib
-            model_path = os.path.join(os.path.dirname(__file__), "models", "meta_controller.pkl")
-            joblib.dump(mc, model_path)
-            print(f"\nMeta-controller saved to {model_path}")
+            # Save trained model (hash-verified artifact bundle)
+            mc.save()
+            print(f"\nMeta-controller saved to {META_CONTROLLER_PATH}")
         else:
             print(f"Not enough data: {result.get('n_samples', 0)} samples (need {result.get('required', 100)})")
 
@@ -219,7 +231,13 @@ def main():
         sys.exit(0)
 
     # --- Normal daily mode ---
+    mode = get_trading_mode()
     print("=== StoMar Daily Signal Loop ===")
+    print(mode_banner(mode))
+    if mode.value == "live":
+        # Live mode requires the full gate — refuse to proceed otherwise.
+        require_live_allowed()
+        print("LIVE MODE: orders will be submitted to a real broker.")
     print(f"Date:     {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}")
     print(f"Tickers:  {len(tickers)}")
     print(f"Ledger:   {args.db}")
@@ -229,8 +247,7 @@ def main():
 
     meta_controller = MetaController()
 
-    # Try loading pre-trained meta-controller
-    model_path = os.path.join(os.path.dirname(__file__), "models", "meta_controller.pkl")
+    # Try loading pre-trained meta-controller (manifest-verified)
     if args.train_meta:
         print("Training meta-controller on ledger history...")
         result = meta_controller.train(ledger)
@@ -243,15 +260,13 @@ def main():
             for name, weight in list(weights.items())[:5]:
                 direction = "positive" if weight > 0 else "negative"
                 print(f"    {name}: {weight:+.4f} ({direction})")
-            import joblib
-            joblib.dump(meta_controller, model_path)
-            print(f"  Saved to {model_path}")
-    elif os.path.exists(model_path):
-        import joblib
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            meta_controller = joblib.load(model_path)
-        print("Loaded pre-trained meta-controller.")
+            meta_controller.save()
+            print(f"  Saved to {META_CONTROLLER_PATH}")
+    elif os.path.exists(META_CONTROLLER_PATH):
+        if meta_controller.load():
+            print("Loaded pre-trained meta-controller.")
+        else:
+            print("WARNING: meta-controller artifact failed verification; running rule-based.")
     print()
 
     orchestrator = DailyOrchestrator(

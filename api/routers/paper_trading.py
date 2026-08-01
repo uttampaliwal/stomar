@@ -1,4 +1,9 @@
-"""Paper trading endpoint."""
+"""Paper trading endpoint.
+
+Paper-only by design: this router can NEVER submit live orders. When the
+system is in live mode, order placement here is refused and live orders
+must flow through the broker-backed execution path instead.
+"""
 
 import os
 import re
@@ -7,6 +12,9 @@ from fastapi import APIRouter, Body
 from src.trading.paper_trader import PaperTrader
 from src.trading.engine import OrderSide, OrderType
 from src.data.data_fetcher import NSE_STOCKS
+from src.core.trading_mode import get_trading_mode, mode_banner
+from src.trading.execution_manager import ExecutionManager
+from src.trading.risk_controls import RiskController, RiskLimits
 
 router = APIRouter()
 
@@ -16,6 +24,20 @@ _TICKER_RE = re.compile(r"^[A-Z0-9]{1,20}\.NS$")
 _trader = None
 _trader_lock = threading.Lock()
 _operation_lock = threading.Lock()  # Serializes order placement and reset
+_manager: ExecutionManager | None = None
+
+
+def get_manager() -> ExecutionManager:
+    global _manager
+    with _trader_lock:
+        if _manager is None:
+            _manager = ExecutionManager(
+                broker=None,  # paper path uses PaperTrader directly; gate-only
+                risk=RiskController(RiskLimits()),
+                max_stale_quote_seconds=15.0,
+                max_daily_orders=10,
+            )
+        return _manager
 
 
 def get_trader():
@@ -37,6 +59,9 @@ def paper_state():
     try:
         trader = get_trader()
         state = trader.get_summary()
+        mode = get_trading_mode()
+        state["mode"] = mode.value
+        state["mode_banner"] = mode_banner(mode)
         return state
     except Exception as e:
         return {"error": str(e)}
@@ -45,6 +70,12 @@ def paper_state():
 @router.post("/order")
 def place_order(data: dict = Body(...)):
     try:
+        # Paper router can never execute live orders.
+        mode = get_trading_mode()
+        if mode.value == "live":
+            return {"error": "live mode active: paper order router disabled; "
+                             "orders must flow through the broker execution path"}
+
         trader = get_trader()
         ticker = data.get("ticker", "")
         side_str = data.get("side", "BUY").upper()
@@ -75,6 +106,13 @@ def place_order(data: dict = Body(...)):
             if not limit_price or float(limit_price) <= 0:
                 return {"error": "Limit price is required for LIMIT orders"}
             limit_price = float(limit_price)
+
+        # Full execution gate before any paper order is placed.
+        gate = get_manager().gate_order(
+            ticker, side_str, quantity, order_value=price * quantity,
+        )
+        if not gate["approved"]:
+            return {"error": f"Risk gate blocked order: {gate['reason']}"}
 
         with _operation_lock:
             order = trader.place_order(ticker, side, order_type, quantity, price=price,

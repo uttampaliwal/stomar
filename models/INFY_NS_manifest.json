@@ -1,0 +1,18 @@
+{
+  "manifest_version": 1,
+  "bundle": "INFY_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-01T03:36:43.305446+00:00",
+  "files": {
+    "INFY_NS_lstm.pt": "0c8f76353f241fae2993e51e48e558aec9b0ec576e0bb23b370c8f9c7bc1203f",
+    "INFY_NS_gru.pt": "25aedbd08895e16386863591215b4da3359753c90df64d369461e12f11209dc4",
+    "INFY_NS_transformer.pt": "5d5eede6afaf23685b4125882113730925e2868d6588da17436dcde0c8404bda",
+    "INFY_NS_xgb.pkl": "c5a1ac6e767ee9fe749ca5c86fa607337c722e7a3cbf531e77342974b1c89ded",
+    "INFY_NS_scaler.pkl": "27eb24205140f85d04733c0374299a70f8eeecb81fd9874daa6ae4e68b25d5c1",
+    "INFY_NS_features.pkl": "4303f8cb8bb17cf123a801cb333aee6bf0ee9ce013f9c7b6c16eb63a5e786d01",
+    "INFY_NS_lstm_dim.pkl": "eaf396d9c8e374ee91fe686e4a2cce02ebd61ccded0210e40bae8c00fa6def99",
+    "INFY_NS_lgb.pkl": "e1d27813545e8ccf620ec3c80c6fa1a5a29d4f5c1a7a3f27bcb2dd5235e1dfdb"
+  }
+}

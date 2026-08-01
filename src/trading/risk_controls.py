@@ -9,22 +9,43 @@ Checks:
 4. Current drawdown vs max drawdown (halts trading on breach)
 5. Total exposure vs max exposure
 6. Kelly-capped position sizing (quarter-Kelly)
-7. Kill switch (emergency halt + flatten)
+7. Kill switch (emergency halt + flatten, persistent across restarts)
 8. Correlation-based concentration limit
 9. Consecutive loss circuit breaker
+10. Liquidity: min average daily traded value (INR)
+11. Slippage estimate: max acceptable bps
+12. Gap vs previous close: max percent before trading is blocked
 
 Usage:
     from src.trading.risk_controls import RiskController, RiskLimits
     rc = RiskController(RiskLimits(), initial_capital=100000)
-    result = rc.check_order(order_value=25000, holdings_value=50000, ...)
+    result = rc.check_order(order_value=25000, holdings_value=50000,
+                            market=MarketContext(...))
     if result["approved"]:
         engine.submit_order(order)
 """
 
+import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
+
+from src.core.constants import DATA_DIR
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class MarketContext:
+    """Per-ticker market snapshot used by the market-quality checks.
+
+    All fields optional; a missing field skips the related check.
+    """
+    price: float = 0.0                       # current tradable price
+    prev_close: float = 0.0                  # previous session close
+    avg_daily_traded_value: float = 0.0      # INR average daily traded value
+    expected_slippage_bps: float = 0.0       # estimated slippage for this order
+    daily_volume_rs: float = 0.0             # alias for avg_daily_traded_value
 
 
 @dataclass
@@ -41,12 +62,17 @@ class RiskLimits:
     max_correlated_exposure_pct: float = 0.40
     max_consecutive_losses: int = 5
     correlation_threshold: float = 0.70
+    # Market-quality hard limits (settings-backed at construction time)
+    min_daily_volume_rs: float = 1_000_000.0
+    max_expected_slippage_bps: float = 30.0
+    max_gap_pct: float = 5.0
 
 
 class RiskController:
     """Pre-trade risk checks. Validates orders before submission."""
 
-    def __init__(self, limits: RiskLimits = None, initial_capital: float = 100000):
+    def __init__(self, limits: RiskLimits = None, initial_capital: float = 100000,
+                 kill_switch_file: str | Path | None = None):
         self.limits = limits or RiskLimits()
         self.initial_capital = initial_capital
         self.daily_pnl = 0.0
@@ -58,11 +84,63 @@ class RiskController:
         self.consecutive_losses = 0
         self.sector_exposure = {}  # sector -> total value
         self.position_correlations = {}  # (ticker_a, ticker_b) -> correlation
+        self.kill_switch_file = (
+            Path(kill_switch_file) if kill_switch_file
+            else Path(DATA_DIR) / "kill_switch.json"
+        )
+        self._load_persistent_kill_switch()
+
+    # ── persistent kill switch ─────────────────────────────────────────────
+
+    def _load_persistent_kill_switch(self):
+        try:
+            if self.kill_switch_file.exists():
+                data = json.loads(self.kill_switch_file.read_text())
+                self.halted = bool(data.get("active", False))
+                self.halt_reason = str(data.get("reason", ""))
+                logger.critical("persistent kill switch ACTIVE: %s", self.halt_reason)
+        except (OSError, ValueError) as exc:
+            logger.error("failed to read kill switch file: %s", exc)
+
+    def kill_switch(self, reason: str = "Emergency kill switch activated"):
+        """Emergency halt: stop all trading immediately and persist."""
+        self.halted = True
+        self.halt_reason = reason
+        try:
+            self.kill_switch_file.parent.mkdir(parents=True, exist_ok=True)
+            self.kill_switch_file.write_text(json.dumps({
+                "active": True,
+                "reason": reason,
+                "set_at": __import__("datetime").datetime.now().isoformat(),
+            }))
+        except OSError as exc:
+            logger.error("failed to persist kill switch: %s", exc)
+        logger.critical("KILL SWITCH ACTIVATED: %s", reason)
+
+    def clear_kill_switch(self):
+        """Resume trading after an emergency halt (manual only)."""
+        self.halted = False
+        self.halt_reason = ""
+        try:
+            self.kill_switch_file.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.error("failed to clear kill switch file: %s", exc)
+        logger.warning("KILL SWITCH CLEARED (manual resume)")
 
     def check_order(self, order_value: float, current_holdings_value: float,
                     ticker: str = "", holdings: dict = None,
-                    prices: dict = None, is_closing: bool = False) -> dict:
+                    prices: dict = None, is_closing: bool = False,
+                    market: "MarketContext | None" = None) -> dict:
         """Check if an order passes all risk controls.
+
+        Args:
+            order_value: Notional value of the proposed order.
+            current_holdings_value: Current value of all holdings.
+            ticker: Symbol being traded.
+            holdings: dict ticker -> (qty, price).
+            prices: dict ticker -> quote dict (kept for back-compat).
+            is_closing: True if this order closes/reduces an existing position.
+            market: MarketContext with price/liquidity/gap info.
 
         Returns:
             Dict with approved (bool), checks (list), drawdown_pct
@@ -72,7 +150,6 @@ class RiskController:
         if self.halted:
             return {"approved": False, "reason": f"Trading halted: {self.halt_reason}",
                     "checks": [], "drawdown_pct": 0}
-
         total_equity = self.current_equity
 
         # 1. Position concentration (skip if closing/reducing existing position)
@@ -134,6 +211,43 @@ class RiskController:
         else:
             checks.append({"passed": True, "check": "total_exposure"})
 
+        # 10. Liquidity (skip when closing an existing position)
+        if market is not None:
+            volume_rs = market.avg_daily_traded_value or market.daily_volume_rs
+            if not is_closing and volume_rs > 0 and \
+                    volume_rs < self.limits.min_daily_volume_rs:
+                checks.append({
+                    "passed": False, "check": "liquidity",
+                    "message": (f"Average daily traded value {volume_rs:,.0f} INR < "
+                                f"{self.limits.min_daily_volume_rs:,.0f} INR minimum"),
+                })
+            else:
+                checks.append({"passed": True, "check": "liquidity"})
+
+            # 11. Expected slippage
+            if market.expected_slippage_bps > self.limits.max_expected_slippage_bps:
+                checks.append({
+                    "passed": False, "check": "slippage",
+                    "message": (f"Expected slippage {market.expected_slippage_bps:.0f} bps > "
+                                f"{self.limits.max_expected_slippage_bps:.0f} bps limit"),
+                })
+            else:
+                checks.append({"passed": True, "check": "slippage"})
+
+            # 12. Gap vs previous close
+            if market.price > 0 and market.prev_close > 0:
+                gap_pct = abs(market.price - market.prev_close) / market.prev_close * 100
+                if gap_pct > self.limits.max_gap_pct:
+                    checks.append({
+                        "passed": False, "check": "gap",
+                        "message": (f"Gap {gap_pct:.2f}% vs previous close > "
+                                    f"{self.limits.max_gap_pct:.2f}% limit"),
+                    })
+                else:
+                    checks.append({"passed": True, "check": "gap"})
+            else:
+                checks.append({"passed": True, "check": "gap"})
+
         all_passed = all(c["passed"] for c in checks)
 
         return {
@@ -163,10 +277,8 @@ class RiskController:
         self.daily_pnl = 0.0
 
     def resume_trading(self):
-        """Manually resume trading after halt."""
-        self.halted = False
-        self.halt_reason = ""
-        logger.info("Trading resumed manually")
+        """Manually resume trading after halt (also clears persistent file)."""
+        self.clear_kill_switch()
 
     def kelly_sized_quantity(self, win_rate: float, avg_win: float,
                             avg_loss: float, price: float,
@@ -202,12 +314,6 @@ class RiskController:
             ),
             "consecutive_losses": self.consecutive_losses,
         }
-
-    def kill_switch(self, reason: str = "Emergency kill switch activated"):
-        """Emergency halt: stop all trading immediately."""
-        self.halted = True
-        self.halt_reason = reason
-        logger.critical("KILL SWITCH ACTIVATED: %s", reason)
 
     def update_consecutive_losses(self, is_loss: bool):
         """Track consecutive losses for circuit breaker."""

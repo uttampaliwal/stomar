@@ -137,6 +137,11 @@ class MarketDataStore:
         DuckDB allows a single writer process; if another process (e.g. a
         running pipeline) holds the file lock, wait briefly rather than
         failing immediately.
+
+        On btrfs, an interrupted process can leave a stale lock (PID 0)
+        that DuckDB reports as a conflict forever. If no live process
+        actually has the file open, the stale database is moved aside and
+        recreated rather than blocking the pipeline indefinitely.
         """
         last_exc: Exception | None = None
         for attempt in range(1, attempts + 1):
@@ -151,10 +156,58 @@ class MarketDataStore:
                     attempt, attempts, exc,
                 )
                 time.sleep(base_delay * attempt)
+
+        if self._recover_stale_lock():
+            try:
+                return duckdb.connect(self.db_path)
+            except Exception as exc:
+                last_exc = exc
+
         raise RuntimeError(
             f"Cannot open market data store {self.db_path}: another process "
             f"holds the DuckDB file lock. Details: {last_exc}"
         )
+
+    @staticmethod
+    def _file_is_open_by_process(path: str) -> bool:
+        """True if any live process has the file open (checked via /proc)."""
+        import glob as _glob
+        target = os.path.realpath(path)
+        try:
+            for fd in _glob.glob("/proc/[0-9]*/fd/*"):
+                try:
+                    link = os.readlink(fd)
+                except OSError:
+                    continue
+                if os.path.realpath(link) == target:
+                    return True
+        except OSError:
+            pass
+        return False
+
+    def _recover_stale_lock(self) -> bool:
+        """Move a stale-locked DB aside and recreate it, iff genuinely stale.
+
+        Only fires when NO live process has the file open, so a real
+        concurrent pipeline is never disturbed.
+        """
+        if os.path.exists(self.db_path) and self._file_is_open_by_process(self.db_path):
+            logger.error(
+                "market data DB %s is locked by a live process — refusing to recover",
+                self.db_path,
+            )
+            return False
+        try:
+            backup = f"{self.db_path}.stale_{int(time.time())}.bak"
+            os.replace(self.db_path, backup) if os.path.exists(self.db_path) else None
+            logger.warning(
+                "stale market data DB lock recovered: moved %s -> %s",
+                self.db_path, backup,
+            )
+            return True
+        except OSError as exc:
+            logger.error("failed to move stale DB aside: %s", exc)
+            return False
 
     # ── lifecycle ────────────────────────────────────────────────────────
 

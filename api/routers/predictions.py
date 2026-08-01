@@ -3,8 +3,7 @@
 from fastapi import APIRouter
 from src.data.data_fetcher import fetch_stock_data
 from src.data.features import add_technical_indicators
-from src.models.model import load_models, load_cat_model, models_exist
-from src.models.trainer import FEATURE_COLS
+from src.models.model import load_models, load_cat_model, models_exist, model_feature_cols
 from src.models.ensemble import predict_ensemble
 
 router = APIRouter()
@@ -40,9 +39,10 @@ def get_prediction(ticker: str):
         prediction = None
         if models_exist(ticker):
             m = _load(ticker)
+            feature_cols = model_feature_cols(m)  # model's own trained schema
             direction, confidence, details = predict_ensemble(
                 m["lstm"], m["gru"], m["transformer"],
-                m["xgb"], m["scaler"], FEATURE_COLS, df_feat,
+                m["xgb"], m["scaler"], feature_cols, df_feat,
                 lgb_model=m["lgb"],
             )
             direction_label = "BUY" if direction == 1 else "SELL"
@@ -134,7 +134,7 @@ def get_feature_importance(ticker: str):
         m = _load(ticker)
         xgb = m["xgb"]
         importances = xgb.feature_importances_
-        features = FEATURE_COLS[:len(importances)]
+        features = model_feature_cols(m)[:len(importances)]
         pairs = sorted(zip(features, importances.tolist()), key=lambda x: -x[1])[:10]
         return {"features": [{"name": n, "importance": round(v, 4)} for n, v in pairs]}
     except Exception as e:

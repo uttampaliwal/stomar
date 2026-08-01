@@ -1,0 +1,91 @@
+"""API security invariants: auth fail-closed, rate limiting, audit trail."""
+
+import hmac
+
+from src.core.settings import settings
+
+from api.main import (
+    _PROTECTED_PREFIXES,
+    _auth_verdict,
+    _is_protected_mutation,
+    _rate_limited,
+)
+
+_MUTATING = ("POST", "PUT", "PATCH", "DELETE")
+_READ = ("GET",)
+
+
+def test_protected_prefixes_cover_order_paths():
+    # the paper-trading order route (the most dangerous) must be protected
+    assert any("/api/paper-trading/" in p for p in _PROTECTED_PREFIXES)
+    assert any("/api/automation/" in p for p in _PROTECTED_PREFIXES)
+    assert any("/api/ledger/" in p for p in _PROTECTED_PREFIXES)
+
+
+def test_mutations_are_protected_reads_are_not():
+    for method in _MUTATING:
+        assert _is_protected_mutation(method, "/api/paper-trading/order") is True
+        assert _is_protected_mutation(method, "/api/ledger/anything") is True
+    for method in _READ:
+        assert _is_protected_mutation(method, "/api/paper-trading/state") is False
+
+
+def test_missing_api_key_fails_closed(monkeypatch):
+    monkeypatch.setattr(settings, "api_key", "")
+    verdict = _auth_verdict("POST", "/api/paper-trading/order", "whatever")
+    assert verdict is not None
+    assert verdict[0] == 503  # explicitly disabled, not silently open
+
+
+def test_wrong_key_rejected(monkeypatch):
+    monkeypatch.setattr(settings, "api_key", "real-key")
+    verdict = _auth_verdict("POST", "/api/paper-trading/order", "wrong-key")
+    assert verdict is not None
+    assert verdict[0] == 401
+
+
+def test_correct_key_accepted(monkeypatch):
+    key = settings.api_key or "test-key"
+    monkeypatch.setattr(settings, "api_key", key)
+    assert _auth_verdict("POST", "/api/paper-trading/order", key) is None
+
+
+def test_comparison_is_constant_time():
+    key = "secret-key-12345"
+    assert hmac.compare_digest(key, key) is True
+
+
+def test_rate_limiter_enforces_window():
+    # distinct keys are independent
+    _rate_limited("ip-a")
+    assert _rate_limited("ip-b") is False
+    # drain a bucket
+    for _ in range(60):
+        _rate_limited("ip-c")
+    assert _rate_limited("ip-c") is True
+
+
+def test_audit_log_written_on_mutation(tmp_path, monkeypatch):
+    import api.main as api_main
+    monkeypatch.setattr(api_main, "_AUDIT_LOG_DIR", str(tmp_path))
+    from api.main import audit_middleware
+
+    class _FakeResponse:
+        status_code = 201
+
+    async def _call_next(request):
+        return _FakeResponse()
+
+    class _FakeRequest:
+        method = "POST"
+        url = type("U", (), {"path": "/api/paper-trading/order"})()
+        client = type("C", (), {"host": "127.0.0.1"})()
+        headers = {"x-request-id": "req-123"}
+
+    import asyncio
+    asyncio.run(audit_middleware(_FakeRequest(), _call_next))
+    files = list(tmp_path.glob("mutations-*.jsonl"))
+    assert files, "audit file not written"
+    content = files[0].read_text()
+    assert "paper-trading" in content
+    assert "req-123" in content

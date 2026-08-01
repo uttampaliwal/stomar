@@ -34,19 +34,10 @@ def _fetch_mtf_data_impl(ticker: str) -> dict:
             except Exception:
                 pass  # Corrupted cache, re-fetch
 
-    # Also try loading legacy pickle cache for backward compat
-    legacy_cache = os.path.join(MTF_CACHE_DIR, f"mtf_{ticker_clean}.pkl")
-    if os.path.exists(legacy_cache):
-        mtime = os.path.getmtime(legacy_cache)
-        if time.time() - mtime < 3600:
-            try:
-                data = pd.read_pickle(legacy_cache)
-                # Migrate to parquet
-                _save_mtf_cache(cache_prefix, data)
-                os.unlink(legacy_cache)
-                return data
-            except Exception:
-                pass
+    # NOTE: legacy mtf_*.pkl pickle caches are deliberately NOT loaded here.
+    # pd.read_pickle() on untrusted files is a deserialization risk. Legacy
+    # caches are migrated once by scripts/migrate_legacy_models.py; until
+    # then the data is simply re-fetched.
 
     data = {}
     intervals = {
