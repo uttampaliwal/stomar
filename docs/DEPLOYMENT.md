@@ -69,10 +69,31 @@ uv run schedule_pipeline.py --status
 tail -f data/pipeline_logs/daily_$(date +%Y%m%d).log
 ```
 
-That is everything: the daily task runs Mon-Fri 16:00, and the boot catch-up
-(crontab `@reboot`, or a systemd `Persistent=true` timer when cron is absent)
-replays any missed days the moment the machine is switched on. Repeat steps
-2-4 once on every device — whichever you open that day handles the run.
+That is everything: the daily task runs Mon-Fri 15:45 IST, and **every
+scheduled invocation runs the full auto-pipeline** — so a machine that boots
+at 10:00 runs backfill + today's decisions + paper trades immediately, and a
+machine on at 15:45 does the same. Boot catch-up (crontab `@reboot`, Windows
+`onstart`, or a systemd `Persistent=true` timer when cron is absent) replays
+any missed days the moment the machine is switched on. Repeat steps 2-4 once
+on every device — whichever you open that day handles the run. Non-trading
+days (weekends, NSE holidays) skip the daily/paper stages automatically.
+
+### Switching machines / fresh clone (travel scenario)
+
+The same repo can be cloned on any machine on any day:
+
+```bash
+git clone <your-repo-url> stomar && cd stomar
+cp .env.example .env && nano .env   # paste your full .env (API key, Telegram chat id)
+uv sync --frozen
+uv run auto_pipeline.py --setup-run
+```
+
+A fresh clone has no ledger, so the first run performs a full 252-day
+backfill + meta-controller training (~30-60 min on CPU, faster with CUDA),
+then runs today's daily decisions + paper trades. Everything after that day
+is automatic. Note: each device keeps its **own** ledger and paper account
+(₹200,000 default) — devices are independent paper-trading instances.
 
 ### Optional: GPU acceleration (RTX 50-series etc.)
 
@@ -115,7 +136,7 @@ immediately: `docker compose exec scheduler python run_pipeline.py --train-all`.
 
 | When | Check |
 |---|---|
-| Day 1-3 | Daily 16:00 IST run fires (log + Telegram summary arrives); kill switch reachable |
+| Day 1-3 | Daily 15:45 IST run fires (log + Telegram summary arrives); kill switch reachable |
 | Weekly | Models fresh (`Model age` on Monitoring page); ledger backup exists in `data/backups/` |
 | Monthly | Paper P&L vs Nifty comparison (`/api/benchmark/compare`) still positive |
 | Any time | Drawdown alert triggers at 10% (Paper Trading page + Telegram) |

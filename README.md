@@ -127,6 +127,20 @@ Superior ML training targets that account for realistic trading conditions:
 
 ### Autonomous Daily Loop
 
+The recommended entry point is the **auto-pipeline** — one idempotent run
+covers gap detection, backfill, training, today's decisions, paper trades,
+and the Telegram summary:
+
+```bash
+uv run auto_pipeline.py                    # Everything, idempotent (safe to rerun)
+uv run auto_pipeline.py --force            # Force even if already ran today
+uv run auto_pipeline.py --setup            # One-command device setup: env + Telegram + GPU + scheduler
+uv run auto_pipeline.py --setup-run        # Same, plus run the pipeline immediately
+uv run auto_pipeline.py --capital 200000   # Paper starting capital
+```
+
+The lower-level single-day loop remains available:
+
 ```bash
 uv run run_daily.py                          # Run all 20 NSE stocks
 uv run run_daily.py --ticker RELIANCE.NS     # Specific tickers
@@ -173,15 +187,33 @@ uv run run_daily.py --dry-run                # Signals only, no ledger writes
 
 ---
 
+## Documentation
+
+| Doc | Covers |
+|---|---|
+| `docs/Architecture.md` | Module map, data flow, entry scripts, multi-device scheduling |
+| `docs/API.md` | All 73 endpoints, auth, middleware, errors |
+| `docs/Data-Pipeline.md` | Sources, DuckDB point-in-time store, features, retention |
+| `docs/Model-Training.md` | Architectures, walk-forward training, ensemble, meta-controller |
+| `docs/Risk-Engine.md` | RiskController, RiskGuard breakers, kill switch, execution gate |
+| `docs/Paper-Trading.md` | PaperTrader, fills, NSE costs, tax, ledger, benchmarks |
+| `docs/Live-Trading-Roadmap.md` | Phase status, live gate, readiness requirements |
+| `docs/Security-Model.md` | API auth, artifact verification, tokens, secrets |
+| `DEPLOYMENT.md` | Native + Docker deployment, one-command device setup |
+| `ROADMAP.md` | Full phase tracker with acceptance criteria |
+| `docs/REAL_MONEY_READINESS.md` | Live-money audit verdict |
+
+---
+
 ## Project Structure
 
 ```
 stomar/
 ├── start_dev.sh               # Start FastAPI + React dev servers (Linux/macOS)
 ├── start_dev.bat              # Start FastAPI + React dev servers (Windows)
-├── run_daily.py               # Autonomous daily loop
+├── run_daily.py               # Single-day loop (legacy scheduler target)
 ├── run_pipeline.py            # Retraining pipeline
-├── auto_pipeline.py           # Startup automation
+├── auto_pipeline.py           # Recommended: gap detection + backfill + daily + paper + summary
 ├── schedule_pipeline.py       # Windows Task Scheduler
 ├── verify_system.py           # System verification
 ├── pyproject.toml             # Python deps + ruff/pytest config
@@ -322,7 +354,12 @@ stomar/
 ## CLI Usage
 
 ```bash
-# Daily autonomous loop
+# Recommended: auto-pipeline (idempotent full run: backfill + daily + paper + summary)
+uv run auto_pipeline.py                          # Everything (safe to rerun daily)
+uv run auto_pipeline.py --force                  # Force even if already ran today
+uv run auto_pipeline.py --setup-run              # Setup device + run (one command)
+
+# Single-day loop (legacy)
 uv run run_daily.py                              # All 20 NSE stocks
 uv run run_daily.py --ticker RELIANCE.NS         # Specific tickers
 uv run run_daily.py --backfill                   # Backfill 1 year
@@ -335,8 +372,8 @@ uv run run_pipeline.py --train-all               # Train all 20 stocks
 uv run run_pipeline.py --train RELIANCE.NS       # Specific tickers
 uv run run_pipeline.py --paper                   # Train + paper trade
 
-# Scheduler (host cron / Windows Task Scheduler)
-uv run schedule_pipeline.py                      # Install daily 4 PM IST
+# Scheduler (host cron / systemd timer / Windows Task Scheduler)
+uv run schedule_pipeline.py                      # Install daily 15:45 IST + boot catch-up
 uv run schedule_pipeline.py --remove             # Remove task
 uv run schedule_pipeline.py --run-now            # Run immediately
 ```
@@ -352,7 +389,7 @@ docker compose up -d --build
 
 - `api` — FastAPI + bundled React SPA on port 8000, healthchecked, auto-restart.
 - `scheduler` — cron daemon in-container running the tested `schedule_pipeline.py`
-  (weekdays 15:45 IST paper run + boot catch-up for missed days).
+  (weekdays 15:45 IST auto-pipeline run + boot catch-up for missed days).
 - State persists in named volumes `stomar-data` (SQLite/ledger/paper state/logs)
   and `stomar-models` (trained weights + meta-controller).
 - CPU-only torch is baked into the image (see `pyproject.toml` `[tool.uv.sources]`);
