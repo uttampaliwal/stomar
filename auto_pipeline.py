@@ -362,6 +362,13 @@ class AutoPipeline:
             try:
                 result["health"] = self._run_health_sweep()
                 result["backup"] = self._backup_ledger()
+                try:
+                    from src.core.notifier import send_daily_summary
+                    send_daily_summary(
+                        result["health"], result.get("daily"), result.get("paper_trade")
+                    )
+                except Exception as notify_err:
+                    self._log(f"Daily summary notification failed: {notify_err}")
             except Exception as e:
                 self._log(f"Ops hygiene failed: {e}")
                 result["ops_error"] = str(e)

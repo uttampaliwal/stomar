@@ -390,7 +390,7 @@
 - [ ] 🟢 **B6** Docker Compose for one-command startup
   - `docker compose up` starts FastAPI + React + scheduler in one shot
 
-- [ ] 🟢 **B7** Telegram/WhatsApp bot for daily summary
+^- [x] 🟢 **B7** Telegram/WhatsApp bot for daily summary
   - End-of-day message: top 3 signals, paper portfolio P&L, any alerts
   - Python `python-telegram-bot` library, free
 
