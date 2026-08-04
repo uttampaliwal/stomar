@@ -63,6 +63,19 @@ constraint-dependencies = [
     "llvmlite==0.48.0",
 ]
 
+# CPU-only torch: no GPU on the production box, and the default CUDA wheel
+# drags in ~3GB of nvidia-* runtime packages. The CPU index is explicit so it
+# never participates in resolution of other packages.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu" },
+]
+
 [tool.ruff.lint]
 select = ["F401", "E", "F", "W"]
 ignore = ["E501", "F841"]
