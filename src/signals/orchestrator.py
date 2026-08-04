@@ -33,12 +33,15 @@ class DailyOrchestrator:
         self.meta_controller = meta_controller
         self.paper_trader = paper_trader
 
-    def run(self, date: str = None, dry_run: bool = False) -> dict:
+    def run(self, date: str = None, dry_run: bool = False,
+            resolve_outcomes: bool = False) -> dict:
         """Execute one full daily cycle.
 
         Args:
             date: Trade date (YYYY-MM-DD). Defaults to today.
             dry_run: If True, run signals but don't write to ledger.
+            resolve_outcomes: If True, resolve yesterday's unresolved
+                decisions with their actual next-day returns (P3.3).
 
         Returns:
             Summary dict with decisions, trades, errors.
@@ -54,11 +57,23 @@ class DailyOrchestrator:
         mode = get_trading_mode()
         logger.info("orchestrator mode: %s (dry_run=%s)", mode.value, dry_run)
 
+        # Resolve yesterday's decisions before making new ones, so the
+        # meta-controller learns from real forward outcomes (not backfill).
+        outcome_summary = {"resolved": 0, "failed": 0, "pending": 0}
+        if resolve_outcomes and not dry_run:
+            outcome_summary = self.resolve_pending_outcomes()
+            logger.info(
+                "Outcome resolution: %d resolved, %d failed, %d pending",
+                outcome_summary["resolved"], outcome_summary["failed"],
+                outcome_summary["pending"],
+            )
+
         # Pre-fetch market-wide signals (same for all tickers)
         self._flow_signals = self._run_flow()
         self._pcr_signals = self._run_pcr()
 
-        summary = {"date": date, "decisions": [], "trades": [], "errors": []}
+        summary = {"date": date, "decisions": [], "trades": [], "errors": [],
+                   "outcomes": outcome_summary}
         trade_count = 0
         total_exposure = 0.0
 
@@ -132,6 +147,68 @@ class DailyOrchestrator:
 
         logger.info(f"{ticker}: {decision['action']} (size={decision['position_size']:.2%})")
         return result
+
+    def resolve_pending_outcomes(self) -> dict:
+        """Resolve unresolved decisions with their actual next-day returns.
+
+        For every live decision without an outcome, find the close on the
+        decision date and the close on the next trading day, then log the
+        realized return via ``ledger.log_outcome``. Backfill decisions are
+        skipped (they are resolved synchronously during backfill).
+
+        Returns:
+            {"resolved": int, "failed": int, "pending": int}
+        """
+        pending = self.ledger.get_unresolved_decisions()
+        resolved = 0
+        failed = 0
+        for d in pending:
+            if d.get("source") == "backfill":
+                continue
+            try:
+                result = self._next_day_return(d["ticker"], d["date"])
+                if result is None:
+                    failed += 1
+                    continue
+                ret, direction = result
+                self.ledger.log_outcome(d["id"], float(ret), int(direction))
+                resolved += 1
+            except Exception as e:
+                logger.debug("Outcome resolution failed for decision %s: %s", d.get("id"), e)
+                failed += 1
+        return {"resolved": resolved, "failed": failed, "pending": len(pending)}
+
+    def _next_day_return(self, ticker: str, decision_date: str):
+        """Return (next_day_return, direction) for a decision date, or None.
+
+        Uses close-to-close returns on the next trading day — the same
+        convention the backfill uses, so meta-controller training labels
+        stay consistent.
+        """
+        df = self._fetch_data(ticker)
+        if df is None or len(df) < 2:
+            return None
+
+        target = pd.Timestamp(decision_date)
+        if target not in df.index:
+            # Decision date not found in data — resolve at first date after it
+            later = df.index[df.index > target]
+            if len(later) == 0:
+                return None
+            entry_idx = df.index.get_loc(later[0])
+        else:
+            entry_idx = df.index.get_loc(target)
+
+        if entry_idx + 1 >= len(df):
+            return None  # no next trading day yet
+
+        entry_close = float(df["close"].iloc[entry_idx])
+        next_close = float(df["close"].iloc[entry_idx + 1])
+        if entry_close <= 0:
+            return None
+        ret = (next_close - entry_close) / entry_close
+        direction = 1 if ret > 0 else 0
+        return ret, direction
 
     # Stop-loss percentage applied to every new position (settings.stop_loss_pct from entry)
 
@@ -269,10 +346,11 @@ class DailyOrchestrator:
         return signals
 
     def _fetch_data(self, ticker: str) -> pd.DataFrame | None:
-        """Fetch latest OHLCV data."""
+        """Fetch latest OHLCV data with validation + auto-repair (P2.1/P2.2)."""
         try:
-            from src.data.data_fetcher import fetch_stock_data
-            return fetch_stock_data(ticker, period="1y")
+            from src.data.data_fetcher import fetch_validated_stock_data
+            result = fetch_validated_stock_data(ticker, period="1y")
+            return result["df"]
         except Exception as e:
             logger.warning(f"Data fetch failed for {ticker}: {e}")
             return None

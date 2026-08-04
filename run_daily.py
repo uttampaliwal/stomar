@@ -24,12 +24,12 @@ from src.data.data_fetcher import NSE_STOCKS
 from src.trading.ledger import Ledger
 from src.signals.orchestrator import DailyOrchestrator
 from src.models.meta_controller import MetaController
-from src.core.constants import META_CONTROLLER_PATH
+from src.core.constants import META_CONTROLLER_PATH, PAPER_STATE_PATH
 from src.core.trading_mode import get_trading_mode, mode_banner, require_live_allowed
 
 
 def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
-                     state_path: str = None):
+                     state_path: str = PAPER_STATE_PATH):
     """Auto-execute paper trades based on orchestrator decisions."""
     from src.brokers import get_broker
     from src.trading.execution_manager import ExecutionManager
@@ -284,7 +284,7 @@ def main():
 
     if args.schedule_hours > 0:
         while not shutdown_requested:
-            summary = orchestrator.run(dry_run=args.dry_run)
+            summary = orchestrator.run(dry_run=args.dry_run, resolve_outcomes=not args.dry_run)
             print("\n=== Summary ===")
             print(f"Decisions: {len(summary['decisions'])}")
             print(f"Errors:    {len(summary['errors'])}")
@@ -311,7 +311,7 @@ def main():
                 time.sleep(1)
             ledger = Ledger(args.db)  # Re-open after sleep
 
-    summary = orchestrator.run(dry_run=args.dry_run)
+    summary = orchestrator.run(dry_run=args.dry_run, resolve_outcomes=not args.dry_run)
 
     print("\n=== Summary ===")
     print(f"Decisions: {len(summary['decisions'])}")

@@ -67,8 +67,13 @@ def add_flow_features(df: pd.DataFrame) -> pd.DataFrame:
         # Keep only the columns we need
         flow_df = flow_df[["fii_net", "dii_net"]]
 
-        # Shift by 1 day: FII/DII data for day T joins to day T+1
-        flow_df = flow_df.shift(1)
+        # Shift dates by 1 day: FII/DII data for day T is published after
+        # T's close, so it is only usable on T+1. NOTE: `shift(1)` is NOT
+        # correct here — it moves values down rows while keeping the index,
+        # so a single-row flow file (the real-world case) would drop its
+        # value entirely. Shifting the index adds a calendar day, which the
+        # business-day join below aligns to the next trading day.
+        flow_df.index = flow_df.index + pd.Timedelta(days=1)
 
         # Ensure both indices are tz-naive date-only before join
         if df.index.tz is not None:

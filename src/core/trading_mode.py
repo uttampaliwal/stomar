@@ -115,9 +115,9 @@ def require_live_allowed() -> None:
         )
 
 
-def mode_banner() -> str:
+def mode_banner(mode: TradingMode) -> str:
     """Human-readable banner used in logs and API payloads."""
-    if is_live_enabled():
+    if mode.is_live:
         return "LIVE MODE — REAL MONEY TRADING ENABLED. Risk controls active."
     return "PAPER MODE — simulated trading only. No real orders can be placed."
 

@@ -7,8 +7,14 @@ import yfinance as yf
 
 
 def fetch_free_historical_data(ticker: str, period: str = "2y", interval: str = "1d") -> pd.DataFrame:
-    """Fetch free historical OHLCV data using Yahoo Finance."""
-    data = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=False)
+    """Fetch free historical OHLCV data using Yahoo Finance.
+
+    ``auto_adjust=True`` (P2.2): prices must be adjusted for splits and
+    dividends, otherwise a stock split shows up as a fake -90% crash that
+    corrupts feature engineering and model training. The latest price is
+    identical either way; only historical continuity is affected.
+    """
+    data = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
     if data is None or data.empty:
         raise ValueError(f"Could not fetch free historical data for {ticker}")
     data = data.reset_index()

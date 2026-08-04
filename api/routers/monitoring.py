@@ -130,6 +130,31 @@ def get_retrain_triggers():
         return {"error": str(e), "count": 0, "triggers": []}
 
 
+@router.get("/readiness")
+def get_readiness():
+    """Live-trading readiness gate report (P3.5)."""
+    try:
+        from src.core.readiness_check import check_readiness
+        return check_readiness()
+    except Exception as e:
+        return {"error": str(e), "ready": False}
+
+
+@router.get("/daily-health")
+def get_daily_health():
+    """Return the latest daily health sweep, if one exists."""
+    path = os.path.join(MONITORING_DIR, "daily_health.json")
+    if not os.path.exists(path):
+        return {"error": "no daily health sweep yet", "exists": False}
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        data["exists"] = True
+        return data
+    except (json.JSONDecodeError, OSError) as e:
+        return {"error": str(e), "exists": False}
+
+
 @router.get("/checkpoint")
 def get_pipeline_checkpoint():
     """Return the current pipeline checkpoint status.

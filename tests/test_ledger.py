@@ -62,7 +62,7 @@ def test_creates_indexes(ledger):
 def test_creates_schema_version(ledger):
     row = ledger.conn.execute("SELECT version FROM schema_version").fetchone()
     assert row is not None
-    assert row["version"] == 1
+    assert row["version"] == 2
 
 
 def test_reopen_existing_db_preserves_version(ledger, sample_signals):
@@ -71,10 +71,24 @@ def test_reopen_existing_db_preserves_version(ledger, sample_signals):
     ledger.close()
     lg2 = Ledger(db_path)
     row = lg2.conn.execute("SELECT version FROM schema_version").fetchone()
-    assert row["version"] == 1
+    assert row["version"] == 2
     decisions = lg2.get_decisions()
     assert len(decisions) == 1
     lg2.close()
+
+
+def test_migrated_db_has_source_column(ledger, sample_signals):
+    """Schema v2 adds the `source` column distinguishing live/backfill."""
+    cols = {c["name"] for c in ledger.conn.execute("PRAGMA table_info(decisions)")}
+    assert "source" in cols
+    did = ledger.log_decision(
+        date="2025-01-15", ticker="RELIANCE.NS", signals=sample_signals,
+        action="BUY", position_size=0.05, confidence=0.7,
+        source="backfill",
+    )
+    rows = ledger.get_decisions(source="backfill")
+    assert len(rows) == 1 and rows[0]["id"] == did
+    assert ledger.get_decisions(source="live") == []
 
 
 # --- log_decision ---

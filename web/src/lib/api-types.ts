@@ -274,12 +274,67 @@ export interface LedgerSummaryResponse {
   total_decisions: number
   total_trades: number
   accuracy: number
+  trade_accuracy?: number | null
+  hold_ratio?: number | null
   signal_accuracy: Record<string, number | null>
   snapshots: LedgerSnapshot[]
 }
 
 export interface LedgerDecisionsResponse {
   decisions: LedgerDecision[]
+}
+
+export interface BenchmarkSeries {
+  dates: string[]
+  cumulative: number[]
+}
+
+export interface LedgerBenchmarkResponse {
+  start_date?: string
+  end_date?: string
+  paper?: BenchmarkSeries
+  nifty?: BenchmarkSeries
+  paper_total_return?: number
+  nifty_total_return?: number
+  alpha?: number
+  information_ratio?: number | null
+  paper_max_drawdown?: number
+  nifty_max_drawdown?: number
+  n_snapshots?: number
+  nifty_points?: number
+  error?: string
+}
+
+export interface CalibrationBin {
+  bin: string
+  n: number
+  mean_confidence: number | null
+  empirical_accuracy: number | null
+}
+
+export interface CalibrationResponse {
+  n: number
+  overall_accuracy?: number | null
+  mean_confidence?: number | null
+  bins?: CalibrationBin[]
+  ece?: number | null
+  mce?: number | null
+  note?: string
+  error?: string
+}
+
+export interface ReadinessGate {
+  passed: boolean
+  detail: string
+}
+
+export interface ReadinessResponse {
+  ready: boolean
+  gates?: Record<string, ReadinessGate>
+  evidence?: Record<string, unknown>
+  summary?: string
+  checked_at?: string
+  error?: string
 }
 
 // ── /api/mf-tracker/portfolio ──

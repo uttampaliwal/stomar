@@ -59,6 +59,36 @@ def get_performance():
         ledger.close()
 
 
+@router.get("/benchmark")
+def get_benchmark():
+    """Paper trading vs Nifty 50 buy-and-hold comparison (P3.2).
+
+    The single most honest signal of whether the system adds value.
+    """
+    ledger = get_ledger()
+    try:
+        from src.signals.benchmarks import paper_vs_nifty
+        return paper_vs_nifty(ledger)
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        ledger.close()
+
+
+@router.get("/calibration")
+def get_calibration(source: str = Query("live")):
+    """Confidence calibration report from resolved decisions (P4.4)."""
+    ledger = get_ledger()
+    try:
+        from src.models.calibration import reliability_report
+        decisions = ledger.get_decisions(source=source)
+        return reliability_report(decisions)
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        ledger.close()
+
+
 @router.get("/summary")
 def ledger_summary():
     ledger = get_ledger()
@@ -77,6 +107,10 @@ def ledger_summary():
             "total_decisions": total_decisions,
             "total_trades": len(trades),
             "accuracy": round(accuracy, 4),
+            "trade_accuracy": perf.get("trade_accuracy"),
+            "hold_ratio": perf.get("hold_ratio"),
+            "live_decisions": perf.get("live_decisions", 0),
+            "backfill_decisions": perf.get("backfill_decisions", 0),
             "signal_accuracy": signal_acc,
             "snapshots": snapshots[-30:] if snapshots else [],
         }

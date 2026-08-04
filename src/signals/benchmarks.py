@@ -234,3 +234,96 @@ def compare_to_benchmarks(strategy_returns, actuals=None, returns=None):
     all_results.sort(key=lambda x: x["sharpe"], reverse=True)
 
     return all_results
+
+
+def _max_drawdown_from_curve(values: list[float]) -> float:
+    """Max drawdown from an equity curve (peak to trough)."""
+    peak = 0.0
+    max_dd = 0.0
+    for v in values:
+        if v > peak:
+            peak = v
+        if peak > 0:
+            max_dd = max(max_dd, (peak - v) / peak)
+    return max_dd
+
+
+def paper_vs_nifty(ledger) -> dict:
+    """Compare the paper trading equity curve against Nifty 50 buy-and-hold.
+
+    This is the single most honest signal of whether the system adds value:
+    does the paper portfolio beat doing nothing but holding the index, net
+    of the paper trading costs already modeled in the snapshots?
+
+    Returns:
+        Dict with per-date curves, cumulative returns, alpha, information
+        ratio, and max drawdowns — or an empty "error" dict when there is
+        insufficient evidence.
+    """
+    snapshots = ledger.get_snapshots()
+    if not snapshots:
+        return {"error": "no portfolio snapshots yet"}
+
+    snapshots = sorted(snapshots, key=lambda s: str(s["date"]))
+    start_date = str(snapshots[0]["date"])[:10]
+    end_date = str(snapshots[-1]["date"])[:10]
+    if start_date >= end_date:
+        return {"error": "need at least 2 snapshot dates for a benchmark comparison"}
+
+    # Paper equity curve
+    paper_dates = [str(s["date"])[:10] for s in snapshots]
+    paper_values = [float(s["total_value"]) for s in snapshots]
+    paper_cum = [v / paper_values[0] - 1.0 for v in paper_values]
+
+    # Nifty 50 over the same window (adjusted close)
+    try:
+        from src.data.data_fetcher import fetch_stock_data
+        nifty = fetch_stock_data("^NSEI", period="2y", force_refresh=False)
+    except Exception as e:
+        return {"error": f"benchmark data unavailable: {e}"}
+    if nifty is None or len(nifty) < 2:
+        return {"error": "benchmark data unavailable"}
+
+    nifty_closes = nifty["close"].astype(float)
+    nifty_closes.index = pd.to_datetime(nifty_closes.index)
+    window = nifty_closes[(nifty_closes.index >= pd.Timestamp(start_date))
+                          & (nifty_closes.index <= pd.Timestamp(end_date))]
+    if len(window) < 2:
+        return {"error": "benchmark window too short"}
+
+    # Nifty buy-and-hold: first close -> last close (no dividends modeled)
+    nifty_cum = window.values / float(window.values[0]) - 1.0
+
+    # Rebase paper curve to Nifty dates for a like-for-like chart: keep both
+    # as independent series keyed by their own dates (front-end aligns).
+    nifty_dates = [d.strftime("%Y-%m-%d") for d in window.index]
+
+    # Alpha: end-of-period difference in cumulative return
+    nifty_total = float(window.values[-1] / window.values[0] - 1.0)
+    paper_total = paper_cum[-1]
+    alpha = paper_total - nifty_total
+
+    # Information ratio: annualized mean/std of daily return differences
+    paper_returns = np.diff(paper_values) / np.asarray(paper_values[:-1])
+    nifty_returns = np.diff(window.values) / window.values[:-1]
+    if len(paper_returns) > 1 and len(nifty_returns) > 1:
+        n = min(len(paper_returns), len(nifty_returns))
+        diff = paper_returns[-n:] - nifty_returns[-n:]
+        ir = float(diff.mean() / diff.std() * np.sqrt(252)) if diff.std() > 0 else 0.0
+    else:
+        ir = None
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "paper": {"dates": paper_dates, "cumulative": [round(c, 6) for c in paper_cum]},
+        "nifty": {"dates": nifty_dates, "cumulative": [round(c, 6) for c in nifty_cum.tolist()]},
+        "paper_total_return": round(paper_total, 6),
+        "nifty_total_return": round(nifty_total, 6),
+        "alpha": round(alpha, 6),
+        "information_ratio": round(ir, 4) if ir is not None else None,
+        "paper_max_drawdown": round(_max_drawdown_from_curve(paper_cum), 4),
+        "nifty_max_drawdown": round(_max_drawdown_from_curve(nifty_cum.tolist()), 4),
+        "n_snapshots": len(snapshots),
+        "nifty_points": len(window),
+    }

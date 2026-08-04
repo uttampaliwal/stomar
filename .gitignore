@@ -55,6 +55,7 @@ src/models/*.pkl
 
 # ─── Runtime State ───
 *.db
+*.lock
 paper_state.json
 paper_session.json
 mf_state.json

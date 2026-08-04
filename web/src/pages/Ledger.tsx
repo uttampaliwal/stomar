@@ -2,13 +2,40 @@ import { useState } from 'react'
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
 import { apiFetch } from '@/lib/api-client'
-import type { LedgerSummaryResponse, LedgerDecisionsResponse } from '../lib/api-types'
+import {
+  ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis,
+  Tooltip, Legend, CartesianGrid,
+} from 'recharts'
+import type {
+  LedgerSummaryResponse, LedgerDecisionsResponse,
+  LedgerBenchmarkResponse, CalibrationResponse,
+} from '../lib/api-types'
+
+function buildBenchmarkData(b: LedgerBenchmarkResponse) {
+  if (!b.paper || !b.nifty) return []
+  const paperMap = new Map<number, number>()
+  b.paper.dates.forEach((d, i) => paperMap.set(Date.parse(d), b.paper!.cumulative[i]))
+  const rows: { date: string; paper: number | null; nifty: number | null }[] = []
+  b.nifty.dates.forEach((d, i) => {
+    const ts = Date.parse(d)
+    const nearest = [...paperMap.keys()].filter((k) => k <= ts).sort((a, c) => c - a)[0]
+    rows.push({
+      date: d.slice(5),
+      nifty: Math.round(b.nifty!.cumulative[i] * 10000) / 100,
+      paper: nearest !== undefined ? Math.round(paperMap.get(nearest)! * 10000) / 100 : null,
+    })
+  })
+  return rows
+}
 
 export default function Ledger() {
   const { data, loading, error, refetch } = useApi<LedgerSummaryResponse>('/api/ledger/summary')
   const { data: decisionsData } = useApi<LedgerDecisionsResponse>('/api/ledger/decisions')
+  const { data: benchmarkData, loading: benchmarkLoading } = useApi<LedgerBenchmarkResponse>('/api/ledger/benchmark')
+  const { data: calibrationData } = useApi<CalibrationResponse>('/api/ledger/calibration')
   const [running, setRunning] = useState(false)
   const [runResult, setRunResult] = useState<string | null>(null)
+  const benchmarkRows = benchmarkData && !('error' in benchmarkData) ? buildBenchmarkData(benchmarkData) : []
 
   const handleRunPipeline = async () => {
     setRunning(true)
@@ -92,8 +119,101 @@ export default function Ledger() {
             <Stat label="Total Decisions" value={data.total_decisions || 0} />
             <Stat label="Total Trades" value={data.total_trades || 0} />
             <Stat label="Accuracy" value={`${((data.accuracy || 0) * 100).toFixed(1)}%`} trend={data.accuracy > 0.5 ? 'up' : 'down'} />
-            <Stat label="Signal Types" value={Object.keys(data.signal_accuracy || {}).length} />
+            <Stat label="Trade Accuracy (BUY/SELL)" value={data.trade_accuracy != null ? `${(data.trade_accuracy * 100).toFixed(1)}%` : 'N/A'} trend={(data.trade_accuracy || 0) > 0.5 ? 'up' : 'down'} />
           </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Trade accuracy excludes HOLD decisions (which put no capital at risk) — it is the honest hit rate of actual trades.
+          </p>
+
+          {/* Paper vs Nifty benchmark (P3.2) */}
+          {benchmarkData && !('error' in benchmarkData) && benchmarkRows.length > 1 ? (
+            <>
+              <SectionHeader title="Paper Trading vs Nifty 50 (cumulative return %)" />
+              <Card>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={benchmarkRows} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                      <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={40} />
+                      <YAxis tick={{ fontSize: 11 }} unit="%" />
+                      <Tooltip
+                        formatter={(value: number) => [value == null ? '-' : `${value}%`]}
+                        labelStyle={{ color: '#666' }}
+                      />
+                      <Legend />
+                      <Line type="monotone" dataKey="paper" name="Paper Trading" stroke="#22d3ee" strokeWidth={2} dot={false} connectNulls />
+                      <Line type="monotone" dataKey="nifty" name="Nifty 50" stroke="#a78bfa" strokeWidth={2} dot={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <Stat label="Paper Return" value={`${((benchmarkData.paper_total_return || 0) * 100).toFixed(2)}%`} />
+                  <Stat label="Nifty Return" value={`${((benchmarkData.nifty_total_return || 0) * 100).toFixed(2)}%`} />
+                  <Stat
+                    label="Alpha"
+                    value={`${((benchmarkData.alpha || 0) * 100).toFixed(2)}%`}
+                    trend={(benchmarkData.alpha || 0) > 0 ? 'up' : 'down'}
+                  />
+                  <Stat
+                    label="Info Ratio"
+                    value={benchmarkData.information_ratio != null ? benchmarkData.information_ratio.toFixed(2) : 'N/A'}
+                  />
+                </div>
+                <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <Stat label="Paper Max DD" value={`${((benchmarkData.paper_max_drawdown || 0) * 100).toFixed(1)}%`} />
+                  <Stat label="Nifty Max DD" value={`${((benchmarkData.nifty_max_drawdown || 0) * 100).toFixed(1)}%`} />
+                  <Stat label="Snapshots" value={benchmarkData.n_snapshots || 0} />
+                  <Stat label="Nifty Points" value={benchmarkData.nifty_points || 0} />
+                </div>
+              </Card>
+            </>
+          ) : benchmarkData && 'error' in benchmarkData ? (
+            <Card>
+              <p className="text-xs text-muted-foreground">Benchmark unavailable: {benchmarkData.error}</p>
+            </Card>
+          ) : benchmarkLoading ? null : (
+            <Card>
+              <p className="text-xs text-muted-foreground">
+                Benchmark chart appears once paper trading snapshots exist (P3.2).
+              </p>
+            </Card>
+          )}
+
+          {/* Calibration (P4.4) */}
+          {calibrationData && !('error' in calibrationData) && calibrationData.n > 0 && (
+            <>
+              <SectionHeader title="Confidence Calibration" />
+              <Card>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  When the system says "68% confidence", is it right 68% of the time?
+                  ECE (expected calibration error): {calibrationData.ece ?? 'N/A'} — closer to 0 is better.
+                </p>
+                <div className="space-y-2">
+                  {calibrationData.bins?.filter((b) => b.n > 0).map((b) => {
+                    const diff = Math.abs((b.empirical_accuracy || 0) - (b.mean_confidence || 0))
+                    return (
+                      <div key={b.bin} className="flex items-center gap-3">
+                        <span className="w-24 text-xs font-mono uppercase text-muted-foreground">{b.bin}</span>
+                        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${diff < 0.1 ? 'bg-emerald' : diff < 0.25 ? 'bg-amber' : 'bg-rose'}`}
+                            style={{ width: `${(b.empirical_accuracy || 0) * 100}%` }}
+                          />
+                        </div>
+                        <span className="font-mono text-xs w-24 text-right">
+                          {((b.empirical_accuracy || 0) * 100).toFixed(0)}% vs {(b.mean_confidence || 0) * 100}%
+                        </span>
+                        <span className="w-10 text-right text-xs text-muted-foreground">n={b.n}</span>
+                      </div>
+                    )
+                  })}
+                  {calibrationData.bins?.every((b) => b.n === 0) && (
+                    <p className="text-xs text-muted-foreground">No resolved decisions yet — calibration needs live outcome data.</p>
+                  )}
+                </div>
+              </Card>
+            </>
+          )}
 
           {/* Signal Accuracy */}
           {data.signal_accuracy && Object.keys(data.signal_accuracy).length > 0 && (

@@ -19,6 +19,7 @@ import type {
   AutomationRunResponse,
   PaperPositionSummary,
   ConsensusResponse,
+  ReadinessResponse,
 } from '../lib/api-types'
 
 export default function Dashboard() {
@@ -32,6 +33,7 @@ export default function Dashboard() {
   const automation = useApi<AutomationDecisionsResponse>('/api/automation/decisions')
   const paperState = useApi<PaperPositionSummary>('/api/paper-trading/state')
   const consensus = useApi<ConsensusResponse>('/api/consensus/')
+  const readiness = useApi<ReadinessResponse>('/api/monitoring/readiness')
   const runAutomation = usePostApi<AutomationRunResponse>('/api/automation/run')
 
   const quickSummary = useMemo(() => {
@@ -100,6 +102,34 @@ export default function Dashboard() {
           status="online"
         />
       </div>
+
+      {/* Live-Trading Readiness Banner (P3.5) */}
+      {readiness.data && !('error' in readiness.data) && (
+        readiness.data.ready ? (
+          <div className="rounded-lg border border-emerald/40 bg-emerald/10 px-4 py-2.5 text-sm">
+            <span className="font-semibold text-emerald">READY FOR LIVE TRADING</span>
+            <span className="ml-2 text-muted-foreground">
+              All {Object.keys(readiness.data.gates || {}).length} readiness gates passed.
+            </span>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-amber/40 bg-amber/10 px-4 py-2.5 text-sm">
+            <span className="font-semibold text-amber">PAPER TRADING PHASE</span>
+            <span className="ml-2 text-muted-foreground">{readiness.data.summary || 'Readiness gates pending'}</span>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {Object.entries(readiness.data.gates || {}).map(([name, gate]) => (
+                <span
+                  key={name}
+                  className={`rounded px-2 py-0.5 font-mono text-[0.65rem] ${gate.passed ? 'bg-emerald/15 text-emerald' : 'bg-rose/15 text-rose'}`}
+                  title={gate.detail}
+                >
+                  {name}: {gate.passed ? 'PASS' : 'FAIL'}
+                </span>
+              ))}
+            </div>
+          </div>
+        )
+      )}
 
       {/* Dense Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">

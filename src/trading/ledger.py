@@ -85,8 +85,9 @@ CREATE INDEX IF NOT EXISTS idx_trades_decision ON paper_trades(decision_id);
 
 _MIGRATIONS: dict[int, str] = {
     # Add new migrations here. Each key is the target version.
-    # Example for version 2:
-    # 2: "ALTER TABLE decisions ADD COLUMN new_signal REAL;",
+    # v2: track where a decision came from ('live' vs 'backfill') so
+    #     trust metrics can be computed on live data only.
+    2: "ALTER TABLE decisions ADD COLUMN source TEXT NOT NULL DEFAULT 'live';",
 }
 
 SIGNAL_COLUMNS = [
@@ -152,8 +153,17 @@ class Ledger:
 
     def log_decision(self, date: str, ticker: str, signals: dict,
                      action: str, position_size: float, confidence: float,
-                     reasoning: str = "") -> int:
-        """Log a meta-controller decision. Returns decision ID."""
+                     reasoning: str = "", source: str = "live") -> int:
+        """Log a meta-controller decision. Returns decision ID.
+
+        Args:
+            source: "live" for forward daily decisions, "backfill" for
+                decisions reconstructed from historical data. Backfill
+                decisions are in-sample by construction and must never be
+                used as evidence of live performance.
+        """
+        if source not in ("live", "backfill"):
+            raise ValueError(f"source must be 'live' or 'backfill', got {source!r}")
         cursor = self.conn.execute("""
             INSERT INTO decisions (
                 date, ticker,
@@ -163,10 +173,10 @@ class Ledger:
                 regime, regime_confidence,
                 var_95, cvar_95, sharpe,
                 volatility_forecast, fundamental_score,
-                action, position_size, confidence, reasoning
+                action, position_size, confidence, reasoning, source
             ) VALUES (?, ?,
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?)
+                ?, ?, ?, ?, ?)
         """, (
             date, ticker,
             signals.get("ensemble_direction"),
@@ -184,7 +194,7 @@ class Ledger:
             signals.get("sharpe"),
             signals.get("volatility_forecast"),
             signals.get("fundamental_score"),
-            action, position_size, confidence, reasoning,
+            action, position_size, confidence, reasoning, source,
         ))
         self.conn.commit()
         decision_id = cursor.lastrowid
@@ -247,8 +257,14 @@ class Ledger:
     # --- Read operations ---
 
     def get_decisions(self, ticker: str = None, start_date: str = None,
-                      end_date: str = None, limit: int = None) -> list[dict]:
-        """Query historical decisions."""
+                      end_date: str = None, limit: int = None,
+                      source: str = None) -> list[dict]:
+        """Query historical decisions.
+
+        Args:
+            source: If set, only return decisions from this source
+                ("live" or "backfill"). None returns all sources.
+        """
         conditions = ["1=1"]
         params: list = []
         if ticker:
@@ -260,6 +276,11 @@ class Ledger:
         if end_date:
             conditions.append("date <= ?")
             params.append(end_date)
+        if source is not None:
+            if source not in ("live", "backfill"):
+                raise ValueError(f"source must be 'live' or 'backfill', got {source!r}")
+            conditions.append("source = ?")
+            params.append(source)
         query = "SELECT * FROM decisions WHERE " + " AND ".join(conditions)
         query += " ORDER BY date DESC, id DESC"
         if limit is not None:
@@ -268,6 +289,22 @@ class Ledger:
                 raise ValueError(f"limit must be >= 0, got {limit}")
             query += " LIMIT ?"
             params.append(limit)
+        rows = self.conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_unresolved_decisions(self, ticker: str = None) -> list[dict]:
+        """Return decisions that have no logged outcome yet.
+
+        These are typically yesterday's live decisions that need their
+        next-day return resolved by the daily loop.
+        """
+        conditions = ["actual_return IS NULL"]
+        params: list = []
+        if ticker:
+            conditions.append("ticker = ?")
+            params.append(ticker)
+        query = ("SELECT * FROM decisions WHERE " + " AND ".join(conditions)
+                 + " ORDER BY date ASC, id ASC")
         rows = self.conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
@@ -308,18 +345,37 @@ class Ledger:
                    AVG(CASE WHEN actual_return IS NOT NULL THEN actual_return ELSE NULL END) as avg_return,
                    SUM(CASE WHEN action = 'BUY' THEN 1 ELSE 0 END) as buys,
                    SUM(CASE WHEN action = 'SELL' THEN 1 ELSE 0 END) as sells,
-                   SUM(CASE WHEN action = 'HOLD' THEN 1 ELSE 0 END) as holds
+                   SUM(CASE WHEN action = 'HOLD' THEN 1 ELSE 0 END) as holds,
+                   SUM(CASE WHEN action IN ('BUY','SELL') AND actual_return IS NOT NULL THEN 1 ELSE 0 END) as resolved_trades,
+                   SUM(CASE WHEN action IN ('BUY','SELL') AND correct = 1 THEN 1 ELSE 0 END) as correct_trades,
+                   SUM(CASE WHEN source = 'live' THEN 1 ELSE 0 END) as live_decisions,
+                   SUM(CASE WHEN source = 'backfill' THEN 1 ELSE 0 END) as backfill_decisions
             FROM decisions WHERE """ + " AND ".join(conditions)
         row = self.conn.execute(query, params).fetchone()
         d = dict(row)
         d["accuracy"] = (d["correct_predictions"] / d["resolved"]) if d["resolved"] and d["resolved"] > 0 else None
+        # Accuracy on decisions that actually put capital at risk (BUY/SELL).
+        # HOLD decisions can inflate/deflate the headline accuracy depending
+        # on how flat the market was, so track them separately.
+        d["trade_accuracy"] = (d["correct_trades"] / d["resolved_trades"]) if d["resolved_trades"] and d["resolved_trades"] > 0 else None
+        d["hold_ratio"] = (d["holds"] / d["total_decisions"]) if d["total_decisions"] and d["total_decisions"] > 0 else None
         return d
 
-    def get_signal_accuracy(self) -> dict:
-        """For each signal module, compute how often it predicted correctly."""
-        resolved = self.conn.execute(
-            "SELECT * FROM decisions WHERE actual_direction IS NOT NULL AND ensemble_direction IS NOT NULL"
-        ).fetchall()
+    def get_signal_accuracy(self, source: str = None) -> dict:
+        """For each signal module, compute how often it predicted correctly.
+
+        Args:
+            source: Restrict to "live" or "backfill" decisions if set.
+        """
+        query = ("SELECT * FROM decisions WHERE actual_direction IS NOT NULL "
+                 "AND ensemble_direction IS NOT NULL")
+        params: list = []
+        if source is not None:
+            if source not in ("live", "backfill"):
+                raise ValueError(f"source must be 'live' or 'backfill', got {source!r}")
+            query += " AND source = ?"
+            params.append(source)
+        resolved = self.conn.execute(query, params).fetchall()
         if not resolved:
             return {}
 

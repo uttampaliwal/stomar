@@ -13,13 +13,16 @@ Usage:
     pipeline.run()  # detects gaps, backfills, runs daily, paper trades
 """
 
+import glob
 import json
 import logging
 import os
+import shutil
 import signal
 import sys
 import tempfile
-from datetime import datetime, timedelta
+import time
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -36,23 +39,19 @@ logger = get_logger("auto_pipeline")
 # Path for pipeline failure records surfaced on the Monitoring page
 PIPELINE_FAILURES_PATH = os.path.join(MONITORING_DIR, "pipeline_failures.json")
 
-
-def _is_business_day(dt) -> bool:
-    """Check if a date is a business day (Mon-Fri)."""
-    return dt.weekday() < 5
+# Per-stage retry backoff (P1.2): attempts 2/3/4 wait 1min, 5min, 15min.
+# Tests patch RETRY_DELAYS to (0, 0) to avoid real waits.
+RETRY_DELAYS = (60, 300, 900)
 
 
 def _get_trading_days_since(start_date: str, end_date: str) -> list[str]:
-    """Get business days between start and end dates (inclusive)."""
-    start = datetime.strptime(start_date, "%Y-%m-%d")
-    end = datetime.strptime(end_date, "%Y-%m-%d")
-    days = []
-    current = start
-    while current <= end:
-        if _is_business_day(current):
-            days.append(current.strftime("%Y-%m-%d"))
-        current += timedelta(days=1)
-    return days
+    """Get NSE trading days between start and end dates (inclusive).
+
+    Uses the NSE holiday calendar (P2.3) so Diwali/Holi/etc. are not
+    treated as missed trading days.
+    """
+    from src.core.calendar import trading_days_since
+    return trading_days_since(start_date, end_date)
 
 
 class AutoPipeline:
@@ -99,6 +98,47 @@ class AutoPipeline:
             self._log("Shutdown requested — stopping pipeline")
             return True
         return False
+
+    def _sleep_interruptible(self, seconds: float):
+        """Sleep in small increments so shutdown signals interrupt promptly."""
+        end = time.time() + seconds
+        while time.time() < end and not self._shutdown_requested:
+            time.sleep(1)
+
+    def _run_stage_with_retries(self, stage: str, fn) -> dict:
+        """Run a stage with exponential backoff retries (P1.2).
+
+        Attempts the stage up to ``len(RETRY_DELAYS) + 1`` times. A stage
+        is retried when it raises or returns a dict with an "error" key.
+        The final result (or last error) is returned; failures are
+        recorded so the Monitoring page can surface them.
+        """
+        last_result: dict = {}
+        for attempt in range(1, len(RETRY_DELAYS) + 2):
+            if self._shutdown_requested:
+                self._log(f"{stage} aborted by shutdown (attempt {attempt})")
+                last_result = {"error": "interrupted by shutdown"}
+                break
+            try:
+                result = fn()
+                if isinstance(result, dict) and result.get("error"):
+                    last_result = result
+                    error = result["error"]
+                else:
+                    return result if isinstance(result, dict) else {"result": result}
+            except Exception as e:
+                last_result = {"error": str(e)}
+                error = str(e)
+
+            if attempt <= len(RETRY_DELAYS):
+                delay = RETRY_DELAYS[attempt - 1]
+                self._log(f"{stage} attempt {attempt} failed ({error}) — retrying in {delay}s")
+                self._sleep_interruptible(delay)
+            else:
+                self._log(f"{stage} failed after {len(RETRY_DELAYS) + 1} attempts: {error}")
+                self._record_failure(stage=stage, error=error)
+
+        return last_result
 
     @property
     def status(self) -> str:
@@ -160,6 +200,14 @@ class AutoPipeline:
             raise
 
         logger.critical("Pipeline failure recorded | stage=%s | error=%s", stage, error)
+
+        # P5.1: notify on critical failures (email if SMTP configured)
+        try:
+            from src.core.notifier import notify
+            notify("pipeline_failure", severity="critical",
+                   details=f"stage={stage} | {error}")
+        except Exception:
+            pass
 
     def run(self, force: bool = False) -> dict:
         """Run the full auto-pipeline with checkpoint-based resume.
@@ -231,7 +279,9 @@ class AutoPipeline:
                 return result
             if ckpt.stage_status("FETCH") not in ("completed", "skipped"):
                 ckpt.advance("FETCH")
-                backfill_result = self._backfill_missed_days(today, last_date)
+                backfill_result = self._run_stage_with_retries(
+                    "FETCH", lambda: self._backfill_missed_days(today, last_date)
+                )
                 result["backfill"] = backfill_result
                 if backfill_result.get("error"):
                     ckpt.fail("FETCH", backfill_result["error"])
@@ -273,7 +323,9 @@ class AutoPipeline:
                 return result
             if ckpt.stage_status("DAILY") not in ("completed", "skipped"):
                 ckpt.advance("DAILY")
-                daily_result = self._run_daily(today)
+                daily_result = self._run_stage_with_retries(
+                    "DAILY", lambda: self._run_daily(today)
+                )
                 result["daily"] = daily_result
                 if daily_result.get("error"):
                     ckpt.fail("DAILY", daily_result["error"])
@@ -302,6 +354,17 @@ class AutoPipeline:
             else:
                 self._log("PAPER already completed, skipping")
                 result["paper_trade"] = {"trades": 0, "skipped": True}
+
+            # Step 5: Ops hygiene — health sweep + weekly ledger backup
+            if self._check_shutdown():
+                result["status"] = "interrupted"
+                return result
+            try:
+                result["health"] = self._run_health_sweep()
+                result["backup"] = self._backup_ledger()
+            except Exception as e:
+                self._log(f"Ops hygiene failed: {e}")
+                result["ops_error"] = str(e)
 
             # Mark pipeline done
             ckpt.advance("DONE")
@@ -465,7 +528,7 @@ class AutoPipeline:
                 paper_trader=paper_trader,
             )
 
-            summary = orchestrator.run(date=today)
+            summary = orchestrator.run(date=today, resolve_outcomes=True)
             n_decisions = len(summary.get("decisions", []))
             n_errors = len(summary.get("errors", []))
 
@@ -488,8 +551,120 @@ class AutoPipeline:
             return {"decisions": n_decisions, "errors": n_errors}
         except Exception as e:
             self._log(f"Daily orchestrator error: {e}")
-            self._record_failure(stage="daily_orchestrator", error=str(e))
+            # Failure recording is handled by the retry wrapper (P1.2)
             return {"error": str(e), "decisions": 0}
+
+    def _run_health_sweep(self) -> dict:
+        """Write a daily health summary to MONITORING_DIR/daily_health.json (P5.3).
+
+        Captures data freshness per ticker, model age, paper trading
+        duration, kill-switch status, and pipeline state — the raw
+        material for the Monitoring page.
+        """
+        from src.core.constants import DATA_DIR, LEDGER_DB, PAPER_STATE_PATH
+
+        now = datetime.now()
+        freshness = {}
+        model_age = {}
+        for ticker in self.tickers:
+            safe = ticker.replace(".", "_")
+            parquet = os.path.join(DATA_DIR, f"{safe}.parquet")
+            if os.path.exists(parquet):
+                age = (now - datetime.fromtimestamp(os.path.getmtime(parquet))).days
+                freshness[ticker] = age
+            else:
+                freshness[ticker] = None
+            model_path = os.path.join(MODELS_DIR, f"{safe}_models.pkl")
+            if os.path.exists(model_path):
+                model_age[ticker] = (now - datetime.fromtimestamp(os.path.getmtime(model_path))).days
+            else:
+                model_age[ticker] = None
+
+        kill_switch = False
+        try:
+            kill_path = os.path.join(DATA_DIR, "kill_switch.json")
+            if os.path.exists(kill_path):
+                with open(kill_path) as f:
+                    kill_switch = bool(json.load(f).get("halted", False))
+        except (OSError, json.JSONDecodeError):
+            pass
+
+        snapshots = 0
+        paper_days = 0
+        if os.path.exists(PAPER_STATE_PATH):
+            try:
+                with open(PAPER_STATE_PATH) as f:
+                    state = json.load(f)
+                snapshots = len(state.get("history", []))
+            except (OSError, json.JSONDecodeError):
+                pass
+        try:
+            from src.trading.ledger import Ledger
+            ledger = Ledger(LEDGER_DB)
+            snapshots = max(snapshots, len(ledger.get_snapshots()))
+            paper_days = len({str(s["date"])[:10] for s in ledger.get_snapshots()})
+            ledger.close()
+        except Exception:
+            pass
+
+        health = {
+            "timestamp": now.isoformat(),
+            "status": self._status,
+            "last_run_date": self._last_run_date,
+            "data_freshness_days": freshness,
+            "model_age_days": model_age,
+            "kill_switch_active": kill_switch,
+            "paper_days": paper_days,
+            "paper_snapshots": snapshots,
+            "tickers_processed": len(self.tickers),
+        }
+        os.makedirs(MONITORING_DIR, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=MONITORING_DIR, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(health, f, indent=2)
+            os.replace(tmp, os.path.join(MONITORING_DIR, "daily_health.json"))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+        self._log(f"Daily health sweep written ({len(self.tickers)} tickers)")
+        return health
+
+    def _backup_ledger(self) -> dict:
+        """Weekly SQLite backup with rotation (P5.4).
+
+        Copies data/stomar.db to data/backups/stomar_YYYYMMDD.db every
+        Sunday, keeping the 4 most recent backups. The ledger is the most
+        valuable artifact in the system — it must survive corruption.
+        """
+        from src.core.constants import DATA_DIR, LEDGER_DB
+
+        backup_dir = os.path.join(DATA_DIR, "backups")
+        result = {"backed_up": False, "path": None}
+        try:
+            if datetime.now().weekday() != 6:  # Sunday only
+                return result
+            if not os.path.exists(LEDGER_DB):
+                return result
+            os.makedirs(backup_dir, exist_ok=True)
+            dest = os.path.join(backup_dir, f"stomar_{datetime.now().strftime('%Y%m%d')}.db")
+            if os.path.exists(dest):
+                return {"backed_up": True, "path": dest, "already_exists": True}
+            shutil.copy2(LEDGER_DB, dest)
+            backups = sorted(glob.glob(os.path.join(backup_dir, "stomar_*.db")))
+            for stale in backups[:-4]:
+                try:
+                    os.remove(stale)
+                except OSError:
+                    pass
+            self._log(f"Ledger backup created: {dest}")
+            return {"backed_up": True, "path": dest}
+        except Exception as e:
+            self._log(f"Ledger backup failed: {e}")
+            return {"backed_up": False, "error": str(e)}
 
     def _run_paper_trades(self) -> dict:
         """Auto-execute paper trades based on today's signals."""

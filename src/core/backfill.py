@@ -133,7 +133,7 @@ class HistoricalBackfill:
             # Make decision using available signals
             decision = self._make_historical_decision(signals)
 
-            # Log decision
+            # Log decision (tagged as backfill — in-sample by construction)
             decision_id = self.ledger.log_decision(
                 date=date,
                 ticker=ticker,
@@ -142,6 +142,7 @@ class HistoricalBackfill:
                 position_size=decision["position_size"],
                 confidence=decision["confidence"],
                 reasoning=decision["reasoning"],
+                source="backfill",
             )
             decisions += 1
 
