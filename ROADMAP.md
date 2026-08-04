@@ -387,7 +387,7 @@
 - [ ] 🟢 **B5** MLflow model registry
   - Replace the file-based model registry with MLflow for better experiment tracking
 
-- [ ] 🟢 **B6** Docker Compose for one-command startup
+^- [x] 🟢 **B6** Docker Compose for one-command startup
   - `docker compose up` starts FastAPI + React + scheduler in one shot
 
 ^- [x] 🟢 **B7** Telegram/WhatsApp bot for daily summary
