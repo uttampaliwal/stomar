@@ -441,4 +441,4 @@ The meta-controller (already built) is already a learning system — it re-weigh
 ---
 
 *Last updated: 2026-08-04*
-*Version: v0.0.4 → targeting v1.0.0 (real-money ready)*
+*Version: v0.0.8 → targeting v0.1.0 (real-money ready)*

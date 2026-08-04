@@ -77,6 +77,19 @@ temp/
 .env
 .env.local
 
+# ─── Shared state (synced across devices — see scripts/sync_state.py) ───
+# Force-track the authoritative state so it can travel between devices via
+# the private git remote. Everything else under data/ stays local.
+!data/stomar.db
+!data/paper_state.json
+!data/paper_session.json
+!models/*.pkl
+!models/*.pt
+!models/meta_controller.pkl
+!models/meta_*_NS.pkl
+!models/production/
+!models/production/*
+
 # ─── React / Node ───
 web/node_modules/
 web/dist/

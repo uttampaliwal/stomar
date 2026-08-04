@@ -547,5 +547,18 @@ class Ledger:
         ).fetchone()
         return row["cnt"] > 0
 
+    def checkpoint_wal(self):
+        """Merge the WAL into the main database file.
+
+        The ledger runs in WAL journal mode; recent writes may live in
+        data/stomar.db-wal. scripts/sync_state.py calls this before pushing
+        so the single .db file is self-contained and safe to copy between
+        devices.
+        """
+        try:
+            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:
+            pass
+
     def close(self):
         self.conn.close()
