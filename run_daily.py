@@ -20,6 +20,12 @@ import time
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+except ImportError:
+    pass
+
 from src.data.data_fetcher import NSE_STOCKS
 from src.trading.ledger import Ledger
 from src.signals.orchestrator import DailyOrchestrator

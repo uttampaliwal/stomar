@@ -10,9 +10,10 @@ import schedule_pipeline as sp
 
 @pytest.fixture(autouse=True)
 def mock_system(monkeypatch):
-    """Force Linux path for deterministic tests regardless of host OS."""
+    """Force Linux + crontab path for deterministic tests regardless of host OS."""
     monkeypatch.setattr(sp, "IS_WINDOWS", False)
     monkeypatch.setattr(sp, "_cron_available", lambda: True)
+    monkeypatch.setattr(sp, "_systemd_available", lambda: False)
 
 
 class TestCronEntry:
@@ -127,3 +128,57 @@ class TestPublicAPI:
              patch.object(sp, "_linux_install_boot", return_value=0) as boot:
             sp.install_task()
         boot.assert_not_called()
+
+
+class TestSystemdFallback:
+    def test_units_have_persistent_timer_and_daily_schedule(self):
+        service, timer = sp._systemd_units("16:00", paper=True, capital=100_000)
+        assert "OnCalendar=Mon..Fri 16:00:00" in timer
+        assert "Persistent=true" in timer
+        assert f"Unit={sp.TASK_NAME}.service" in timer
+        assert "WorkingDirectory=" in service
+        assert "--paper-trade" in service
+        assert "--capital 100000" in service
+
+    def test_linux_install_falls_back_to_systemd_when_no_cron(self):
+        with patch.object(sp, "_cron_available", return_value=False), \
+             patch.object(sp, "_systemd_available", return_value=True), \
+             patch.object(sp, "_systemd_install", return_value=0) as s_install:
+            ret = sp._linux_install("16:00")
+        assert ret == 0
+        s_install.assert_called_once_with("16:00", False, sp.DEFAULT_CAPITAL)
+
+    def test_linux_boot_is_noop_on_systemd(self):
+        with patch.object(sp, "_cron_available", return_value=False), \
+             patch.object(sp, "_systemd_available", return_value=True):
+            ret = sp._linux_install_boot()
+        assert ret == 0
+
+    def test_linux_install_errors_when_no_scheduler(self):
+        with patch.object(sp, "_cron_available", return_value=False), \
+             patch.object(sp, "_systemd_available", return_value=False):
+            ret = sp._linux_install("16:00")
+        assert ret == 1
+
+    def test_systemd_install_writes_units_and_enables_timer(self, tmp_path, monkeypatch):
+        import os
+        monkeypatch.setattr(sp, "os", os)  # keep real os
+        unit_dir = str(tmp_path)
+        monkeypatch.setattr(os.path, "expanduser", lambda p: unit_dir)
+
+        calls = []
+
+        def fake_run(cmd, capture_output=True, text=True):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with patch.object(sp, "subprocess", autospec=True) as mock_sp:
+            mock_sp.run.side_effect = fake_run
+            ret = sp._systemd_install("16:00", paper=True, capital=50_000)
+
+        assert ret == 0
+        assert os.path.exists(f"{unit_dir}/{sp.TASK_NAME}.service")
+        assert os.path.exists(f"{unit_dir}/{sp.TASK_NAME}.timer")
+        enabled = [c for c in calls if "enable" in c]
+        assert len(enabled) == 1
+        assert f"{sp.TASK_NAME}.timer" in enabled[0]

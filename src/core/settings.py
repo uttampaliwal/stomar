@@ -55,6 +55,15 @@ if _HAS_PYDANTIC_SETTINGS:
         guard_vix_threshold: float = Field(default=22, description="VIX threshold for volatility guard")
         guard_atr_expansion_threshold: float = Field(default=2.0, description="ATR expansion ratio threshold")
 
+        # ── Notifications (P5.1 + B7) ──────────────────────────────────────
+        telegram_bot_token: str = Field(default="", description="Telegram bot token from @BotFather")
+        telegram_chat_id: str = Field(default="", description="Telegram chat id to deliver to (numeric)")
+        smtp_host: str = Field(default="", description="SMTP host for email notifications")
+        smtp_port: int = Field(default=587, description="SMTP port")
+        smtp_user: str = Field(default="", description="SMTP username")
+        smtp_password: str = Field(default="", description="SMTP password (app password)")
+        smtp_to: str = Field(default="", description="Comma-separated email recipients")
+
         # ── Model Training ─────────────────────────────────────────────────
         default_seq_length: int = Field(default=60, description="LSTM/GRU/Transformer sequence length")
         default_epochs: int = Field(default=40, description="Training epochs")

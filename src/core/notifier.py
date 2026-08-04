@@ -148,8 +148,10 @@ def send_daily_summary(health: dict, daily: dict | None = None,
         paper: Optional result dict of the paper-trading step.
     """
     date_str = str(health.get("timestamp", datetime.now().isoformat()))[:10]
+    import platform
+    device = platform.node()
     lines = [
-        f"{APP_NAME} daily summary | {date_str}",
+        f"{APP_NAME} daily summary | {date_str} | {device}",
         "",
         f"Status: {health.get('status', '?')}",
     ]

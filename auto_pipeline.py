@@ -26,6 +26,12 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+except ImportError:
+    pass
+
 from src.core.constants import (
     MODELS_DIR, META_CONTROLLER_PATH, MONITORING_DIR,
 )
@@ -231,6 +237,7 @@ class AutoPipeline:
         self._status = "running"
         result = {
             "status": "success",
+            "device": os.uname().nodename if hasattr(os, "uname") else "unknown",
             "backfill": None,
             "daily": None,
             "paper_trade": None,
@@ -700,7 +707,12 @@ class AutoPipeline:
         return result
 
     def _auto_install_scheduler(self) -> dict:
-        """Auto-install cross-platform scheduler if not already present."""
+        """Auto-install cross-platform scheduler if not already present.
+
+        Installs both the daily task and the boot-time catch-up (B8), so a
+        machine that was off at the scheduled time still catches up the
+        moment it is powered on / logged in.
+        """
         result = {"status": "skipped"}
         try:
             from schedule_pipeline import check_status, install_task
@@ -711,11 +723,11 @@ class AutoPipeline:
                 result["status"] = "already_installed"
                 return result
 
-            # Not installed - install it
+            # Not installed - install it (daily 4 PM + boot catch-up)
             import platform
             scheduler_name = "Windows Task Scheduler" if platform.system() == "Windows" else "crontab"
-            self._log(f"Installing {scheduler_name} (daily 4 PM)...")
-            ret = install_task("16:00")
+            self._log(f"Installing {scheduler_name} (daily 4 PM + boot catch-up)...")
+            ret = install_task("16:00", boot=True)
             result["status"] = "installed" if ret == 0 else "failed"
             result["returncode"] = ret
         except Exception as e:
@@ -725,12 +737,12 @@ class AutoPipeline:
         return result
 
     def install_scheduler(self) -> dict:
-        """Install cross-platform scheduler for daily 4 PM run."""
+        """Install cross-platform scheduler for daily 4 PM run + boot catch-up."""
         try:
             from schedule_pipeline import install_task
-            result = install_task()
+            result = install_task("16:00", boot=True)
             self._log(f"Scheduler installed: {result}")
-            return result
+            return {"status": "installed" if result == 0 else "failed", "returncode": result}
         except Exception as e:
             self._log(f"Scheduler install failed: {e}")
             return {"status": "error", "error": str(e)}
@@ -751,6 +763,78 @@ class AutoPipeline:
         self._log(f"Sentiment warm-up: {warmed} cached, {errors} errors")
         return {"warmed": warmed, "errors": errors}
 
+    # ── One-command device setup (B8) ─────────────────────────────────────
+
+    def setup_device(self, install_scheduler: bool = True,
+                     run_now: bool = False) -> dict:
+        """Streamlined per-device setup: verify env -> test Telegram -> GPU
+        check -> install scheduler (daily + boot catch-up) -> optional run.
+
+        Designed to be run once per device, so any machine the user turns
+        on will take over automatically (the pipeline is idempotent and
+        the boot catch-up covers days the device was off).
+        """
+        import platform
+
+        report = {"device": platform.node(), "os": platform.system(), "ok": True}
+
+        # 1. Env check
+        from src.core.notifier import _telegram_config
+        token, chat_id = _telegram_config()
+        if token and chat_id:
+            self._log(f"Telegram configured (chat id {chat_id})")
+            report["telegram"] = "configured"
+        else:
+            self._log("WARNING: STOMAR_TELEGRAM_BOT_TOKEN / CHAT_ID missing in .env")
+            report["telegram"] = "missing (edit .env)"
+            report["ok"] = False
+
+        # 2. Live Telegram test
+        from src.core.notifier import _send_telegram
+        if token and chat_id:
+            test_body = (
+                f"StoMar setup on {platform.node()} ({platform.system()})\n"
+                "Telegram channel verified."
+            )
+            if _send_telegram(test_body):
+                self._log("Telegram test message delivered")
+                report["telegram_test"] = "delivered"
+            else:
+                self._log("WARNING: Telegram test message failed")
+                report["telegram_test"] = "failed"
+                report["ok"] = False
+
+        # 3. GPU / torch check
+        try:
+            import torch
+            cuda = torch.cuda.is_available()
+            report["torch"] = torch.__version__
+            report["cuda"] = cuda
+            if cuda:
+                self._log(f"CUDA available: {torch.cuda.get_device_name(0)}")
+            else:
+                self._log("CPU-only torch — run scripts/setup_gpu.sh (or .bat) on GPU machines")
+        except ImportError:
+            report["torch"] = "not installed"
+            report["ok"] = False
+
+        # 4. Scheduler (daily + boot catch-up)
+        if install_scheduler:
+            report["scheduler"] = self._auto_install_scheduler()
+            if report["scheduler"].get("status") in ("failed", "error"):
+                report["ok"] = False
+        else:
+            report["scheduler"] = {"status": "skipped"}
+
+        # 5. Optional immediate run
+        if run_now:
+            report["run"] = self.run(force=False)
+        else:
+            report["run"] = {"status": "skipped"}
+            self._log("Setup complete — first run happens on next boot or daily task")
+
+        return report
+
 
 def main():
     """CLI entry point for auto-pipeline."""
@@ -767,6 +851,11 @@ def main():
                         help="Force run even if already ran today")
     parser.add_argument("--install-scheduler", action="store_true",
                         help="Install Windows Task Scheduler")
+    parser.add_argument("--setup", action="store_true",
+                        help="One-command device setup: verify env, test Telegram, "
+                             "check GPU, install scheduler (daily + boot catch-up)")
+    parser.add_argument("--setup-run", action="store_true",
+                        help="Like --setup, plus run the pipeline immediately")
     parser.add_argument("--warm-sentiment", action="store_true",
                         help="Pre-warm sentiment cache only")
     parser.add_argument("--ticker", nargs="+", metavar="TICKER",
@@ -774,6 +863,14 @@ def main():
     args = parser.parse_args()
 
     pipeline = AutoPipeline(tickers=args.ticker)
+
+    if args.setup or args.setup_run:
+        report = pipeline.setup_device(run_now=args.setup_run)
+        print("\n=== Device setup report ===")
+        for key, value in report.items():
+            print(f"  {key}: {value}")
+        print("\nPipeline result: " + ("OK" if report["ok"] else "ACTION NEEDED"))
+        return
 
     if args.install_scheduler:
         result = pipeline.install_scheduler()
