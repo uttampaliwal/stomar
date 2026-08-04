@@ -88,6 +88,24 @@ def _paper_state_session(trader):
         raise RuntimeError(_BUSY_MSG) from None
 
 
+@router.get("/performance")
+def paper_performance():
+    """P3.4: rolling accuracy, per-module signal accuracy, drawdown stats."""
+    try:
+        from src.trading.ledger import Ledger
+        ledger = Ledger()
+        try:
+            return {
+                "rolling_accuracy_30d": ledger.get_rolling_accuracy(days=30, source="live"),
+                "signal_accuracy": ledger.get_signal_accuracy(source="live"),
+                "drawdown": ledger.get_drawdown_stats(),
+            }
+        finally:
+            ledger.close()
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/state")
 def paper_state():
     try:

@@ -2,13 +2,14 @@ import { useState } from 'react'
 import { Card, Stat, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi, usePostApi } from '@/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
-import type { PaperPositionSummary, PaperPositionsResponse, PaperTradesResponse, PaperOrderResponse, PaperCloseResponse, PaperResetResponse } from '../lib/api-types'
+import type { PaperPositionSummary, PaperPositionsResponse, PaperTradesResponse, PaperOrderResponse, PaperCloseResponse, PaperResetResponse, PaperPerformanceResponse } from '../lib/api-types'
 
 export default function PaperTrading() {
   const { data: state, loading, error, refetch } = useApi<PaperPositionSummary>('/api/paper-trading/state')
   const { data: positions, refetch: refetchPositions } = useApi<PaperPositionsResponse>('/api/paper-trading/positions')
   const { data: trades } = useApi<PaperTradesResponse>('/api/paper-trading/trades')
   const { data: stocks } = useApi<{ stocks: string[] }>('/api/paper-trading/stocks')
+  const { data: perf } = useApi<PaperPerformanceResponse>('/api/paper-trading/performance')
   const { post: placeOrder, loading: ordering } = usePostApi<PaperOrderResponse>('/api/paper-trading/order')
   const { post: closePosition, loading: closing } = usePostApi<PaperCloseResponse>('/api/paper-trading/close-position')
   const { post: resetAccount, loading: resetting } = usePostApi<PaperResetResponse>('/api/paper-trading/reset')
@@ -270,6 +271,90 @@ export default function PaperTrading() {
             </>
           ) : (
             <EmptyState message="The trade log will appear here after your first fill." />
+          )}
+
+          {/* P3.4: Performance — rolling accuracy, signal breakdown, drawdown */}
+          {perf && !('error' in perf) && (
+            <>
+              <SectionHeader title="Performance vs Signal Honesty (P3.4)" />
+              <Card>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <Stat
+                    label={`Rolling ${perf.rolling_accuracy_30d?.days || 30}-day Accuracy`}
+                    value={perf.rolling_accuracy_30d?.accuracy != null
+                      ? `${(perf.rolling_accuracy_30d.accuracy * 100).toFixed(1)}%`
+                      : 'N/A'}
+                    trend={(perf.rolling_accuracy_30d?.accuracy || 0) >= 0.51 ? 'up' : 'down'}
+                  />
+                  <Stat
+                    label="Current Drawdown"
+                    value={perf.drawdown?.current_drawdown_pct != null
+                      ? `${(perf.drawdown.current_drawdown_pct * 100).toFixed(1)}%`
+                      : 'N/A'}
+                    trend={((perf.drawdown?.current_drawdown_pct || 0) > 0.10) ? 'down' : 'up'}
+                  />
+                  <Stat
+                    label="Max Drawdown (all time)"
+                    value={perf.drawdown?.max_drawdown_pct != null
+                      ? `${(perf.drawdown.max_drawdown_pct * 100).toFixed(1)}%`
+                      : 'N/A'}
+                    trend={((perf.drawdown?.max_drawdown_pct || 0) > 0.10) ? 'down' : 'up'}
+                  />
+                  <Stat
+                    label="Resolved Live Decisions (30d)"
+                    value={perf.rolling_accuracy_30d?.n_resolved ?? 0}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Rolling accuracy counts only resolved live BUY/SELL/HOLD decisions with actual outcomes —
+                  backfill is excluded because it is in-sample by construction.
+                </p>
+                {((perf.drawdown?.current_drawdown_pct || 0) > 0.10) && (
+                  <p className="mt-2 text-xs font-semibold text-rose">
+                    ALERT: current drawdown exceeds 10% — review strategy before continuing.
+                  </p>
+                )}
+              </Card>
+
+              {perf.drawdown?.equity_curve?.length > 2 && (
+                <Card>
+                  <p className="mb-2 text-xs text-muted-foreground">Equity curve (last {perf.drawdown.equity_curve.length} snapshots)</p>
+                  <div className="h-40 flex items-end gap-px">
+                    {perf.drawdown.equity_curve.map((p) => {
+                      const min = Math.min(...perf.drawdown!.equity_curve!.map((x) => x.equity))
+                      const max = Math.max(...perf.drawdown!.equity_curve!.map((x) => x.equity))
+                      const h = max > min ? ((p.equity - min) / (max - min)) * 100 : 50
+                      return (
+                        <div
+                          key={p.date}
+                          title={`${p.date}: ${formatCurrency(p.equity)}`}
+                          className={`flex-1 rounded-t ${p.equity >= perf.drawdown!.peak_equity! ? 'bg-emerald/60' : 'bg-cyan/60'}`}
+                          style={{ height: `${Math.max(h, 2)}%` }}
+                        />
+                      )
+                    })}
+                  </div>
+                </Card>
+              )}
+
+              <Card>
+                <p className="mb-2 text-sm font-semibold">Signal Accuracy by Module (live decisions)</p>
+                {perf.signal_accuracy && Object.keys(perf.signal_accuracy).length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                    {Object.entries(perf.signal_accuracy).map(([name, acc]) => (
+                      <div key={name} className="flex items-center justify-between rounded border border-border/60 px-3 py-2">
+                        <span className="text-xs font-mono uppercase text-muted-foreground">{name}</span>
+                        <span className={`font-mono font-semibold ${acc == null ? '' : acc >= 0.51 ? 'text-emerald' : 'text-rose'}`}>
+                          {acc == null ? 'N/A' : `${(acc * 100).toFixed(0)}%`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No resolved live decisions yet — appears after live paper runs accumulate.</p>
+                )}
+              </Card>
+            </>
           )}
         </>
       )}

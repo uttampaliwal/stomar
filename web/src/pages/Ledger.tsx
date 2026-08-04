@@ -7,8 +7,8 @@ import {
   Tooltip, Legend, CartesianGrid,
 } from 'recharts'
 import type {
-  LedgerSummaryResponse, LedgerDecisionsResponse,
-  LedgerBenchmarkResponse, CalibrationResponse,
+  LedgerSummaryResponse, LedgerDecisionsResponse, LedgerDecision,
+  LedgerBenchmarkResponse, CalibrationResponse, AgreementStats,
 } from '../lib/api-types'
 
 function buildBenchmarkData(b: LedgerBenchmarkResponse) {
@@ -30,11 +30,16 @@ function buildBenchmarkData(b: LedgerBenchmarkResponse) {
 
 export default function Ledger() {
   const { data, loading, error, refetch } = useApi<LedgerSummaryResponse>('/api/ledger/summary')
-  const { data: decisionsData } = useApi<LedgerDecisionsResponse>('/api/ledger/decisions')
+  const [agreeFilter, setAgreeFilter] = useState(false)
+  const { data: decisionsData } = useApi<LedgerDecisionsResponse>(
+    '/api/ledger/decisions' + (agreeFilter ? '?agreement=all' : '')
+  )
+  const { data: agreementStats } = useApi<AgreementStats>('/api/ledger/agreement-stats')
   const { data: benchmarkData, loading: benchmarkLoading } = useApi<LedgerBenchmarkResponse>('/api/ledger/benchmark')
   const { data: calibrationData } = useApi<CalibrationResponse>('/api/ledger/calibration')
   const [running, setRunning] = useState(false)
   const [runResult, setRunResult] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
   const benchmarkRows = benchmarkData && !('error' in benchmarkData) ? buildBenchmarkData(benchmarkData) : []
 
   const handleRunPipeline = async () => {
@@ -266,6 +271,39 @@ export default function Ledger() {
             </>
           )}
 
+          {/* P4.2: Decision audit trail — agreement filter + signal details */}
+          {agreementStats && !('error' in agreementStats) && (
+            <Card>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold">Main-Signal Agreement Audit (P4.2)</p>
+                  <p className="text-xs text-muted-foreground">
+                    When ensemble + sentiment + regime all point the same way, is the system more accurate?
+                  </p>
+                  <div className="flex gap-4 text-xs font-mono">
+                    <span>
+                      All decisions: <b>{agreementStats.all.n}</b>{' '}
+                      ({agreementStats.all.accuracy != null ? `${(agreementStats.all.accuracy * 100).toFixed(1)}%` : 'N/A'})
+                    </span>
+                    <span>
+                      Agreed: <b>{agreementStats.agreed.n}</b>{' '}
+                      ({agreementStats.agreed.accuracy != null ? `${(agreementStats.agreed.accuracy * 100).toFixed(1)}%` : 'N/A'})
+                    </span>
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-xs font-mono cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={agreeFilter}
+                    onChange={(e) => setAgreeFilter(e.target.checked)}
+                    className="accent-cyan"
+                  />
+                  Only decisions where main signals agreed
+                </label>
+              </div>
+            </Card>
+          )}
+
           {/* Decisions Table */}
           {decisionsData && decisionsData.decisions.length > 0 ? (
             <>
@@ -279,25 +317,13 @@ export default function Ledger() {
                       <th className="text-left py-2 px-3 font-mono text-xs text-muted-foreground">Action</th>
                       <th className="text-right py-2 px-3 font-mono text-xs text-muted-foreground">Confidence</th>
                       <th className="text-left py-2 px-3 font-mono text-xs text-muted-foreground">Regime</th>
+                      <th className="text-left py-2 px-3 font-mono text-xs text-muted-foreground">Source</th>
                       <th className="text-left py-2 px-3 font-mono text-xs text-muted-foreground">Reasoning</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {decisionsData.decisions.slice(0, 20).map((d, i) => (
-                      <tr key={i} className="border-b border-border/50 hover:bg-muted/50">
-                        <td className="py-2 px-3 font-mono text-xs">{d.date}</td>
-                        <td className="py-2 px-3 font-mono text-xs">{d.ticker}</td>
-                        <td className="py-2 px-3">
-                          <Badge variant={d.action === 'BUY' ? 'success' : d.action === 'SELL' ? 'danger' : 'default'}>
-                            {d.action}
-                          </Badge>
-                        </td>
-                        <td className="py-2 px-3 font-mono text-xs text-right">
-                          {d.confidence ? `${(d.confidence * 100).toFixed(1)}%` : '-'}
-                        </td>
-                        <td className="py-2 px-3 text-xs">{d.regime || '-'}</td>
-                        <td className="py-2 px-3 text-xs text-muted-foreground max-w-[200px] truncate">{d.reasoning}</td>
-                      </tr>
+                    {decisionsData.decisions.slice(0, 20).map((d: LedgerDecision) => (
+                      <AuditRow key={d.id} d={d} expanded={expandedId === d.id} onToggle={() => setExpandedId(expandedId === d.id ? null : d.id)} />
                     ))}
                   </tbody>
                 </table>
@@ -309,5 +335,69 @@ export default function Ledger() {
         </>
       )}
     </div>
+  )
+}
+
+function AuditRow({ d, expanded, onToggle }: { d: LedgerDecision; expanded: boolean; onToggle: () => void }) {
+  const rows: [string, string][] = [
+    ['Ensemble direction', d.ensemble_direction == null ? 'N/A' : d.ensemble_direction === 1 ? 'UP' : 'DOWN'],
+    ['Ensemble confidence', d.ensemble_confidence != null ? `${(d.ensemble_confidence * 100).toFixed(0)}%` : 'N/A'],
+    ['Sentiment', d.sentiment_score != null ? `${d.sentiment_score >= 0 ? '+' : ''}${d.sentiment_score.toFixed(2)}` : 'N/A'],
+    ['FII net', d.fii_net != null ? `${d.fii_net.toFixed(2)}` : 'N/A'],
+    ['DII net', d.dii_net != null ? `${d.dii_net.toFixed(2)}` : 'N/A'],
+    ['PCR (OI)', d.pcr != null ? d.pcr.toFixed(2) : 'N/A'],
+    ['Max Pain', d.max_pain != null ? d.max_pain.toFixed(0) : 'N/A'],
+    ['MTF signal', d.mtf_signal != null ? d.mtf_signal.toFixed(2) : 'N/A'],
+    ['Regime', d.regime ?? 'N/A'],
+    ['VaR 95', d.var_95 != null ? `${(d.var_95 * 100).toFixed(2)}%` : 'N/A'],
+    ['CVaR 95', d.cvar_95 != null ? `${(d.cvar_95 * 100).toFixed(2)}%` : 'N/A'],
+    ['Sharpe', d.sharpe != null ? d.sharpe.toFixed(2) : 'N/A'],
+    ['Vol forecast', d.volatility_forecast != null ? `${(d.volatility_forecast * 100).toFixed(2)}%` : 'N/A'],
+    ['Fundamental', d.fundamental_score != null ? d.fundamental_score.toFixed(2) : 'N/A'],
+    ['Position size', d.position_size != null ? `${(d.position_size * 100).toFixed(1)}%` : 'N/A'],
+    ['Actual return', d.actual_return != null ? `${(d.actual_return * 100).toFixed(2)}%` : 'pending'],
+    ['Correct', d.correct == null ? 'pending' : d.correct === 1 ? 'yes' : 'no'],
+  ]
+  return (
+    <>
+      <tr className={`border-b border-border/50 hover:bg-muted/50 cursor-pointer ${expanded ? 'bg-muted/60' : ''}`} onClick={onToggle}>
+        <td className="py-2 px-3 font-mono text-xs">
+          {d.date} <span className="text-muted-foreground text-[10px]">{expanded ? '▲' : '▼'}</span>
+        </td>
+        <td className="py-2 px-3 font-mono text-xs">{d.ticker}</td>
+        <td className="py-2 px-3">
+          <Badge variant={d.action === 'BUY' ? 'success' : d.action === 'SELL' ? 'danger' : 'default'}>
+            {d.action}
+          </Badge>
+        </td>
+        <td className="py-2 px-3 font-mono text-xs text-right">
+          {d.confidence ? `${(d.confidence * 100).toFixed(1)}%` : '-'}
+        </td>
+        <td className="py-2 px-3 text-xs">{d.regime || '-'}</td>
+        <td className="py-2 px-3">
+          <Badge variant={d.source === 'live' ? 'success' : d.source === 'backfill' ? 'warning' : 'default'}>
+            {d.source || 'unknown'}
+          </Badge>
+        </td>
+        <td className="py-2 px-3 text-xs text-muted-foreground max-w-[200px] truncate">{d.reasoning}</td>
+      </tr>
+      {expanded && (
+        <tr className="bg-muted/30">
+          <td colSpan={7} className="p-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {rows.map(([label, value]) => (
+                <div key={label} className="rounded border border-border/60 px-2 py-1.5 text-xs">
+                  <p className="font-mono uppercase text-[10px] text-muted-foreground">{label}</p>
+                  <p className="font-mono font-semibold">{value}</p>
+                </div>
+              ))}
+            </div>
+            {d.reasoning && (
+              <p className="mt-3 text-xs text-muted-foreground border-t border-border/50 pt-2">{d.reasoning}</p>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
   )
 }

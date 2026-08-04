@@ -30,6 +30,12 @@ GST_RATE = settings.gst_rate
 RISK_FREE_RATE = settings.risk_free_rate
 MIN_DENOMINATOR = 0.001          # Guard against division by zero
 
+# ─── Capital Gains Tax (India, P5.5) ───
+STCG_TAX_RATE = 0.15             # Short-term: held < 1 year
+LTCG_TAX_RATE = 0.10             # Long-term: held >= 1 year
+LTCG_EXEMPTION = 100_000.0       # ₹1 lakh LTCG exemption per financial year
+LONG_TERM_HOLDING_DAYS = 365     # Holding period that qualifies as long-term
+
 # ─── Trading Days ───
 TRADING_DAYS_PER_YEAR = 252      # Approximate NSE trading days per year
 

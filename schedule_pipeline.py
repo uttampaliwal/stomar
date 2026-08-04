@@ -2,14 +2,17 @@
 
 Supports:
   - Windows: Task Scheduler (schtasks.exe)
-  - Linux/macOS: crontab
+  - Linux/macOS: crontab (system crontab binary, no python-crontab dependency)
 
 Usage:
-    python schedule_pipeline.py                # Install (daily at 4 PM)
-    python schedule_pipeline.py --remove       # Remove scheduled task
-    python schedule_pipeline.py --run-now      # Run daily loop immediately
-    python schedule_pipeline.py --status       # Check task status
-    python schedule_pipeline.py --time 16:00   # Custom run time
+    python schedule_pipeline.py                     # Install (weekdays 3:45 PM)
+    python schedule_pipeline.py --paper             # Install with paper trading
+    python schedule_pipeline.py --paper --boot      # + boot-time catch-up run
+    python schedule_pipeline.py --remove            # Remove scheduled task
+    python schedule_pipeline.py --run-now           # Run daily loop immediately
+    python schedule_pipeline.py --status            # Check task status
+    python schedule_pipeline.py --time 16:00        # Custom run time
+    python schedule_pipeline.py --capital 200000    # Paper capital
 """
 
 import os
@@ -20,9 +23,11 @@ import sys
 from datetime import datetime
 
 TASK_NAME = "StoMar_Daily_Signal"
+BOOT_TASK_NAME = "StoMar_Boot_Catchup"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DAILY_SCRIPT = os.path.join(SCRIPT_DIR, "run_daily.py")
 LOG_DIR = os.path.join(SCRIPT_DIR, "data", "pipeline_logs")
+DEFAULT_CAPITAL = 200_000
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -40,15 +45,24 @@ def ensure_log_dir():
 # Windows (schtasks)
 # ---------------------------------------------------------------------------
 
-def _win_install(run_time: str = "16:00") -> int:
+def _base_cmd(paper: bool, capital: float) -> list[str]:
+    """Build the run_daily.py command line for scheduled entries."""
+    cmd = [_python_path(), DAILY_SCRIPT]
+    if paper:
+        cmd += ["--paper-trade", "--capital", str(int(capital))]
+    return cmd
+
+
+def _win_install(run_time: str = "15:45", paper: bool = False,
+                 capital: float = DEFAULT_CAPITAL) -> int:
     ensure_log_dir()
     log_file = os.path.join(LOG_DIR, f"daily_{datetime.now().strftime('%Y%m%d')}.log")
-    python_path = _python_path()
+    cmd_line = " ".join(_base_cmd(paper, capital))
 
     cmd = [
         "schtasks", "/create",
         "/tn", TASK_NAME,
-        "/tr", f'"{python_path}" "{DAILY_SCRIPT}" >> "{log_file}" 2>&1',
+        "/tr", f'"{cmd_line}" >> "{log_file}" 2>&1',
         "/sc", "daily",
         "/st", run_time,
         "/f",
@@ -58,22 +72,45 @@ def _win_install(run_time: str = "16:00") -> int:
     if result.returncode == 0:
         print(f"Task '{TASK_NAME}' installed successfully (Windows Task Scheduler).")
         print(f"  Schedule: Daily at {run_time}")
+        print(f"  Paper trading: {paper}")
         print(f"  Log: {log_file}")
-        print(f"  Python: {python_path}")
+        print(f"  Python: {_python_path()}")
         print(f"  Script: {DAILY_SCRIPT}")
     else:
         print(f"Failed to install task: {result.stderr}")
     return result.returncode
 
 
-def _win_remove() -> int:
-    cmd = ["schtasks", "/delete", "/tn", TASK_NAME, "/f"]
+def _win_install_boot(paper: bool = False, capital: float = DEFAULT_CAPITAL) -> int:
+    """Boot-time task: catches up missed days when the PC was off at 4PM."""
+    ensure_log_dir()
+    log_file = os.path.join(LOG_DIR, f"boot_{datetime.now().strftime('%Y%m%d')}.log")
+    cmd_line = " ".join(_base_cmd(paper, capital))
+
+    cmd = [
+        "schtasks", "/create",
+        "/tn", BOOT_TASK_NAME,
+        "/tr", f'"{cmd_line}" >> "{log_file}" 2>&1',
+        "/sc", "onstart",
+        "/delay", "0005:00",
+        "/f",
+    ]
+
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode == 0:
-        print(f"Task '{TASK_NAME}' removed.")
+        print(f"Task '{BOOT_TASK_NAME}' installed (boot-time catch-up).")
     else:
-        print(f"Failed to remove task: {result.stderr}")
+        print(f"Failed to install boot task: {result.stderr}")
     return result.returncode
+
+
+def _win_remove() -> int:
+    for name in (TASK_NAME, BOOT_TASK_NAME):
+        cmd = ["schtasks", "/delete", "/tn", name, "/f"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"Task '{name}' removed.")
+    return 0
 
 
 def _win_status() -> int:
@@ -93,6 +130,7 @@ def _win_status() -> int:
 # ---------------------------------------------------------------------------
 
 _CRON_COMMENT = f"# {TASK_NAME}"
+_BOOT_CRON_COMMENT = f"# {BOOT_TASK_NAME}"
 
 
 def _cron_available() -> bool:
@@ -100,23 +138,33 @@ def _cron_available() -> bool:
     return shutil.which("crontab") is not None
 
 
-def _cron_entry(run_time: str) -> str:
-    """Build a cron line like '0 16 * * 1-5 ...'."""
+def _cron_entry(run_time: str, paper: bool = False,
+                capital: float = DEFAULT_CAPITAL) -> str:
+    """Build a cron line like '45 15 * * 1-5 ...'."""
     hour, minute = run_time.split(":")[:2]
-    python_path = _python_path()
+    cmd_line = " ".join(_base_cmd(paper, capital))
     log_file = os.path.join(LOG_DIR, "daily_$(date +\\%Y\\%m\\%d).log")
     # Run Mon-Fri (1-5)
-    return f"{minute} {hour} * * 1-5 {python_path} {DAILY_SCRIPT} >> {log_file} 2>&1 {_CRON_COMMENT}"
+    return f"{minute} {hour} * * 1-5 {cmd_line} >> {log_file} 2>&1 {_CRON_COMMENT}"
 
 
-def _cron_get_lines() -> list[str]:
-    """Read current crontab lines (excluding our entry)."""
+def _cron_boot_entry(paper: bool = False, capital: float = DEFAULT_CAPITAL) -> str:
+    """Boot-time entry: catch up missed days when the machine was off."""
+    cmd_line = " ".join(_base_cmd(paper, capital))
+    log_file = os.path.join(LOG_DIR, "boot_$(date +\\%Y\\%m\\%d).log")
+    # 5-minute delay lets the network come up after boot
+    return f"@reboot sleep 300 && {cmd_line} >> {log_file} 2>&1 {_BOOT_CRON_COMMENT}"
+
+
+def _cron_get_lines(comment: str = _CRON_COMMENT) -> list[str]:
+    """Read current crontab lines (excluding our entries)."""
     if not _cron_available():
         return []
     result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
     if result.returncode != 0:
         return []
-    return [line for line in result.stdout.splitlines() if _CRON_COMMENT not in line]
+    return [line for line in result.stdout.splitlines()
+            if _CRON_COMMENT not in line and _BOOT_CRON_COMMENT not in line]
 
 
 def _cron_write_lines(lines: list[str]) -> int:
@@ -134,7 +182,8 @@ def _cron_write_lines(lines: list[str]) -> int:
     return result.returncode
 
 
-def _linux_install(run_time: str = "16:00") -> int:
+def _linux_install(run_time: str = "15:45", paper: bool = False,
+                   capital: float = DEFAULT_CAPITAL) -> int:
     ensure_log_dir()
     if not _cron_available():
         print("Error: crontab is not installed on this system.")
@@ -142,17 +191,33 @@ def _linux_install(run_time: str = "16:00") -> int:
         print("                 sudo yum install cronie  (CentOS/RHEL)")
         return 1
     lines = _cron_get_lines()
-    entry = _cron_entry(run_time)
-    lines.append(entry)
+    lines.append(_cron_entry(run_time, paper, capital))
     ret = _cron_write_lines(lines)
     if ret == 0:
         print(f"Task '{TASK_NAME}' installed successfully (crontab).")
         print(f"  Schedule: Mon-Fri at {run_time}")
+        print(f"  Paper trading: {paper}")
         print(f"  Log: {LOG_DIR}/daily_<date>.log")
         print(f"  Python: {_python_path()}")
         print(f"  Script: {DAILY_SCRIPT}")
     else:
         print("Failed to install crontab entry.")
+    return ret
+
+
+def _linux_install_boot(paper: bool = False, capital: float = DEFAULT_CAPITAL) -> int:
+    """Boot-time crontab entry (@reboot, after a 5-minute network delay)."""
+    if not _cron_available():
+        print("Error: crontab is not installed on this system.")
+        return 1
+    lines = _cron_get_lines()
+    lines.append(_cron_boot_entry(paper, capital))
+    ret = _cron_write_lines(lines)
+    if ret == 0:
+        print(f"Task '{BOOT_TASK_NAME}' installed (boot-time catch-up).")
+        print(f"  Entry: @reboot (sleep 300) -> {DAILY_SCRIPT}")
+    else:
+        print("Failed to install boot crontab entry.")
     return ret
 
 
@@ -173,10 +238,12 @@ def _linux_status() -> int:
         print("                 sudo yum install cronie  (CentOS/RHEL)")
         return 1
     result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
-    if result.returncode == 0 and _CRON_COMMENT in result.stdout:
-        print(f"Task '{TASK_NAME}' is installed:")
+    installed = [name for name in (TASK_NAME, BOOT_TASK_NAME)
+                 if name in result.stdout]
+    if result.returncode == 0 and installed:
+        print(f"Tasks installed: {', '.join(installed)}")
         for line in result.stdout.splitlines():
-            if _CRON_COMMENT in line or (line.strip() and not line.startswith("#")):
+            if _CRON_COMMENT in line or _BOOT_CRON_COMMENT in line:
                 print(f"  {line}")
         return 0
     else:
@@ -189,12 +256,18 @@ def _linux_status() -> int:
 # Public API (cross-platform)
 # ---------------------------------------------------------------------------
 
-def install_task(run_time: str = "16:00") -> int:
-    """Install a daily scheduled task."""
+def install_task(run_time: str = "15:45", paper: bool = False,
+                 capital: float = DEFAULT_CAPITAL, boot: bool = False) -> int:
+    """Install the daily scheduled task (and optionally the boot catch-up)."""
     if IS_WINDOWS:
-        return _win_install(run_time)
+        ret = _win_install(run_time, paper, capital)
+        if boot and ret == 0:
+            ret = _win_install_boot(paper, capital)
     else:
-        return _linux_install(run_time)
+        ret = _linux_install(run_time, paper, capital)
+        if boot and ret == 0:
+            ret = _linux_install_boot(paper, capital)
+    return ret
 
 
 def remove_task() -> int:
@@ -234,11 +307,17 @@ def main():
     elif "--status" in args:
         return check_status()
     else:
-        run_time = "16:00"
+        run_time = "15:45"
+        capital = DEFAULT_CAPITAL
         for i, arg in enumerate(args):
             if arg == "--time" and i + 1 < len(args):
                 run_time = args[i + 1]
-        return install_task(run_time)
+            elif arg == "--capital" and i + 1 < len(args):
+                capital = float(args[i + 1])
+        return install_task(run_time=run_time,
+                            paper="--paper" in args,
+                            capital=capital,
+                            boot="--boot" in args)
 
 
 if __name__ == "__main__":

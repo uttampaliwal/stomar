@@ -16,11 +16,27 @@ def get_decisions(
     ticker: str = Query(None),
     start_date: str = Query(None),
     end_date: str = Query(None),
+    agreement: str = Query(None, description="'all' filters to decisions where the 3 main signals agreed"),
 ):
     ledger = get_ledger()
     try:
-        decisions = ledger.get_decisions(ticker=ticker, start_date=start_date, end_date=end_date)
+        decisions = ledger.get_decisions(
+            ticker=ticker, start_date=start_date, end_date=end_date,
+            main_signals_agree=(agreement == "all"),
+        )
         return {"decisions": decisions}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        ledger.close()
+
+
+@router.get("/agreement-stats")
+def agreement_stats():
+    """P4.2: is the system better when all main signals agree?"""
+    ledger = get_ledger()
+    try:
+        return ledger.get_agreement_stats()
     except Exception as e:
         return {"error": str(e)}
     finally:

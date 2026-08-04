@@ -42,6 +42,12 @@ export interface BacktestResponse {
 }
 
 // ── /api/consensus/ ──
+export interface ConsensusSignal {
+  direction: string
+  detail: string
+  verdict?: 'agree' | 'disagree' | 'warn' | 'neutral'
+}
+
 export interface ConsensusResult {
   ticker: string
   ensemble_signal: string
@@ -50,6 +56,8 @@ export interface ConsensusResult {
   meta_confidence: number
   regime: string
   consensus: string
+  signals?: Record<string, ConsensusSignal>
+  stop_loss_pct?: number
 }
 
 export interface ConsensusResponse {
@@ -145,6 +153,12 @@ export interface LedgerDecision {
   actual_direction: number | null
   correct: number | null
   created_at: string
+  source?: string
+}
+
+export interface AgreementStats {
+  agreed: { n: number; accuracy: number | null }
+  all: { n: number; accuracy: number | null }
 }
 
 export interface AutomationDecisionsResponse {
@@ -260,6 +274,37 @@ export interface PaperResetResponse {
   state: PaperPositionSummary
 }
 
+// ── /api/paper-trading/performance (P3.4) ──
+export interface RollingAccuracy {
+  days: number
+  source: string
+  cutoff: string
+  n_resolved: number
+  n_correct: number
+  accuracy: number | null
+}
+
+export interface EquityPoint {
+  date: string
+  equity: number
+}
+
+export interface DrawdownStats {
+  n_snapshots: number
+  peak_equity: number | null
+  current_equity: number | null
+  current_drawdown_pct: number | null
+  max_drawdown_pct: number | null
+  equity_curve: EquityPoint[]
+}
+
+export interface PaperPerformanceResponse {
+  rolling_accuracy_30d: RollingAccuracy
+  signal_accuracy: Record<string, number | null>
+  drawdown: DrawdownStats
+  error?: string
+}
+
 // ── /api/ledger ──
 export interface LedgerSnapshot {
   id: number
@@ -334,6 +379,21 @@ export interface ReadinessResponse {
   evidence?: Record<string, unknown>
   summary?: string
   checked_at?: string
+  error?: string
+}
+
+// ── /api/monitoring/daily-health (P5.2) ──
+export interface DailyHealthResponse {
+  timestamp: string
+  status: string
+  last_run_date: string | null
+  data_freshness_days: Record<string, number | null>
+  model_age_days: Record<string, number | null>
+  kill_switch_active: boolean
+  paper_days: number
+  paper_snapshots: number
+  tickers_processed: number
+  exists?: boolean
   error?: string
 }
 

@@ -133,6 +133,16 @@ class DailyOrchestrator:
             "current_price": signals.get("current_price", 0),
         }
 
+        # P4.3: append SHAP top-5 to the decision reasoning
+        explanation = signals.get("explanation") or []
+        if explanation and decision["reasoning"]:
+            parts = []
+            for f in explanation[:5]:
+                feat = f.get("feature") or "?"
+                shap = f.get("shap")
+                parts.append(f"{feat}({shap:+.3f})" if shap is not None else feat)
+            result["reasoning"] = f"{decision['reasoning']} | SHAP: {', '.join(parts)}"
+
         if not dry_run and signals:
             decision_id = self.ledger.log_decision(
                 date=date,
@@ -421,10 +431,24 @@ class DailyOrchestrator:
                 meta_model=meta_model,
                 regime=regime,
             )
-            return {
+            result = {
                 "ensemble_direction": ensemble_dir,
                 "ensemble_confidence": confidence / 100.0 if confidence else None,
             }
+            # P4.3: SHAP top-5 explanation for the production decision
+            try:
+                from src.signals.interpretability import explain_prediction
+                explanation = explain_prediction(ticker, df_feat, feature_cols, top_n=5)
+                top = explanation.get("top") or []
+                result["explanation"] = [
+                    {"feature": f.get("feature"), "shap": f.get("shap_value"),
+                     "value": f.get("current_value")}
+                    for f in top[:5]
+                    if f.get("feature")
+                ]
+            except Exception as e:
+                logger.debug(f"Explanation failed for {ticker}: {e}")
+            return result
         except Exception as e:
             logger.debug(f"Ensemble failed for {ticker}: {e}")
             return {}

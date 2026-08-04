@@ -40,9 +40,13 @@ def _consensus_one(ticker, meta_controller):
     df_feat = add_technical_indicators(df.copy(), ticker)
     close = df["close"]
 
+    # ── Signal module breakdown (P4.1: recommendation card) ─────────────
+    signals: dict[str, dict] = {}
+
     # 1. Ensemble signal
     ensemble_signal = "N/A"
     ensemble_conf = 0.0
+    ensemble_detail = ""
     if models_exist(ticker):
         try:
             m = _load(ticker)
@@ -54,24 +58,86 @@ def _consensus_one(ticker, meta_controller):
             )
             ensemble_signal = "BUY" if direction == 1 else "SELL"
             ensemble_conf = float(details.get("ensemble_prob", confidence / 100)) if details else float(confidence) / 100
+            ensemble_detail = f"{ensemble_signal} ({ensemble_conf:.0%} prob)"
         except Exception:
             pass
+    signals["Ensemble ML"] = {
+        "direction": ensemble_signal, "detail": ensemble_detail or ensemble_signal,
+    }
 
-    # 2. Meta-Controller signal
+    # 2. Market-wide signals (computed once, shared with meta-controller state)
+    sent_score = 0.0
+    fii_raw, dii_raw, fii_n, dii_n = 0.0, 0.0, 0.0, 0.0
+    pcr_val = 1.0
+    mtf_val = 0.0
+    var_val = cvar_val = sharpe_val = vol_fc_val = 0.0
+
+    try:
+        sent_result = get_stock_sentiment(ticker)
+        sent_score = sent_result.get("weighted_score", sent_result.get("score", 0.0))
+    except Exception:
+        pass
+    sent_dir = "Positive" if sent_score > 0.05 else ("Negative" if sent_score < -0.05 else "Neutral")
+    signals["Sentiment"] = {"direction": sent_dir, "detail": f"{sent_score:+.2f}"}
+
+    try:
+        from src.signals.flow import fetch_fii_dii, get_flow_sentiment, fetch_options_pcr
+        fii_dii = fetch_fii_dii()
+        if len(fii_dii) > 0:
+            fii_raw = float(fii_dii.iloc[0]["fii_net"])
+            dii_raw = float(fii_dii.iloc[0]["dii_net"])
+            flow_sent = get_flow_sentiment(fii_raw, dii_raw)
+            flow_map = {"Strong Bullish": 1.0, "Bullish": 0.5, "Positive": 0.5,
+                        "Neutral": 0.0, "Negative": -0.5, "Bearish": -0.5,
+                        "Strong Bearish": -1.0, "Divergent": 0.0}
+            fii_n = flow_map.get(flow_sent, 0.0)
+            dii_n = fii_n
+        pcr_data = fetch_options_pcr()
+        pcr_val = pcr_data.get("pcr_oi", 1.0)
+    except Exception:
+        pass
+    signals["FII Flow"] = {"direction": "Net Buy" if fii_raw > 0 else ("Net Sell" if fii_raw < 0 else "Flat"),
+                           "detail": f"₹{fii_raw / 100:+,.1f} Cr" if fii_raw else "N/A"}
+    signals["DII Flow"] = {"direction": "Net Buy" if dii_raw > 0 else ("Net Sell" if dii_raw < 0 else "Flat"),
+                           "detail": f"₹{dii_raw / 100:+,.1f} Cr" if dii_raw else "N/A"}
+    signals["PCR (OI)"] = {"direction": "Bullish" if pcr_val > 1.0 else "Bearish",
+                           "detail": f"{pcr_val:.2f}"}
+
+    try:
+        from src.signals.multitimeframe import fetch_mtf_data, get_combined_signal
+        mtf_raw = fetch_mtf_data(ticker)
+        if mtf_raw:
+            mtf_combined = get_combined_signal(mtf_raw)
+            mtf_val = mtf_combined.get("direction", 0) * mtf_combined.get("confidence", 0) / 100.0
+    except Exception:
+        pass
+    signals["MTF Signal"] = {"direction": "UP" if mtf_val > 0.1 else ("DOWN" if mtf_val < -0.1 else "Neutral"),
+                             "detail": f"{mtf_val:+.2f}"}
+
+    try:
+        from src.trading.risk import calculate_var, calculate_cvar, calculate_sharpe
+        from src.signals.volatility import forecast_volatility
+        returns = close.pct_change().dropna()
+        if len(returns) > 30:
+            var_val = calculate_var(returns)
+            cvar_val = calculate_cvar(returns)
+            sharpe_val = calculate_sharpe(returns)
+            vol_fc = forecast_volatility(returns)
+            vol_fc_val = vol_fc.get("current_vol", 0) if isinstance(vol_fc, dict) else vol_fc
+    except Exception:
+        pass
+    signals["Volatility"] = {"direction": "High" if vol_fc_val > 0.02 else "Low",
+                             "detail": f"σ={vol_fc_val:.2%}"}
+    signals["VaR (95%)"] = {"direction": "-", "detail": f"{var_val:.2%}"}
+    signals["CVaR (95%)"] = {"direction": "-", "detail": f"{cvar_val:.2%}"}
+    signals["Sharpe"] = {"direction": "-", "detail": f"{sharpe_val:.2f}"}
+    signals["Fundamentals"] = {"direction": "Neutral", "detail": "not scored in daily loop"}
+
+    # 3. Meta-Controller signal
     meta_signal = "N/A"
     meta_conf = 0.0
     if meta_controller is not None and meta_controller.model is not None:
         try:
-            from src.trading.risk import calculate_var, calculate_cvar, calculate_sharpe
-            from src.signals.volatility import forecast_volatility
-
-            returns = close.pct_change().dropna()
-            var_val = calculate_var(returns) if len(returns) > 30 else 0
-            cvar_val = calculate_cvar(returns) if len(returns) > 30 else 0
-            sharpe_val = calculate_sharpe(returns) if len(returns) > 30 else 0
-            vol_fc = forecast_volatility(returns) if len(returns) > 30 else {"current_vol": 0}
-            vol_fc_val = vol_fc.get("current_vol", 0) if isinstance(vol_fc, dict) else vol_fc
-
             regime_result = detect_regime(close, ohlc=df)
             regime = regime_result.get("regime", "Sideways")
             regime_bull = 1.0 if regime == "Bull" else 0.0
@@ -79,41 +145,6 @@ def _consensus_one(ticker, meta_controller):
 
             ens_dir = 1.0 if ensemble_signal == "BUY" else 0.0
             ens_conf_val = ensemble_conf if ensemble_conf > 0 else 0.5
-
-            sent_score = 0.0
-            fii_n = 0.0
-            dii_n = 0.0
-            pcr_val = 1.0
-            mtf_val = 0.0
-            try:
-                sent_result = get_stock_sentiment(ticker)
-                sent_score = sent_result.get("weighted_score", sent_result.get("score", 0.0))
-            except Exception:
-                pass
-            try:
-                from src.signals.flow import fetch_fii_dii, get_flow_sentiment, fetch_options_pcr
-                fii_dii = fetch_fii_dii()
-                if len(fii_dii) > 0:
-                    fii_raw = float(fii_dii.iloc[0]["fii_net"])
-                    dii_raw = float(fii_dii.iloc[0]["dii_net"])
-                    flow_sent = get_flow_sentiment(fii_raw, dii_raw)
-                    flow_map = {"Strong Bullish": 1.0, "Bullish": 0.5, "Positive": 0.5,
-                                "Neutral": 0.0, "Negative": -0.5, "Bearish": -0.5,
-                                "Strong Bearish": -1.0, "Divergent": 0.0}
-                    fii_n = flow_map.get(flow_sent, 0.0)
-                    dii_n = fii_n
-                pcr_data = fetch_options_pcr()
-                pcr_val = pcr_data.get("pcr_oi", 1.0)
-            except Exception:
-                pass
-            try:
-                from src.signals.multitimeframe import fetch_mtf_data, get_combined_signal
-                mtf_raw = fetch_mtf_data(ticker)
-                if mtf_raw:
-                    mtf_combined = get_combined_signal(mtf_raw)
-                    mtf_val = mtf_combined.get("direction", 0) * mtf_combined.get("confidence", 0) / 100.0
-            except Exception:
-                pass
 
             state = {
                 "ensemble_direction": ens_dir,
@@ -137,14 +168,37 @@ def _consensus_one(ticker, meta_controller):
         except Exception:
             meta_signal = "N/A"
 
-    # 3. Regime
+    # 4. Regime
     try:
         regime_result = detect_regime(close, ohlc=df)
         regime = regime_result.get("regime", "Sideways")
+        adx_val = regime_result.get("adx", None)
     except Exception:
         regime = "N/A"
+        adx_val = None
+    signals["Regime"] = {"direction": regime,
+                         "detail": f"ADX {adx_val:.0f}" if adx_val else ""}
 
-    # 4. 3-signal voting consensus
+    # Verdict per module vs meta decision (agree / disagree / neutral)
+    meta_direction = None
+    if meta_signal in ("BUY", "SELL"):
+        meta_direction = "Bull" if meta_signal == "BUY" else "Bear"
+    for name, s in signals.items():
+        d = s["direction"]
+        if meta_direction is None:
+            s["verdict"] = "neutral"
+        elif d in ("BUY", "SELL", "Positive", "Negative", "Net Buy", "Net Sell",
+                   "Bullish", "Bearish", "UP", "DOWN", "Bull", "Bear", "High", "Low"):
+            if d in ("High", "Low"):
+                s["verdict"] = "warn"
+            elif d == meta_direction or (meta_direction == "Bull" and d in ("BUY", "Positive", "Net Buy", "Bullish", "UP", "Bull")) or (meta_direction == "Bear" and d in ("SELL", "Negative", "Net Sell", "Bearish", "DOWN", "Bear")):
+                s["verdict"] = "agree"
+            else:
+                s["verdict"] = "disagree"
+        else:
+            s["verdict"] = "neutral"
+
+    # 5. 3-signal voting consensus
     vote_signals = [s for s in [ensemble_signal, meta_signal, regime] if s not in ("N/A", None, "Unknown")]
     buy_votes = sum(1 for s in vote_signals if s in ("BUY", "Bull"))
     sell_votes = sum(1 for s in vote_signals if s in ("SELL", "Bear"))
@@ -162,6 +216,9 @@ def _consensus_one(ticker, meta_controller):
     else:
         consensus = "HOLD"
 
+    from src.core.settings import settings as stomar_settings
+    stop_pct = stomar_settings.stop_loss_pct
+
     return {
         "ticker": ticker,
         "ensemble_signal": ensemble_signal,
@@ -170,6 +227,8 @@ def _consensus_one(ticker, meta_controller):
         "meta_confidence": round(meta_conf, 4) if isinstance(meta_conf, float) else 0.0,
         "regime": regime,
         "consensus": consensus,
+        "signals": signals,
+        "stop_loss_pct": stop_pct,
     }
 
 

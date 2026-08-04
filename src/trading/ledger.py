@@ -15,6 +15,8 @@ import json
 import sqlite3
 import logging
 
+import pandas as pd
+
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 2
@@ -258,12 +260,16 @@ class Ledger:
 
     def get_decisions(self, ticker: str = None, start_date: str = None,
                       end_date: str = None, limit: int = None,
-                      source: str = None) -> list[dict]:
+                      source: str = None,
+                      main_signals_agree: bool = None) -> list[dict]:
         """Query historical decisions.
 
         Args:
             source: If set, only return decisions from this source
                 ("live" or "backfill"). None returns all sources.
+            main_signals_agree: If True, only return decisions where the 3
+                main signals (ensemble direction, sentiment, regime) all
+                pointed the same way (P4.2 audit trail filter).
         """
         conditions = ["1=1"]
         params: list = []
@@ -281,16 +287,47 @@ class Ledger:
                 raise ValueError(f"source must be 'live' or 'backfill', got {source!r}")
             conditions.append("source = ?")
             params.append(source)
+        if main_signals_agree:
+            conditions.append(
+                "ensemble_direction IS NOT NULL AND sentiment_score IS NOT NULL "
+                "AND regime IN ('Bull','Bear') "
+                "AND (ensemble_direction = 1) = (sentiment_score > 0) "
+                "AND (ensemble_direction = 1) = (regime = 'Bull')"
+            )
         query = "SELECT * FROM decisions WHERE " + " AND ".join(conditions)
         query += " ORDER BY date DESC, id DESC"
         if limit is not None:
             limit = int(limit)
             if limit < 0:
-                raise ValueError(f"limit must be >= 0, got {limit}")
-            query += " LIMIT ?"
-            params.append(limit)
+                raise ValueError("limit must be non-negative")
+            query += f" LIMIT {limit}"
         rows = self.conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
+
+    def get_agreement_stats(self) -> dict:
+        """P4.2: accuracy of decisions where the 3 main signals agreed vs all.
+
+        Main signals: ensemble direction, sentiment, regime (Bull/Bear).
+        """
+        def _stats(extra_cond: str, params: list) -> dict:
+            row = self.conn.execute(
+                "SELECT COUNT(*) as n, "
+                "SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) as correct "
+                f"FROM decisions WHERE actual_direction IS NOT NULL {extra_cond}",
+                params,
+            ).fetchone()
+            n = row["n"] or 0
+            return {"n": n, "accuracy": (row["correct"] or 0) / n if n else None}
+
+        agreed = _stats(
+            "AND ensemble_direction IS NOT NULL AND sentiment_score IS NOT NULL "
+            "AND regime IN ('Bull','Bear') "
+            "AND (ensemble_direction = 1) = (sentiment_score > 0) "
+            "AND (ensemble_direction = 1) = (regime = 'Bull')",
+            [],
+        )
+        all_decisions = _stats("", [])
+        return {"agreed": agreed, "all": all_decisions}
 
     def get_unresolved_decisions(self, ticker: str = None) -> list[dict]:
         """Return decisions that have no logged outcome yet.
@@ -401,6 +438,74 @@ class Ledger:
             accuracy[name] = correct / total if total > 0 else None
 
         return accuracy
+
+    def get_rolling_accuracy(self, days: int = 30, source: str = "live") -> dict:
+        """Rolling accuracy over the last N calendar days (P3.4).
+
+        Args:
+            days: Lookback window in calendar days.
+            source: Restrict to "live" or "backfill" decisions. Defaults to
+                "live" — backfill is in-sample by construction and would
+                flatter the rolling number.
+
+        Returns:
+            Dict with n_resolved, n_correct, accuracy (or None when empty).
+        """
+        cutoff = (pd.Timestamp.now().normalize() - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+        conditions = ["date >= ?", "actual_direction IS NOT NULL", "correct IS NOT NULL"]
+        params: list = [cutoff]
+        if source is not None:
+            if source not in ("live", "backfill"):
+                raise ValueError(f"source must be 'live' or 'backfill', got {source!r}")
+            conditions.append("source = ?")
+            params.append(source)
+        row = self.conn.execute(
+            "SELECT COUNT(*) as n_resolved, "
+            "SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) as n_correct "
+            f"FROM decisions WHERE {' AND '.join(conditions)}",
+            params,
+        ).fetchone()
+        n_resolved = row["n_resolved"] or 0
+        n_correct = row["n_correct"] or 0
+        return {
+            "days": days,
+            "source": source,
+            "cutoff": cutoff,
+            "n_resolved": n_resolved,
+            "n_correct": n_correct,
+            "accuracy": (n_correct / n_resolved) if n_resolved else None,
+        }
+
+    def get_drawdown_stats(self) -> dict:
+        """Current and max drawdown from the portfolio snapshot equity curve."""
+        rows = self.conn.execute(
+            "SELECT date, total_value FROM portfolio_snapshots ORDER BY date ASC"
+        ).fetchall()
+        if not rows:
+            return {"n_snapshots": 0, "peak_equity": None, "current_equity": None,
+                    "current_drawdown_pct": None, "max_drawdown_pct": None,
+                    "equity_curve": []}
+        peak = 0.0
+        max_dd = 0.0
+        curve = []
+        for r in rows:
+            value = r["total_value"] or 0.0
+            if value <= 0:
+                continue
+            peak = max(peak, value)
+            dd = (peak - value) / peak
+            max_dd = max(max_dd, dd)
+            curve.append({"date": r["date"], "equity": round(value, 2)})
+        current = curve[-1]["equity"] if curve else None
+        current_dd = (peak - current) / peak if (curve and peak > 0) else None
+        return {
+            "n_snapshots": len(curve),
+            "peak_equity": round(peak, 2) if curve else None,
+            "current_equity": current,
+            "current_drawdown_pct": round(current_dd, 4) if current_dd is not None else None,
+            "max_drawdown_pct": round(max_dd, 4),
+            "equity_curve": curve[-90:],
+        }
 
     def get_daily_pnl(self) -> list[dict]:
         """Daily P&L from portfolio snapshots."""

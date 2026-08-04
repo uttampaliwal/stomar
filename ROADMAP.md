@@ -71,17 +71,17 @@
   - Atomic writes, corrupt-file handling, 54 tests
   - Effort: 4–6 hours
 
-- [ ] 🟠 **P1.2** Add per-stage retry logic
+- [x] 🟠 **P1.2** Add per-stage retry logic
   - Stages `FETCH`, `VALIDATE`, and `DAILY` should retry up to 3 times with exponential backoff (1min, 5min, 15min) before marking as failed
   - Effort: 2 hours
 
-- [ ] 🟠 **P1.3** Cross-platform scheduler support
+^- [x] 🟠 **P1.3** Cross-platform scheduler support
   - File: `schedule_pipeline.py`
   - Add Linux/Mac path using `cron` via `python-crontab` library
   - Auto-detect OS and use the right scheduler
   - Effort: 2–3 hours
 
-- [ ] 🟡 **P1.4** Add startup auto-run on system boot (not just daily 4PM)
+^- [x] 🟡 **P1.4** Add startup auto-run on system boot (not just daily 4PM)
   - Windows: add a second Task Scheduler entry with trigger `AtStartup` + delay 5 minutes
   - This ensures if PC was off during 4PM run, it catches up on next boot
   - Currently `auto_pipeline.py` does backfill but only if triggered; this makes it truly automatic
@@ -92,30 +92,31 @@
 ## Phase 2 — Data Quality & Validation Hardening
 *Bad data is worse than no data. The model will confidently trade on garbage.*
 
-- [ ] 🔴 **P2.1** Auto-fill missing trading day data (not just detect gaps)
+- [x] 🔴 **P2.1** Auto-fill missing trading day data (not just detect gaps)
   - File: `src/data/data_validation.py` + `src/data/data_fetcher.py`
   - When gaps are detected, automatically re-fetch with extended period to fill them
   - Apply forward-fill only for non-price columns (volume, indicators) — never forward-fill OHLC
   - Log every filled gap to `data/monitoring/data_fixes.json`
   - Effort: 3 hours
 
-- [ ] 🟠 **P2.2** Corporate action adjustment pipeline
+- [x] 🟠 **P2.2** Corporate action adjustment pipeline
   - File: `src/data/data_fetcher.py`
   - yfinance returns adjusted prices by default (`auto_adjust=True`) — verify this is consistently set
   - Add a check: if overnight move >20%, flag as potential unadjusted split and force re-fetch with `auto_adjust=True`
   - Effort: 2 hours
 
-- [ ] 🟠 **P2.3** Indian market holiday calendar
+- [x] 🟠 **P2.3** Indian market holiday calendar
   - File: `auto_pipeline.py` → `_get_trading_days_since()`
   - Currently uses Mon–Fri as business days; doesn't account for NSE holidays (Diwali, Holi, etc.)
   - Add a hardcoded NSE holiday list (or fetch from NSE website) and exclude those dates from backfill
   - False "missed day" triggers on holidays waste compute and create confusion
   - Effort: 2 hours
 
-- [ ] 🟡 **P2.4** Data source fallback chain with logging
+- [x] 🟡 **P2.4** Data source fallback chain with logging
   - File: `src/data/data_sources.py`
   - If yfinance returns empty or too-short data, log a warning and try an alternate source
   - Track per-ticker fetch success rate in `data/monitoring/fetch_stats.json`
+  - Note: fetch health tracking done; no alternate data source exists in the codebase (yfinance is the only provider) — fallback is re-fetch with extended period / force refresh
   - Effort: 2 hours
 
 ---
@@ -128,8 +129,9 @@
   - Schedule via Task Scheduler to run every weekday at 3:45 PM IST (after market close)
   - Do NOT interrupt, reset, or modify the strategy during this period
   - This is a time gate, not a code task — it just has to run
+  - ⏳ IN PROGRESS since 2026-08-04 (0/60 trading days) — scheduled via P1.3/P1.4
 
-- [ ] 🔴 **P3.2** Paper vs Nifty 50 benchmark comparison on Ledger page
+- [x] 🔴 **P3.2** Paper vs Nifty 50 benchmark comparison on Ledger page
   - File: `api/routers/ledger.py` + `web/src/pages/Ledger.tsx`
   - Fetch Nifty 50 (`^NSEI`) daily returns for the same period as paper trading
   - Show: paper cumulative return vs Nifty buy-and-hold on the same chart
@@ -137,21 +139,21 @@
   - This is the single most honest signal of whether the system adds value
   - Effort: 4–6 hours
 
-- [ ] 🔴 **P3.3** Paper trading outcome logging (fill actual_return next day)
+- [x] 🔴 **P3.3** Paper trading outcome logging (fill actual_return next day)
   - File: `src/trading/ledger.py` + `run_daily.py`
   - At the start of each daily run, for yesterday's BUY/SELL decisions, fetch yesterday's close and today's open
   - Call `ledger.log_outcome(decision_id, actual_return, actual_direction)` for each resolved decision
   - This is what trains the meta-controller on real forward-looking data (not backfill)
   - Effort: 3 hours
 
-- [ ] 🟠 **P3.4** Paper trading performance dashboard additions
+^- [x] 🟠 **P3.4** Paper trading performance dashboard additions
   - File: `web/src/pages/PaperTrading.tsx`
   - Add: rolling 30-day accuracy (decisions that were correct)
   - Add: signal accuracy breakdown per module (ensemble vs sentiment vs MTF, etc.) from ledger
   - Add: current drawdown from peak equity with alert at 10%
   - Effort: 4 hours
 
-- [ ] 🟠 **P3.5** Minimum paper trading gate before live trading is enabled
+- [x] 🟠 **P3.5** Minimum paper trading gate before live trading is enabled
   - File: new `src/core/readiness_check.py`
   - Function `is_ready_for_live_trading()` checks:
     - Paper trading running ≥ 60 business days
@@ -168,7 +170,7 @@
 ## Phase 4 — Explainability & Trust Building
 *Every recommendation should be self-explanatory. If you can't see WHY it said BUY, you can't trust it.*
 
-- [ ] 🟠 **P4.1** Structured recommendation card with signal breakdown
+^- [x] 🟠 **P4.1** Structured recommendation card with signal breakdown
   - File: `api/routers/consensus.py` + `web/src/pages/Consensus.tsx`
   - For each BUY/SELL decision, show a card like:
     ```
@@ -186,18 +188,18 @@
     ```
   - Effort: 6 hours
 
-- [ ] 🟠 **P4.2** Decision audit trail on Ledger page
+^- [x] 🟠 **P4.2** Decision audit trail on Ledger page
   - Show all 14 signal values for any historical decision (already stored in SQLite — just expose it)
   - Allow filtering: "show only decisions where all 3 main signals agreed" → measure accuracy of those
   - Effort: 3 hours
 
-- [ ] 🟡 **P4.3** SHAP explanations in production pipeline
+^- [x] 🟡 **P4.3** SHAP explanations in production pipeline
   - File: `src/signals/interpretability.py` → called from `orchestrator.py`
   - Currently SHAP is implemented but not invoked in the live daily run
   - Add SHAP top-5 feature contributors to each decision's `reasoning` field in the ledger
   - Effort: 2 hours
 
-- [ ] 🟡 **P4.4** Confidence calibration check
+- [x] 🟡 **P4.4** Confidence calibration check
   - File: new `src/models/calibration.py`
   - When model says "82% confidence BUY", does it actually win 82% of the time at that confidence level?
   - Compute reliability diagrams (calibration curves) from ledger data after 3 months
@@ -209,13 +211,13 @@
 ## Phase 5 — Monitoring, Alerting & Ops Hardening
 *A system that fails silently is worse than a system that doesn't run.*
 
-- [ ] 🟠 **P5.1** Email / desktop notification on critical events
+- [x] 🟠 **P5.1** Email / desktop notification on critical events
   - File: new `src/core/notifier.py`
   - Send notification on: pipeline failure, kill switch triggered, drift alert (critical), drawdown >10%
   - Use `smtplib` for email (free, no dependencies) or Windows toast notifications via `plyer`
   - Effort: 3 hours
 
-- [ ] 🟠 **P5.2** System health metrics on Monitoring page
+^- [x] 🟠 **P5.2** System health metrics on Monitoring page
   - File: `api/routers/monitoring.py` + `web/src/pages/Monitoring.tsx`
   - Add: last successful pipeline run timestamp + status
   - Add: data freshness per ticker (days since last fetch)
@@ -224,20 +226,20 @@
   - Add: kill switch status (is trading halted?)
   - Effort: 4 hours
 
-- [ ] 🟠 **P5.3** Automated daily monitoring sweep
+- [x] 🟠 **P5.3** Automated daily monitoring sweep
   - File: `auto_pipeline.py` → add step after paper trades
   - For each ticker, run `ModelMonitor.check_data_freshness()` and `check_performance_drift()`
   - Write summary to `data/monitoring/daily_health.json`
   - Effort: 2 hours
 
-- [ ] 🟡 **P5.4** SQLite backup strategy
+- [x] 🟡 **P5.4** SQLite backup strategy
   - File: new step in `auto_pipeline.py`
   - Once per week, copy `data/stomar.db` to `data/backups/stomar_YYYYMMDD.db`
   - Keep last 4 weekly backups (auto-delete older ones)
   - The ledger is the most valuable artifact in the entire system — protect it
   - Effort: 1 hour
 
-- [ ] 🟡 **P5.5** Tax simulation (STCG/LTCG)
+^- [x] 🟡 **P5.5** Tax simulation (STCG/LTCG)
   - File: `src/core/constants.py` + `src/trading/backtester.py`
   - Indian STCG: 15% on gains from positions held <1 year
   - Indian LTCG: 10% on gains >₹1 lakh from positions held >1 year
@@ -403,11 +405,11 @@
 | Phase | Status | Started | Completed | Notes |
 |-------|--------|---------|-----------|-------|
 | Phase 0 — Operational Wiring | ✅ Complete | 2026-07-01 | 2026-07-01 | All 5 items done |
-| Phase 1 — State Machine | 🟡 In progress | 2026-07-01 | — | P1.1 done |
-| Phase 2 — Data Quality | 🔲 Not started | — | — | |
-| Phase 3 — Paper Trading | 🔲 Not started | — | — | Time-gated: 3 months |
-| Phase 4 — Explainability | 🔲 Not started | — | — | |
-| Phase 5 — Ops Hardening | 🔲 Not started | — | — | |
+| Phase 1 — State Machine | ✅ Complete | 2026-07-01 | 2026-08-04 | P1.1–P1.4 done |
+| Phase 2 — Data Quality | ✅ Complete | 2026-08-04 | 2026-08-04 | P2.1–P2.4 done |
+| Phase 3 — Paper Trading | ⏳ Time-gated | 2026-08-04 | — | P3.2, P3.3, P3.4, P3.5 done; P3.1 clock running |
+| Phase 4 — Explainability | ✅ Complete | 2026-08-04 | 2026-08-04 | P4.1–P4.4 done |
+| Phase 5 — Ops Hardening | ✅ Complete | 2026-08-04 | 2026-08-04 | P5.1–P5.5 done |
 | Phase 6 — ML Improvements | 🔲 Not started | — | — | Needs live data |
 | Phase 7 — RL | 🔲 Not started | — | — | Needs 6+ months data |
 | Phase 8 — Real Money | 🔲 Not started | — | — | All gates required |
@@ -438,5 +440,5 @@ The meta-controller (already built) is already a learning system — it re-weigh
 
 ---
 
-*Last updated: 2026-07-01*
+*Last updated: 2026-08-04*
 *Version: v0.0.4 → targeting v1.0.0 (real-money ready)*

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Card, SectionHeader, Spinner, ErrorDisplay, Badge, EmptyState, PageHeader } from '@/components/UI'
 import { useApi } from '@/hooks/useApi'
-import type { ConsensusResponse } from '../lib/api-types'
+import type { ConsensusResponse, ConsensusResult } from '../lib/api-types'
 
 type SortKey = 'ticker' | 'ensemble_confidence' | 'meta_confidence' | 'consensus'
 type SortDir = 'asc' | 'desc'
@@ -35,6 +35,7 @@ export default function Consensus() {
   const { data, loading, error, refetch } = useApi<ConsensusResponse>('/api/consensus/')
   const [sortKey, setSortKey] = useState<SortKey>('consensus')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const sortedResults = useMemo(() => {
     const results = [...(data?.results ?? [])]
@@ -56,6 +57,46 @@ export default function Consensus() {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('desc') }
   }
+
+  const VERDICT_ICON: Record<string, string> = { agree: '✅', disagree: '❌', warn: '⚠️', neutral: '⚪' }
+  const VERDICT_COLOR: Record<string, string> = { agree: 'text-emerald', disagree: 'text-rose', warn: 'text-amber', neutral: 'text-muted-foreground' }
+
+  const RecommendationCard = ({ r }: { r: ConsensusResult }) => (
+    <Card className="my-3 bg-background/60">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pt-3 text-sm">
+        <span className={`font-mono font-bold text-lg ${r.consensus.startsWith('BUY') ? 'text-emerald' : r.consensus.startsWith('SELL') ? 'text-rose' : r.consensus === 'CONFLICTED' ? 'text-amber' : 'text-muted-foreground'}`}>
+          {r.consensus} {r.ticker}
+        </span>
+        <span className="font-mono text-muted-foreground">
+          Confidence: {(r.meta_confidence * 100).toFixed(0)}%
+        </span>
+        {r.stop_loss_pct ? (
+          <span className="font-mono text-xs text-muted-foreground">
+            Stop Loss: {(r.stop_loss_pct * 100).toFixed(1)}% from entry
+          </span>
+        ) : null}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-4">
+        {r.signals ? Object.entries(r.signals).map(([name, s]) => (
+          <div key={name} className="flex items-start justify-between rounded border border-border/60 px-3 py-2 text-xs">
+            <div>
+              <p className="font-mono uppercase text-muted-foreground">{name}</p>
+              <p className={`font-semibold ${VERDICT_COLOR[s.verdict || 'neutral']}`}>{s.direction}</p>
+            </div>
+            <div className="text-right">
+              <p className="font-mono text-muted-foreground">{s.detail}</p>
+              <p>{VERDICT_ICON[s.verdict || 'neutral']}</p>
+            </div>
+          </div>
+        )) : (
+          <p className="col-span-full text-xs text-muted-foreground">Signal breakdown unavailable.</p>
+        )}
+      </div>
+      <p className="px-4 pb-3 text-xs text-muted-foreground">
+        ✅ agrees with meta-controller · ❌ disagrees · ⚠️ risk module (high volatility is neutral/warn) · ⚪ unavailable
+      </p>
+    </Card>
+  )
 
   return (
     <div className="space-y-6">
@@ -132,8 +173,14 @@ export default function Consensus() {
                 </thead>
                 <tbody>
                   {sortedResults.map((r) => (
-                    <tr key={r.ticker} className="border-b border-border/50 hover:bg-accent/30">
-                      <td className="py-2.5 font-mono font-semibold">{r.ticker}</td>
+                    <tr
+                      key={r.ticker}
+                      className={`border-b border-border/50 hover:bg-accent/30 cursor-pointer ${expanded === r.ticker ? 'bg-accent/40' : ''}`}
+                      onClick={() => setExpanded(expanded === r.ticker ? null : r.ticker)}
+                    >
+                      <td className="py-2.5 font-mono font-semibold">
+                        {r.ticker} <span className="text-muted-foreground text-xs">{expanded === r.ticker ? '▲' : '▼'}</span>
+                      </td>
                       <td className="py-2.5 text-center">
                         <Badge variant={r.ensemble_signal === 'BUY' ? 'success' : r.ensemble_signal === 'SELL' ? 'danger' : 'default'}>
                           {SIGNAL_EMOJI[r.ensemble_signal] || '⚪'} {r.ensemble_signal}
@@ -158,6 +205,15 @@ export default function Consensus() {
                         </Badge>
                       </td>
                     </tr>
+                  ))}
+                  {sortedResults.map((r) => (
+                    expanded === r.ticker && (
+                      <tr key={`${r.ticker}-detail`}>
+                        <td colSpan={6} className="bg-muted/30 p-4">
+                          <RecommendationCard r={r} />
+                        </td>
+                      </tr>
+                    )
                   ))}
                 </tbody>
               </table>
