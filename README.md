@@ -199,8 +199,8 @@ uv run run_daily.py --dry-run                # Signals only, no ledger writes
 | `docs/Paper-Trading.md` | PaperTrader, fills, NSE costs, tax, ledger, benchmarks |
 | `docs/Live-Trading-Roadmap.md` | Phase status, live gate, readiness requirements |
 | `docs/Security-Model.md` | API auth, artifact verification, tokens, secrets |
-| `DEPLOYMENT.md` | Native + Docker deployment, one-command device setup |
-| `ROADMAP.md` | Full phase tracker with acceptance criteria |
+| `docs/DEPLOYMENT.md` | Native + Docker deployment, one-command device setup, multi-device state sync |
+| `docs/ROADMAP.md` | Full phase tracker with acceptance criteria |
 | `docs/REAL_MONEY_READINESS.md` | Live-money audit verdict |
 
 ---

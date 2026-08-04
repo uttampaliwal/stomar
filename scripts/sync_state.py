@@ -93,8 +93,12 @@ def push(dry_run: bool = False) -> int:
     except Exception as e:
         print(f"  WARNING: ledger checkpoint failed: {e}")
 
-    # 2. Stage only the shared paths
-    add = _run(["git", "add", "--"] + SHARED_PATHS, check=False)
+    # 2. Stage only the shared paths that exist locally
+    existing = [p for p in SHARED_PATHS if os.path.exists(os.path.join(ROOT, p))]
+    if not existing:
+        print("  no shared files present yet (run pull first)")
+        return 0
+    add = _run(["git", "add", "--"] + existing, check=False)
     if add.returncode != 0:
         print(f"ERROR: git add failed:\n{add.stderr}")
         return 1

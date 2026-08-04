@@ -5,8 +5,9 @@ clock running uninterrupted for 60+ trading days. Because the pipeline is
 **idempotent** (gap detection → backfill → daily run → paper trades) and every
 scheduled run carries a boot catch-up, the same repo can live on 2-3 devices
 (laptop, desktop, GPU machine) — **whichever one you switch on that day picks
-up where the others left off**. Each device runs its own local copy; the
-Telegram summary identifies which machine ran.
+up where the others left off**. With `scripts/sync_state.py` the devices
+share ONE ledger and ONE paper account (see "Multi-device" below); the
+Telegram summary header still identifies which machine ran.
 
 Every command below was exercised during development; the two deployment
 paths are **mutually exclusive — pick one** (running both would double the
@@ -141,12 +142,55 @@ immediately: `docker compose exec scheduler python run_pipeline.py --train-all`.
 | Monthly | Paper P&L vs Nifty comparison (`/api/benchmark/compare`) still positive |
 | Any time | Drawdown alert triggers at 10% (Paper Trading page + Telegram) |
 
-Multi-device: because every device schedules the same idempotent pipeline +
-boot catch-up, a day is covered as long as any one device is switched on.
-The Telegram summary header includes the machine name (`NewNest`, …), so you
-can see which device ran. Runs on different devices use their local ledger —
-resolve at month end with `docker compose exec scheduler` / the benchmark API
-from the primary device.
+### Multi-device — ONE shared paper-trading clock (recommended)
+
+Each device has its own copy of the code, but the **authoritative state is
+synced through the (private) git remote** — the ledger, the paper account,
+and the trained models are only ~150 KB, so they travel via plain git:
+
+| File | What it is |
+|---|---|
+| `data/stomar.db` | Ledger — every decision, outcome, snapshot (60 KB) |
+| `data/paper_state.json` | Paper account — cash, positions, equity |
+| `data/paper_session.json` | Session export |
+| `models/` | Trained bundles + manifests + registry |
+
+Everything else (parquet caches, `market_data.db`, monitoring, logs, `.env`)
+stays local and regenerates itself.
+
+**Workflow — switching between devices (e.g. a week on each):**
+
+```bash
+# On the NEW device, every time you switch:
+python scripts/sync_state.py pull        # 1. pull latest state + code
+uv run auto_pipeline.py --setup-run      # 2. run the full day's pipeline
+
+# On the device you're LEAVING (or right after step 2, whichever is last):
+python scripts/sync_state.py push        # 3. push state back to the remote
+```
+
+```bash
+python scripts/sync_state.py status      # sanity: local vs remote state
+```
+
+This makes the three devices a single paper account: no repeated 252-day
+backfills, no split ledgers, no missed days. The daily signal computation
+still repeats per device (a few minutes of data fetching) — that is
+unavoidable without a central server and is harmless because decisions are
+identical and idempotent.
+
+Rules:
+
+- `pull` before the run, `push` after it finishes (never mid-run — the
+  script checkpoints the SQLite WAL first so the `.db` is self-contained).
+- Only one device runs/pushes per day (your travel pattern) — with that,
+  git conflicts are impossible in practice.
+- The repo **must be private**; `.env` and secrets are never committed.
+
+If you prefer a cloud drive over git, the same script structure works —
+point the copy source/target at a Syncthing/Dropbox folder instead. Git is
+recommended: version history, no silent binary conflicts, no quota concerns
+at 150 KB.
 
 Critical alert wiring (already automatic): pipeline failure, kill switch,
 drift, drawdown breach → `notify()` → Telegram + email.
