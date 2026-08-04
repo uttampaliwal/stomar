@@ -1,7 +1,7 @@
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
-# Install Node.js 22 for the React frontend
-RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+# Install Node.js 22 for the React frontend + cron for the in-container scheduler
+RUN apt-get update && apt-get install -y --no-install-recommends curl cron && \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*

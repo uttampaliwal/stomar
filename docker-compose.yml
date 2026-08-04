@@ -1,0 +1,61 @@
+# StoMar — one-command startup (B6)
+#
+#   docker compose up -d --build
+#
+# Services:
+#   api       — FastAPI + React SPA (gunicorn), healthchecked, port 8000
+#   scheduler — cron daemon inside the container running the tested
+#               schedule_pipeline.py (weekdays 15:45 IST + boot catch-up);
+#               installs idempotently on first start
+#
+# State lives in two named volumes:
+#   stomar-data   — SQLite ledger, paper state, monitoring, pipeline logs
+#   stomar-models — trained per-ticker models + meta-controller
+#
+# Config comes from .env (copy .env.example). STOMAR_API_KEY is required.
+
+name: stomar
+
+services:
+  api:
+    build: .
+    image: stomar:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - TZ=Asia/Kolkata
+      - STOMAR_ENV=production
+    volumes:
+      - stomar-data:/app/data
+      - stomar-models:/app/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  scheduler:
+    image: stomar:latest
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - TZ=Asia/Kolkata
+      - PAPER_CAPITAL=${PAPER_CAPITAL:-200000}
+    volumes:
+      - stomar-data:/app/data
+      - stomar-models:/app/models
+    command: >
+      bash -c "
+      python schedule_pipeline.py --paper --capital $${PAPER_CAPITAL} --boot &&
+      exec cron -f -l 2
+      "
+
+volumes:
+  stomar-data:
+  stomar-models:

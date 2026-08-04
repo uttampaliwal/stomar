@@ -335,13 +335,30 @@ uv run run_pipeline.py --train-all               # Train all 20 stocks
 uv run run_pipeline.py --train RELIANCE.NS       # Specific tickers
 uv run run_pipeline.py --paper                   # Train + paper trade
 
-# Windows scheduler
+# Scheduler (host cron / Windows Task Scheduler)
 uv run schedule_pipeline.py                      # Install daily 4 PM IST
 uv run schedule_pipeline.py --remove             # Remove task
 uv run schedule_pipeline.py --run-now            # Run immediately
 ```
 
 ---
+
+## Docker (one-command startup)
+
+```bash
+cp .env.example .env    # set STOMAR_API_KEY, SMTP, PAPER_CAPITAL...
+docker compose up -d --build
+```
+
+- `api` — FastAPI + bundled React SPA on port 8000, healthchecked, auto-restart.
+- `scheduler` — cron daemon in-container running the tested `schedule_pipeline.py`
+  (weekdays 15:45 IST paper run + boot catch-up for missed days).
+- State persists in named volumes `stomar-data` (SQLite/ledger/paper state/logs)
+  and `stomar-models` (trained weights + meta-controller).
+- CPU-only torch is baked into the image (see `pyproject.toml` `[tool.uv.sources]`);
+  no GPU or CUDA runtime needed.
+
+Verify: `curl http://localhost:8000/api/health` and `docker compose exec scheduler crontab -l`.
 
 ## Tests
 
