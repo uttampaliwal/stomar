@@ -20,19 +20,18 @@ class TestCronEntry:
     def test_daily_entry_defaults(self):
         entry = sp._cron_entry("15:45")
         assert entry.startswith("45 15 * * 1-5 ")
-        assert "run_daily.py" in entry
-        assert "--paper-trade" not in entry
+        assert "auto_pipeline.py" in entry
+        assert "--capital" not in entry
         assert entry.endswith(sp._CRON_COMMENT)
 
     def test_daily_entry_with_paper_trading(self):
         entry = sp._cron_entry("15:45", paper=True, capital=200_000)
-        assert "--paper-trade" in entry
         assert "--capital 200000" in entry
 
     def test_boot_entry_has_delay_and_comment(self):
         entry = sp._cron_boot_entry(paper=True, capital=100_000)
         assert entry.startswith("@reboot sleep 300 && ")
-        assert "--paper-trade" in entry
+        assert "auto_pipeline.py" in entry
         assert "--capital 100000" in entry
         assert entry.endswith(sp._BOOT_CRON_COMMENT)
 
@@ -62,7 +61,7 @@ class TestCronInstallRemove:
         assert len(written_lines) == 3
         assert "other_job" in written_lines[0]
         assert written_lines[1] == "# another comment"
-        assert "--paper-trade" in written_lines[2]
+        assert "auto_pipeline.py" in written_lines[2]
 
     def test_install_is_idempotent(self):
         written_stdin = []
@@ -137,7 +136,7 @@ class TestSystemdFallback:
         assert "Persistent=true" in timer
         assert f"Unit={sp.TASK_NAME}.service" in timer
         assert "WorkingDirectory=" in service
-        assert "--paper-trade" in service
+        assert "--capital 100000" in service
         assert "--capital 100000" in service
 
     def test_linux_install_falls_back_to_systemd_when_no_cron(self):

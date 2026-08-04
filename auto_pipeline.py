@@ -63,8 +63,9 @@ def _get_trading_days_since(start_date: str, end_date: str) -> list[str]:
 class AutoPipeline:
     """Fully automated pipeline: detect gaps -> backfill -> train -> daily run -> paper trade."""
 
-    def __init__(self, tickers: list[str] = None):
+    def __init__(self, tickers: list[str] = None, paper_capital: float = 200_000):
         self.tickers = tickers or NSE_STOCKS
+        self.paper_capital = paper_capital
         self.ledger = None
         self._running = False
         self._last_run_date = None
@@ -324,11 +325,19 @@ class AutoPipeline:
                 self._log("TRAIN already completed, skipping")
                 result["meta_controller"] = {"status": "skipped"}
 
-            # Step 3: Run daily orchestrator
+            # Step 3: Run daily orchestrator (skipped on non-trading days)
             if self._check_shutdown():
                 result["status"] = "interrupted"
                 return result
-            if ckpt.stage_status("DAILY") not in ("completed", "skipped"):
+            from src.core.calendar import is_trading_day
+            if not is_trading_day(datetime.now()):
+                self._log("Today is not an NSE trading day — skipping daily + paper stages")
+                ckpt.skip("DAILY", "not an NSE trading day")
+                ckpt.skip("PAPER", "not an NSE trading day")
+                ckpt.save()
+                result["daily"] = {"decisions": 0, "skipped": True}
+                result["paper_trade"] = {"trades": 0, "skipped": True}
+            elif ckpt.stage_status("DAILY") not in ("completed", "skipped"):
                 ckpt.advance("DAILY")
                 daily_result = self._run_stage_with_retries(
                     "DAILY", lambda: self._run_daily(today)
@@ -698,7 +707,7 @@ class AutoPipeline:
 
             from run_daily import run_paper_trades
             self._log(f"Executing paper trades for {len(decisions)} decisions...")
-            summary = run_paper_trades(decisions, self.ledger)
+            summary = run_paper_trades(decisions, self.ledger, capital=self.paper_capital)
             result["trades"] = summary.get("total_trades", 0)
             self._log(f"Paper trades executed: {result['trades']} trades")
         except Exception as e:
@@ -856,13 +865,15 @@ def main():
                              "check GPU, install scheduler (daily + boot catch-up)")
     parser.add_argument("--setup-run", action="store_true",
                         help="Like --setup, plus run the pipeline immediately")
+    parser.add_argument("--capital", type=float, default=200_000,
+                        help="Paper trading starting capital (default 200000)")
     parser.add_argument("--warm-sentiment", action="store_true",
                         help="Pre-warm sentiment cache only")
     parser.add_argument("--ticker", nargs="+", metavar="TICKER",
                         help="Tickers to process (default: all NSE stocks)")
     args = parser.parse_args()
 
-    pipeline = AutoPipeline(tickers=args.ticker)
+    pipeline = AutoPipeline(tickers=args.ticker, paper_capital=args.capital)
 
     if args.setup or args.setup_run:
         report = pipeline.setup_device(run_now=args.setup_run)

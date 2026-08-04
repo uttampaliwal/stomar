@@ -1,8 +1,15 @@
 """Cross-platform scheduler for the daily signal loop.
 
+Runs the auto-pipeline (auto_pipeline.py) — gap detection, backfill,
+meta-controller training, daily decisions, paper trades, and the Telegram
+summary — on every scheduled invocation. Because the pipeline is idempotent
+("already ran today" is detected via the ledger), the same command is safe
+at the daily 4 PM slot AND at boot catch-up.
+
 Supports:
   - Windows: Task Scheduler (schtasks.exe)
   - Linux/macOS: crontab (system crontab binary, no python-crontab dependency)
+  - Linux without cron: systemd user timer (Persistent=true → boot catch-up)
 
 Usage:
     python schedule_pipeline.py                     # Install (weekdays 3:45 PM)
@@ -25,7 +32,7 @@ from datetime import datetime
 TASK_NAME = "StoMar_Daily_Signal"
 BOOT_TASK_NAME = "StoMar_Boot_Catchup"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DAILY_SCRIPT = os.path.join(SCRIPT_DIR, "run_daily.py")
+AUTO_SCRIPT = os.path.join(SCRIPT_DIR, "auto_pipeline.py")
 LOG_DIR = os.path.join(SCRIPT_DIR, "data", "pipeline_logs")
 DEFAULT_CAPITAL = 200_000
 
@@ -46,10 +53,15 @@ def ensure_log_dir():
 # ---------------------------------------------------------------------------
 
 def _base_cmd(paper: bool, capital: float) -> list[str]:
-    """Build the run_daily.py command line for scheduled entries."""
-    cmd = [_python_path(), DAILY_SCRIPT]
+    """Build the auto_pipeline.py command line for scheduled entries.
+
+    The auto-pipeline covers everything in one idempotent run: missed-day
+    backfill, meta-controller training, today's decisions, paper trades,
+    health sweep, and the Telegram summary.
+    """
+    cmd = [_python_path(), AUTO_SCRIPT]
     if paper:
-        cmd += ["--paper-trade", "--capital", str(int(capital))]
+        cmd += ["--capital", str(int(capital))]
     return cmd
 
 
@@ -75,7 +87,7 @@ def _win_install(run_time: str = "15:45", paper: bool = False,
         print(f"  Paper trading: {paper}")
         print(f"  Log: {log_file}")
         print(f"  Python: {_python_path()}")
-        print(f"  Script: {DAILY_SCRIPT}")
+        print(f"  Script: {AUTO_SCRIPT}")
     else:
         print(f"Failed to install task: {result.stderr}")
     return result.returncode
@@ -213,7 +225,7 @@ def _systemd_install(run_time: str = "15:45", paper: bool = False,
     print(f"  Paper trading: {paper}")
     print(f"  Units: {unit_dir}/{TASK_NAME}.{{service,timer}}")
     print(f"  Python: {_python_path()}")
-    print(f"  Script: {DAILY_SCRIPT}")
+    print(f"  Script: {AUTO_SCRIPT}")
     return 0
 
 
@@ -313,7 +325,7 @@ def _linux_install(run_time: str = "15:45", paper: bool = False,
         print(f"  Paper trading: {paper}")
         print(f"  Log: {LOG_DIR}/daily_<date>.log")
         print(f"  Python: {_python_path()}")
-        print(f"  Script: {DAILY_SCRIPT}")
+        print(f"  Script: {AUTO_SCRIPT}")
     else:
         print("Failed to install crontab entry.")
     return ret
@@ -338,7 +350,7 @@ def _linux_install_boot(paper: bool = False, capital: float = DEFAULT_CAPITAL) -
     ret = _cron_write_lines(lines)
     if ret == 0:
         print(f"Task '{BOOT_TASK_NAME}' installed (boot-time catch-up).")
-        print(f"  Entry: @reboot (sleep 300) -> {DAILY_SCRIPT}")
+        print(f"  Entry: @reboot (sleep 300) -> {AUTO_SCRIPT}")
     else:
         print("Failed to install boot crontab entry.")
     return ret
@@ -423,10 +435,10 @@ def check_status() -> int:
 
 
 def run_now() -> int:
-    """Run the daily loop immediately."""
-    print("Running daily signal loop now...")
+    """Run the auto-pipeline immediately (idempotent — safe to rerun)."""
+    print("Running auto-pipeline now...")
     result = subprocess.run(
-        [_python_path(), DAILY_SCRIPT],
+        [_python_path(), AUTO_SCRIPT],
         capture_output=False,
         cwd=SCRIPT_DIR,
     )

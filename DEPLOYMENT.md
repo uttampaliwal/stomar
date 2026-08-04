@@ -1,16 +1,23 @@
 # StoMar Deployment Runbook — Start the Paper-Trading Clock (P3.1)
 
-Purpose: put StoMar on an always-on machine and keep it running uninterrupted
-for 60+ trading days. Every command below was exercised during development;
-the two deployment paths are **mutually exclusive — pick one** (running both
-would double the daily run).
+Purpose: put StoMar on a machine that is on daily and keep the paper-trading
+clock running uninterrupted for 60+ trading days. Because the pipeline is
+**idempotent** (gap detection → backfill → daily run → paper trades) and every
+scheduled run carries a boot catch-up, the same repo can live on 2-3 devices
+(laptop, desktop, GPU machine) — **whichever one you switch on that day picks
+up where the others left off**. Each device runs its own local copy; the
+Telegram summary identifies which machine ran.
+
+Every command below was exercised during development; the two deployment
+paths are **mutually exclusive — pick one** (running both would double the
+daily run).
 
 ---
 
 ## Prerequisites (both paths)
 
-- An always-on machine (Linux preferred; a $5 VPS or a Raspberry Pi 4/5 works —
-  models run fine on CPU, the image/venv is now ~2.4GB with CPU-only torch).
+- A machine that is on at least once daily (Linux preferred; models run fine
+  on CPU — the venv is ~2.4GB with CPU-only torch).
 - Git + network access to PyPI, download.pytorch.org, api.telegram.org.
 - A `.env` file from `.env.example`:
   - `STOMAR_API_KEY` (required — write-protects the API)
@@ -22,6 +29,19 @@ would double the daily run).
 cp .env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(32))"   # → STOMAR_API_KEY
 ```
+
+### Get your Telegram chat id (one-time)
+
+1. In Telegram, search your bot (e.g. `StomarDailyBot`), press **Start**,
+   and send any message (`hi`).
+2. Fetch your numeric id:
+
+```bash
+curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates?limit=5" | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['result'][-1]['message']['chat']['id'])"
+```
+
+3. Set `STOMAR_TELEGRAM_CHAT_ID=<that number>` in `.env`.
 
 ---
 
@@ -35,24 +55,40 @@ sudo apt install -y git curl cron
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 git clone <your-repo-url> stomar && cd stomar
-cp .env.example .env            # edit: API key, Telegram/SMTP, PAPER_CAPITAL
+cp .env.example .env            # edit: API key, Telegram chat id, PAPER_CAPITAL
 
 # 3. One-time build (CPU-only torch, ~2.4GB; first run ~5-10 min)
 uv sync --frozen
 
-# 4. First-time model training (only needed once; ~30-60 min CPU)
-uv run run_pipeline.py --train-all
-uv run run_daily.py --backfill --days 252 && uv run run_daily.py --train-meta
+# 4. ONE-COMMAND DEVICE SETUP — verifies env, tests Telegram, checks GPU,
+#    installs the daily task + boot catch-up, then runs the full pipeline.
+uv run auto_pipeline.py --setup-run
 
-# 5. Install the scheduler — paper trading, ₹2L capital, boot catch-up
-uv run schedule_pipeline.py --paper --capital 200000 --boot
-
-# 6. Verify
-uv run schedule_pipeline.py --status          # two tasks installed
-uv run schedule_pipeline.py --run-now         # smoke test — watch logs:
+# 5. Verify
+uv run schedule_pipeline.py --status
 tail -f data/pipeline_logs/daily_$(date +%Y%m%d).log
+```
 
-# 7. Serve the dashboard (optional — API + React SPA on :8000)
+That is everything: the daily task runs Mon-Fri 16:00, and the boot catch-up
+(crontab `@reboot`, or a systemd `Persistent=true` timer when cron is absent)
+replays any missed days the moment the machine is switched on. Repeat steps
+2-4 once on every device — whichever you open that day handles the run.
+
+### Optional: GPU acceleration (RTX 50-series etc.)
+
+The RTX 5060 (and any NVIDIA GPU) is detected by `--setup` but only used if
+CUDA torch is installed. On a GPU machine only:
+
+```bash
+bash scripts/setup_gpu.sh          # or scripts\setup_gpu.bat on Windows
+# swaps CPU torch → cu128 build; verify:
+uv run python -c "import torch; print(torch.cuda.is_available())"
+```
+
+Meta-controller training (the only heavy step) then runs on the GPU. Models
+are small, so this is a convenience, not a requirement.
+
+# 5. Serve the dashboard (optional — API + React SPA on :8000)
 nohup .venv/bin/gunicorn api.main:app -w 4 -k uvicorn.workers.UvicornWorker \
       --bind 0.0.0.0:8000 --timeout 120 >> data/pipeline_logs/api.log 2>&1 &
 ```
@@ -79,10 +115,17 @@ immediately: `docker compose exec scheduler python run_pipeline.py --train-all`.
 
 | When | Check |
 |---|---|
-| Day 1-3 | Daily 15:45 IST run fires (log + Telegram summary arrives); kill switch reachable |
+| Day 1-3 | Daily 16:00 IST run fires (log + Telegram summary arrives); kill switch reachable |
 | Weekly | Models fresh (`Model age` on Monitoring page); ledger backup exists in `data/backups/` |
 | Monthly | Paper P&L vs Nifty comparison (`/api/benchmark/compare`) still positive |
 | Any time | Drawdown alert triggers at 10% (Paper Trading page + Telegram) |
+
+Multi-device: because every device schedules the same idempotent pipeline +
+boot catch-up, a day is covered as long as any one device is switched on.
+The Telegram summary header includes the machine name (`NewNest`, …), so you
+can see which device ran. Runs on different devices use their local ledger —
+resolve at month end with `docker compose exec scheduler` / the benchmark API
+from the primary device.
 
 Critical alert wiring (already automatic): pipeline failure, kill switch,
 drift, drawdown breach → `notify()` → Telegram + email.

@@ -27,6 +27,13 @@ def tmp_ticker_checkpoint(tmp_path):
     return str(tmp_path / "checkpoint_RELIANCE_NS.json")
 
 
+@pytest.fixture(autouse=True)
+def force_trading_day(monkeypatch):
+    """Auto-pipeline skips the daily stage on non-trading days (weekends,
+    holidays). Tests exercise the daily path regardless of when CI runs."""
+    monkeypatch.setattr("src.core.calendar.is_trading_day", lambda dt: True)
+
+
 # ── StageInfo ───────────────────────────────────────────────────────────────
 
 class TestStageInfo:
