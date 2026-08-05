@@ -17,7 +17,7 @@
   "closed_positions": [],
   "trade_log": [
     {
-      "timestamp": "2026-08-05T08:11:09.868208",
+      "timestamp": "2026-08-05T08:34:40.185006",
       "ticker": "A.NS",
       "side": "BUY",
       "order_type": "MARKET",
@@ -30,7 +30,7 @@
       "cash_after": 100000
     },
     {
-      "timestamp": "2026-08-05T08:11:09.870720",
+      "timestamp": "2026-08-05T08:34:40.186166",
       "ticker": "B.NS",
       "side": "BUY",
       "order_type": "MARKET",

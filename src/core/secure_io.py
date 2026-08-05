@@ -15,6 +15,8 @@ import os
 import tempfile
 from typing import Any, Callable
 
+from filelock import FileLock
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_ATOMIC_MODE = 0o644
@@ -75,16 +77,20 @@ def atomic_append_jsonl(path: str, record: dict) -> None:
     """Append a single JSON line to an audit-style JSONL file with fsync.
 
     Appends are intentionally not os.replace-based (that would clobber the
-    file on concurrent appends); the O_APPEND + fsync sequence guarantees
-    the line is durable once this returns.
+    file on concurrent appends). O_APPEND keeps short lines atomic even
+    without a lock, but multi-KB lines from concurrent processes can
+    interleave, so a per-file advisory lock serializes writers and the
+    O_APPEND + fsync sequence guarantees the line is durable once this
+    returns.
     """
     dir_name = os.path.dirname(os.path.abspath(path)) or "."
     os.makedirs(dir_name, exist_ok=True)
     line = json.dumps(record, default=str) + "\n"
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(line)
-        f.flush()
-        os.fsync(f.fileno())
+    with FileLock(os.path.abspath(path) + ".lock"):
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line)
+            f.flush()
+            os.fsync(f.fileno())
 
 
 def atomic_write_bytes(path: str, data: bytes, mode: int = _DEFAULT_ATOMIC_MODE) -> None:
