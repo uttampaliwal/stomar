@@ -128,3 +128,84 @@ class TestModelsExist:
     def test_nonexistent_ticker(self):
         from src.models.model import models_exist
         assert models_exist("NONEXISTENT_XYZ_999.NS") is False
+
+    def test_zero_byte_required_file_fails(self, tmp_path):
+        """A zero-byte file must not pass models_exist (would crash on load)."""
+
+        from src.models.artifacts import ArtifactBundle
+        from src.models.model import models_exist, FEATURE_SCHEMA_VERSION
+
+        ticker = "ZEROBYTE.NS"
+        root = str(tmp_path)
+        ticker_clean = ticker.replace(".", "_")
+        for name, payload in [
+            ("lstm.pt", b"\x80\x02empty-state"),      # non-empty placeholder
+            ("gru.pt", b"\x80\x02empty-state"),
+            ("transformer.pt", b"\x80\x02empty-state"),
+            ("lstm_dim.pkl", b"\x80\x02dim8"),
+            ("xgb.pkl", b"\x80\x02empty-xgb"),
+            ("scaler.pkl", b"\x80\x02empty-scaler"),
+            ("features.pkl", b"\x80\x02feat"),
+        ]:
+            with open(os.path.join(root, f"{ticker_clean}_{name}"), "wb") as f:
+                f.write(payload)
+        ArtifactBundle.create(root, ticker_clean, {
+            f"{ticker_clean}_{ext}": "" for ext in
+            ("lstm.pt", "gru.pt", "transformer.pt", "xgb.pkl",
+             "scaler.pkl", "features.pkl", "lstm_dim.pkl")
+        }, feature_schema_version=FEATURE_SCHEMA_VERSION)
+        assert models_exist(ticker, root=root) is True
+
+        # Zero out one required file — digest still matches (manifest was
+        # created AFTER truncation), but the file is unloadable garbage.
+        with open(os.path.join(root, f"{ticker_clean}_xgb.pkl"), "wb"):
+            pass
+        assert models_exist(ticker, root=root) is False
+
+
+class TestPromoteModelCleanup:
+    def test_promote_removes_stale_artifacts(self, tmp_path, monkeypatch):
+        """Old production artifacts not in the new manifest are removed."""
+
+        from unittest.mock import patch
+        from src.models.artifacts import ArtifactBundle
+        from src.models.model import models_exist
+
+        # Build a source bundle under a temp "models" dir.
+        root = str(tmp_path / "models")
+        prod_dir = os.path.join(root, "production")
+        os.makedirs(prod_dir, exist_ok=True)
+        ticker = "CLEANUP.NS"
+        ticker_clean = ticker.replace(".", "_")
+        for name, payload in [
+            ("lstm.pt", b"\x80\x02empty-state"),
+            ("gru.pt", b"\x80\x02empty-state"),
+            ("transformer.pt", b"\x80\x02empty-state"),
+            ("lstm_dim.pkl", b"\x80\x02dim8"),
+            ("xgb.pkl", b"\x80\x02empty-xgb"),
+            ("scaler.pkl", b"\x80\x02empty-scaler"),
+            ("features.pkl", b"\x80\x02feat"),
+        ]:
+            with open(os.path.join(root, f"{ticker_clean}_{name}"), "wb") as f:
+                f.write(payload)
+        ArtifactBundle.create(root, ticker_clean, {
+            f"{ticker_clean}_{ext}": "" for ext in
+            ("lstm.pt", "gru.pt", "transformer.pt", "xgb.pkl",
+             "scaler.pkl", "features.pkl", "lstm_dim.pkl")
+        })
+
+        # Seed production with a stale legacy artifact from an older version.
+        stale = os.path.join(prod_dir, f"{ticker_clean}_oldmodel.pt")
+        with open(stale, "wb") as f:
+            f.write(b"stale")
+
+        from src.models import model as model_mod
+        monkeypatch.setattr(model_mod, "MODELS_DIR", root)
+        with patch("src.models.model_registry.ModelRegistry") as registry_cls:
+            registry_cls.return_value.register.return_value.version = 1
+            result = model_mod.promote_model(ticker)
+
+        assert result["status"] == "promoted"
+        assert os.path.exists(os.path.join(prod_dir, f"{ticker_clean}_xgb.pkl"))
+        assert not os.path.exists(stale), "stale production artifact must be removed"
+        assert models_exist(ticker, root=prod_dir) is True

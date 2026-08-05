@@ -266,6 +266,52 @@ class TestFillProbability:
         assert sum(results) < 15
 
 
+# ── State restore ──
+
+class TestRestoreState:
+    def test_restore_roundtrip(self):
+        engine = ExecutionEngine(slippage_model=FixedSlippage(0))
+        engine.submit_order(Order("", "T", OrderSide.BUY, OrderType.MARKET, 10))
+        state = engine.get_state()
+        restored = ExecutionEngine(slippage_model=FixedSlippage(0))
+        restored.restore_state(state)
+        assert restored.order_counter == engine.order_counter
+        assert [o.side for o in restored.pending_orders] == [OrderSide.BUY]
+        assert [o.order_type for o in restored.pending_orders] == [OrderType.MARKET]
+
+    def test_invalid_side_defaults_to_buy(self):
+        engine = ExecutionEngine()
+        d = {"order_id": "x", "ticker": "T", "side": "SIDEWAYS",
+             "order_type": "MARKET", "quantity": 5}
+        order = engine._order_from_dict(d)
+        assert order.side == OrderSide.BUY
+        assert order.quantity == 5
+
+    def test_invalid_order_type_defaults_to_market(self):
+        engine = ExecutionEngine()
+        d = {"order_id": "x", "ticker": "T", "side": "SELL",
+             "order_type": "FROBNICATE", "quantity": 5}
+        order = engine._order_from_dict(d)
+        assert order.order_type == OrderType.MARKET
+
+    def test_invalid_status_defaults_to_pending(self):
+        engine = ExecutionEngine()
+        d = {"order_id": "x", "ticker": "T", "side": "BUY",
+             "order_type": "LIMIT", "quantity": 5, "status": "DONE"}
+        order = engine._order_from_dict(d)
+        assert order.status == OrderStatus.PENDING
+
+    def test_corrupted_state_restores_without_raising(self):
+        engine = ExecutionEngine()
+        state = {"order_counter": 3, "pending_orders": [
+            {"order_id": "a", "ticker": "T", "side": "HOLD",
+             "order_type": "MARKET", "quantity": 5},
+        ], "filled_orders": [], "rejected_orders": []}
+        engine.restore_state(state)
+        assert len(engine.pending_orders) == 1
+        assert engine.pending_orders[0].side == OrderSide.BUY
+
+
 # ── BacktestExecutionSimulator ──
 
 class TestBacktestExecutionSimulator:

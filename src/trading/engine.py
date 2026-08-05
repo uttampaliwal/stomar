@@ -269,16 +269,40 @@ class ExecutionEngine:
         }
 
     @staticmethod
+    def _enum_or_default(enum_cls, value, default):
+        """Resolve *value* into *enum_cls*, defaulting on corrupt input.
+
+        A corrupted state file may carry an invalid enum string; failing
+        loudly there would make the whole engine unloadable, so we default
+        and log instead.
+        """
+        try:
+            return enum_cls(value)
+        except (ValueError, TypeError):
+            logger.warning(
+                "Invalid %s value %r in restored order state; using %r",
+                enum_cls.__name__, value, default.value,
+            )
+            return default
+
+    @staticmethod
     def _order_from_dict(d: dict) -> Order:
+        side = ExecutionEngine._enum_or_default(OrderSide, d.get("side"), OrderSide.BUY)
+        order_type = ExecutionEngine._enum_or_default(
+            OrderType, d.get("order_type"), OrderType.MARKET
+        )
+        status = ExecutionEngine._enum_or_default(
+            OrderStatus, d.get("status", "PENDING"), OrderStatus.PENDING
+        )
         return Order(
-            order_id=d["order_id"],
-            ticker=d["ticker"],
-            side=OrderSide(d["side"]),
-            order_type=OrderType(d["order_type"]),
-            quantity=d["quantity"],
+            order_id=d.get("order_id", ""),
+            ticker=d.get("ticker", ""),
+            side=side,
+            order_type=order_type,
+            quantity=d.get("quantity", 0),
             price=d.get("price", 0.0),
             stop_price=d.get("stop_price", 0.0),
-            status=OrderStatus(d.get("status", "PENDING")),
+            status=status,
             filled_price=d.get("filled_price", 0.0),
             filled_quantity=d.get("filled_quantity", 0),
             fill_cost=d.get("fill_cost", 0.0),

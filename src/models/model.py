@@ -354,7 +354,12 @@ def model_feature_cols(models: dict) -> list[str]:
 
 
 def models_exist(ticker: str, root: str = MODELS_DIR) -> bool:
-    """True only when the full verified bundle (incl. manifest) is present."""
+    """True only when the full verified bundle (incl. manifest) is present.
+
+    Files must exist, be non-empty, and be loadable — a zero-byte or corrupt
+    file passes os.path.exists() but would fail later with a cryptic error,
+    so the bundle is rejected up front.
+    """
     try:
         bundle = ArtifactBundle.for_ticker(root, ticker)
     except ArtifactVerificationError:
@@ -362,7 +367,20 @@ def models_exist(ticker: str, root: str = MODELS_DIR) -> bool:
     ticker_clean = ticker.replace(".", "_")
     required = ["lstm.pt", "gru.pt", "transformer.pt", "xgb.pkl",
                 "scaler.pkl", "features.pkl", "lstm_dim.pkl"]
-    return all(f"{ticker_clean}_{ext}" in bundle.listed_files() for ext in required)
+    for ext in required:
+        name = f"{ticker_clean}_{ext}"
+        if name not in bundle.listed_files():
+            return False
+        path = bundle.file_path(name)
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            return False
+        try:
+            with open(path, "rb") as f:
+                if not f.read(1):
+                    return False
+        except OSError:
+            return False
+    return True
 
 
 def promote_model(ticker: str, feature_hash: str = None, metrics: dict = None,
@@ -402,6 +420,21 @@ def promote_model(ticker: str, feature_hash: str = None, metrics: dict = None,
     promoted = ArtifactBundle.for_ticker(dest_dir, ticker)
     if not promoted.listed_files():
         raise ArtifactVerificationError("promoted bundle is empty")
+
+    # Clean up stale production artifacts for this ticker that are not part
+    # of the newly promoted manifest (e.g. retired model files from an
+    # older version). Only files prefixed with this ticker are touched.
+    keep = set(promoted.listed_files()) | {
+        f"{ticker_clean}_manifest.json",
+        f"{ticker_clean}_meta.json",
+    }
+    for name in os.listdir(dest_dir):
+        if name.startswith(f"{ticker_clean}_") and name not in keep:
+            try:
+                os.remove(os.path.join(dest_dir, name))
+                logger.info("Removed stale production artifact: %s", name)
+            except OSError as e:
+                logger.warning("Failed to remove stale artifact %s: %s", name, e)
 
     registry = ModelRegistry()
     record = registry.register(

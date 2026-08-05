@@ -177,15 +177,29 @@ def _fetch_stock_data_locked(
 def get_live_price(ticker: str) -> float | None:
     """Fetch the latest live price for a ticker.
 
+    Prefers the live-data engine's quote chain (Kite Connect → NSE → Yahoo →
+    Google), which returns true real-time quotes; falls back to a 5-minute
+    yfinance bar (1-minute NSE data is frequently unreliable/delayed) and
+    finally to the last daily close.
+
     Returns the price on success, None on failure. Callers must
     check for None before using the price to avoid zero-price trades.
     """
+    try:
+        from src.data.live import live_engine
+        quote = live_engine.get_quote(ticker)
+        if quote is not None and quote.price is not None and quote.price > 0:
+            return float(quote.price)
+    except Exception as e:
+        logger.debug("live engine quote failed for %s: %s", ticker, e)
+
     stock = yf.Ticker(ticker)
-    data = yf_breaker.call(stock.history, period="1d", interval="1m")
-    if data.empty or "Close" not in data.columns:
-        logger.warning("No live price data for %s", ticker)
-        return None
-    return float(data["Close"].iloc[-1])
+    for interval in ("5m", "1d"):
+        data = yf_breaker.call(stock.history, period="1d", interval=interval)
+        if not data.empty and "Close" in data.columns:
+            return float(data["Close"].iloc[-1])
+    logger.warning("No live price data for %s", ticker)
+    return None
 
 
 def get_market_status() -> str:
