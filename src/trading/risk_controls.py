@@ -292,7 +292,11 @@ class RiskController:
         """Calculate position size using Kelly fraction (not full Kelly)."""
         from src.trading.risk import kelly_criterion
         full_kelly = kelly_criterion(win_rate, avg_win, avg_loss)
-        fraction = min(full_kelly, self.limits.kelly_fraction)
+        # Clamp to >= 0: a negative edge must never translate into a
+        # negative (short) position size. Belt-and-braces on top of
+        # kelly_criterion's own clamp so the invariant holds regardless
+        # of upstream changes.
+        fraction = max(0.0, min(full_kelly, self.limits.kelly_fraction))
 
         risk_amount = capital * fraction
         shares = int(risk_amount / price) if price > 0 else 0

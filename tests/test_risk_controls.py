@@ -205,6 +205,15 @@ class TestKellySizing:
         max_value = 100_000 * 0.25
         assert qty * 100 <= max_value
 
+    def test_negative_edge_never_returns_negative_quantity(self):
+        # A negative edge must produce zero, not a negative (short) size.
+        rc = _rc()
+        qty = rc.kelly_sized_quantity(
+            win_rate=0.2, avg_win=1000, avg_loss=2000, price=500, capital=100_000
+        )
+        assert qty == 0
+        assert qty >= 0
+
 
 # ── Status ──
 
