@@ -87,12 +87,28 @@ class TestDrawdownLimit:
         assert result["approved"] is True
         assert result["drawdown_pct"] == pytest.approx(0.1)
 
-    def test_breach_halts_trading(self):
-        rc = _rc(initial_capital=100_000)
+    def test_breach_halts_trading(self, tmp_path):
+        rc = _rc(kill_switch_file=tmp_path / "ks.json")
         rc.update_equity(84_000)
         result = rc.check_order(order_value=10_000, current_holdings_value=0)
         assert result["approved"] is False
         assert rc.halted is True
+
+    def test_breach_persists_across_restart(self, tmp_path):
+        # The drawdown halt must survive a restart: kill_switch() writes the
+        # persistent file, and a fresh controller must load the halt.
+        ks_file = tmp_path / "ks.json"
+        rc = _rc(kill_switch_file=ks_file)
+        rc.update_equity(84_000)
+        rc.check_order(order_value=10_000, current_holdings_value=0)
+
+        assert ks_file.exists()
+        restarted = RiskController(initial_capital=100_000, kill_switch_file=ks_file)
+        assert restarted.halted is True
+        assert "drawdown" in restarted.halt_reason.lower()
+        assert restarted.check_order(
+            order_value=10_000, current_holdings_value=0
+        )["approved"] is False
 
     def test_halt_blocks_future_orders(self):
         rc = _rc(initial_capital=100_000)

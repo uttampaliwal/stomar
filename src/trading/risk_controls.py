@@ -194,8 +194,10 @@ class RiskController:
                 "message": (f"Drawdown {drawdown:.1%} exceeds "
                             f"{self.limits.max_drawdown_pct:.1%} limit"),
             })
-            self.halted = True
-            self.halt_reason = f"Max drawdown breached ({drawdown:.1%})"
+            # kill_switch() persists the halt so the breach survives a
+            # process restart; a bare in-memory flag would silently resume
+            # trading after a crash.
+            self.kill_switch(f"Max drawdown breached ({drawdown:.1%})")
         else:
             checks.append({"passed": True, "check": "max_drawdown"})
 
