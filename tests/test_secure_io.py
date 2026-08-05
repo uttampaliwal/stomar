@@ -6,7 +6,6 @@ without the per-file lock these can interleave and corrupt the log.
 
 import json
 import multiprocessing
-import os
 
 from src.core.secure_io import atomic_append_jsonl
 
