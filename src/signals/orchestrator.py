@@ -417,7 +417,7 @@ class DailyOrchestrator:
                     df_feat[col] = 0
 
             existing_feats = [c for c in feature_cols if c in df_feat.columns]
-            df_feat = df_feat.dropna(subset=[c for c in existing_feats if c in df_feat.columns] + ["target"])
+            df_feat = df_feat.dropna(subset=existing_feats)
 
             if len(df_feat) < 2:
                 return {}

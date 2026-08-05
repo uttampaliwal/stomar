@@ -91,6 +91,42 @@ def test_run_handles_empty_tickers(ledger):
     assert len(summary["errors"]) == 0
 
 
+# --- _run_ensemble ---
+
+def test_run_ensemble_keeps_latest_bar_for_inference(ledger, sample_df):
+    """The NaN `target` on the latest bar must not drop it from inference."""
+    feature_cols = ["close", "volume", "rsi_14", "macd"]
+
+    def fake_features(df_in):
+        out = df_in.copy()
+        out["rsi_14"] = 50.0
+        out["macd"] = 0.25
+        out["target"] = out["close"].shift(-1) / out["close"] - 1.0
+        return out
+
+    tup = tuple(MagicMock() for _ in range(7))
+    captured = {}
+
+    def fake_predict(*args, **kwargs):
+        captured["df_feat"] = args[6]
+        return (1, 80.0, {})
+
+    orch = DailyOrchestrator(tickers=["TEST.NS"], ledger=ledger)
+    with patch("src.models.model.models_exist", return_value=True), \
+         patch("src.models.model.load_models", return_value=tup), \
+         patch("src.models.model.model_feature_cols", return_value=feature_cols), \
+         patch("src.data.features.add_technical_indicators", side_effect=fake_features), \
+         patch("src.models.ensemble.predict_ensemble", side_effect=fake_predict), \
+         patch("src.signals.interpretability.explain_prediction", return_value={"top": []}):
+        result = orch._run_ensemble("TEST.NS", sample_df)
+
+    assert result["ensemble_direction"] == 1
+    feat = captured["df_feat"]
+    assert feat.index[-1] == sample_df.index[-1]  # today's bar survived
+    assert pd.isna(feat["target"].iloc[-1])        # target still NaN on last row
+    assert not pd.isna(feat["target"].iloc[-2])    # but defined for earlier rows
+
+
 # --- _process_ticker ---
 
 def test_process_ticker_collects_signals(ledger):
