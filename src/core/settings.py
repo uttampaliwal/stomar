@@ -148,6 +148,32 @@ if _HAS_PYDANTIC_SETTINGS:
     settings = Settings()
 else:
     # Fallback when pydantic-settings is not installed — read env vars directly
+    import logging
+
+    _logger = logging.getLogger(__name__)
+
+
+    def _coerce(name, default, caster):
+        """Parse an env var with ``caster``; fall back to the default on
+        invalid or blank input instead of crashing at import time."""
+        raw = os.environ.get(name)
+        if raw is None or not raw.strip():
+            return default
+        try:
+            return caster(raw)
+        except (TypeError, ValueError):
+            _logger.warning("Invalid %s=%r, using default %r", name, raw, default)
+            return default
+
+
+    def _coerce_int(name, default):
+        return _coerce(name, default, int)
+
+
+    def _coerce_float(name, default):
+        return _coerce(name, default, float)
+
+
     class _FallbackSettings:
         """Reads STOMAR_* env vars with hardcoded defaults."""
 
@@ -155,63 +181,59 @@ else:
             self.env = os.environ.get("STOMAR_ENV", "dev")
             self.api_key = os.environ.get("STOMAR_API_KEY", "")
             self.cors_origins = os.environ.get("STOMAR_CORS_ORIGINS", "")
-            self.brokerage_rate = float(os.environ.get("STOMAR_BROKERAGE_RATE", "0.0003"))
-            self.slippage_rate = float(os.environ.get("STOMAR_SLIPPAGE_RATE", "0.001"))
-            self.stt_rate = float(os.environ.get("STOMAR_STT_RATE", "0.001"))
-            self.exchange_charge_rate = float(os.environ.get("STOMAR_EXCHANGE_CHARGE_RATE", "0.0000345"))
-            self.sebi_fees_rate = float(os.environ.get("STOMAR_SEBI_FEES_RATE", "0.000001"))
-            self.stamp_duty_buy_rate = float(os.environ.get("STOMAR_STAMP_DUTY_BUY_RATE", "0.00015"))
-            self.gst_rate = float(os.environ.get("STOMAR_GST_RATE", "0.18"))
-            self.risk_free_rate = float(os.environ.get("STOMAR_RISK_FREE_RATE", "0.065"))
-            self.default_seq_length = int(os.environ.get("STOMAR_DEFAULT_SEQ_LENGTH", "60"))
-            self.default_epochs = int(os.environ.get("STOMAR_DEFAULT_EPOCHS", "40"))
-            self.default_batch_size = int(os.environ.get("STOMAR_DEFAULT_BATCH_SIZE", "32"))
-            self.default_learning_rate = float(os.environ.get("STOMAR_DEFAULT_LEARNING_RATE", "0.001"))
-            self.cache_ttl = int(os.environ.get("STOMAR_CACHE_TTL", "30"))
-            self.cache_max_entries = int(os.environ.get("STOMAR_CACHE_MAX_ENTRIES", "50"))
-            self.fetch_cache_ttl = int(os.environ.get("STOMAR_FETCH_CACHE_TTL", "600"))
-            self.model_cache_ttl = int(os.environ.get("STOMAR_MODEL_CACHE_TTL", "3600"))
-            self.model_cache_memory_budget_mb = int(
-                os.environ.get("STOMAR_MODEL_CACHE_MEMORY_BUDGET_MB", "2048")
-            )
-            self.max_position_pct = float(os.environ.get("STOMAR_MAX_POSITION_PCT", "0.10"))
-            self.buy_threshold = float(os.environ.get("STOMAR_BUY_THRESHOLD", "0.6"))
-            self.sell_threshold = float(os.environ.get("STOMAR_SELL_THRESHOLD", "0.4"))
-            self.min_confidence_to_trade = float(os.environ.get("STOMAR_MIN_CONFIDENCE_TO_TRADE", "0.3"))
-            self.min_samples_to_train = int(os.environ.get("STOMAR_MIN_SAMPLES_TO_TRAIN", "500"))
-            self.meta_controller_c = float(os.environ.get("STOMAR_META_CONTROLLER_C", "0.1"))
-            self.uncalibrated_confidence_discount = float(
-                os.environ.get("STOMAR_UNCALIBRATED_CONFIDENCE_DISCOUNT", "0.7")
-            )
-            self.max_daily_loss_pct = float(os.environ.get("STOMAR_MAX_DAILY_LOSS_PCT", "0.02"))
-            self.max_weekly_loss_pct = float(os.environ.get("STOMAR_MAX_WEEKLY_LOSS_PCT", "0.05"))
-            self.max_drawdown_pct = float(os.environ.get("STOMAR_MAX_DRAWDOWN_PCT", "0.15"))
+            self.brokerage_rate = _coerce_float("STOMAR_BROKERAGE_RATE", 0.0003)
+            self.slippage_rate = _coerce_float("STOMAR_SLIPPAGE_RATE", 0.001)
+            self.stt_rate = _coerce_float("STOMAR_STT_RATE", 0.001)
+            self.exchange_charge_rate = _coerce_float("STOMAR_EXCHANGE_CHARGE_RATE", 0.0000345)
+            self.sebi_fees_rate = _coerce_float("STOMAR_SEBI_FEES_RATE", 0.000001)
+            self.stamp_duty_buy_rate = _coerce_float("STOMAR_STAMP_DUTY_BUY_RATE", 0.00015)
+            self.gst_rate = _coerce_float("STOMAR_GST_RATE", 0.18)
+            self.risk_free_rate = _coerce_float("STOMAR_RISK_FREE_RATE", 0.065)
+            self.default_seq_length = _coerce_int("STOMAR_DEFAULT_SEQ_LENGTH", 60)
+            self.default_epochs = _coerce_int("STOMAR_DEFAULT_EPOCHS", 40)
+            self.default_batch_size = _coerce_int("STOMAR_DEFAULT_BATCH_SIZE", 32)
+            self.default_learning_rate = _coerce_float("STOMAR_DEFAULT_LEARNING_RATE", 0.001)
+            self.cache_ttl = _coerce_int("STOMAR_CACHE_TTL", 30)
+            self.cache_max_entries = _coerce_int("STOMAR_CACHE_MAX_ENTRIES", 50)
+            self.fetch_cache_ttl = _coerce_int("STOMAR_FETCH_CACHE_TTL", 600)
+            self.model_cache_ttl = _coerce_int("STOMAR_MODEL_CACHE_TTL", 3600)
+            self.model_cache_memory_budget_mb = _coerce_int("STOMAR_MODEL_CACHE_MEMORY_BUDGET_MB", 2048)
+            self.max_position_pct = _coerce_float("STOMAR_MAX_POSITION_PCT", 0.10)
+            self.buy_threshold = _coerce_float("STOMAR_BUY_THRESHOLD", 0.6)
+            self.sell_threshold = _coerce_float("STOMAR_SELL_THRESHOLD", 0.4)
+            self.min_confidence_to_trade = _coerce_float("STOMAR_MIN_CONFIDENCE_TO_TRADE", 0.3)
+            self.min_samples_to_train = _coerce_int("STOMAR_MIN_SAMPLES_TO_TRAIN", 500)
+            self.meta_controller_c = _coerce_float("STOMAR_META_CONTROLLER_C", 0.1)
+            self.uncalibrated_confidence_discount = _coerce_float("STOMAR_UNCALIBRATED_CONFIDENCE_DISCOUNT", 0.7)
+            self.max_daily_loss_pct = _coerce_float("STOMAR_MAX_DAILY_LOSS_PCT", 0.02)
+            self.max_weekly_loss_pct = _coerce_float("STOMAR_MAX_WEEKLY_LOSS_PCT", 0.05)
+            self.max_drawdown_pct = _coerce_float("STOMAR_MAX_DRAWDOWN_PCT", 0.15)
             self.risk_override_token = os.environ.get("STOMAR_RISK_OVERRIDE_TOKEN", "")
-            self.guard_daily_loss_pct = float(os.environ.get("STOMAR_GUARD_DAILY_LOSS_PCT", "0.02"))
-            self.guard_max_drawdown_pct = float(os.environ.get("STOMAR_GUARD_MAX_DRAWDOWN_PCT", "0.08"))
-            self.guard_max_stock_allocation_pct = float(os.environ.get("STOMAR_GUARD_MAX_STOCK_ALLOCATION_PCT", "0.15"))
-            self.guard_vix_threshold = float(os.environ.get("STOMAR_GUARD_VIX_THRESHOLD", "22"))
-            self.guard_atr_expansion_threshold = float(os.environ.get("STOMAR_GUARD_ATR_EXPANSION_THRESHOLD", "2.0"))
-            self.max_daily_trades = int(os.environ.get("STOMAR_MAX_DAILY_TRADES", "5"))
-            self.max_portfolio_exposure = float(os.environ.get("STOMAR_MAX_PORTFOLIO_EXPOSURE", "0.50"))
-            self.stop_loss_pct = float(os.environ.get("STOMAR_STOP_LOSS_PCT", "0.05"))
-            self.yf_failure_threshold = int(os.environ.get("STOMAR_YF_FAILURE_THRESHOLD", "5"))
-            self.yf_recovery_timeout = int(os.environ.get("STOMAR_YF_RECOVERY_TIMEOUT", "120"))
-            self.nse_failure_threshold = int(os.environ.get("STOMAR_NSE_FAILURE_THRESHOLD", "3"))
-            self.nse_recovery_timeout = int(os.environ.get("STOMAR_NSE_RECOVERY_TIMEOUT", "90"))
-            self.min_oos_accuracy = float(os.environ.get("STOMAR_MIN_OOS_ACCURACY", "0.50"))
-            self.min_oos_sharpe = float(os.environ.get("STOMAR_MIN_OOS_SHARPE", "0.0"))
-            self.max_drawdown_threshold = float(os.environ.get("STOMAR_MAX_DRAWDOWN_THRESHOLD", "0.30"))
+            self.guard_daily_loss_pct = _coerce_float("STOMAR_GUARD_DAILY_LOSS_PCT", 0.02)
+            self.guard_max_drawdown_pct = _coerce_float("STOMAR_GUARD_MAX_DRAWDOWN_PCT", 0.08)
+            self.guard_max_stock_allocation_pct = _coerce_float("STOMAR_GUARD_MAX_STOCK_ALLOCATION_PCT", 0.15)
+            self.guard_vix_threshold = _coerce_float("STOMAR_GUARD_VIX_THRESHOLD", 22)
+            self.guard_atr_expansion_threshold = _coerce_float("STOMAR_GUARD_ATR_EXPANSION_THRESHOLD", 2.0)
+            self.max_daily_trades = _coerce_int("STOMAR_MAX_DAILY_TRADES", 5)
+            self.max_portfolio_exposure = _coerce_float("STOMAR_MAX_PORTFOLIO_EXPOSURE", 0.50)
+            self.stop_loss_pct = _coerce_float("STOMAR_STOP_LOSS_PCT", 0.05)
+            self.yf_failure_threshold = _coerce_int("STOMAR_YF_FAILURE_THRESHOLD", 5)
+            self.yf_recovery_timeout = _coerce_int("STOMAR_YF_RECOVERY_TIMEOUT", 120)
+            self.nse_failure_threshold = _coerce_int("STOMAR_NSE_FAILURE_THRESHOLD", 3)
+            self.nse_recovery_timeout = _coerce_int("STOMAR_NSE_RECOVERY_TIMEOUT", 90)
+            self.min_oos_accuracy = _coerce_float("STOMAR_MIN_OOS_ACCURACY", 0.50)
+            self.min_oos_sharpe = _coerce_float("STOMAR_MIN_OOS_SHARPE", 0.0)
+            self.max_drawdown_threshold = _coerce_float("STOMAR_MAX_DRAWDOWN_THRESHOLD", 0.30)
             # Data Retention
-            self.cache_retention_days = int(os.environ.get("STOMAR_CACHE_RETENTION_DAYS", "7"))
-            self.ledger_retention_days = int(os.environ.get("STOMAR_LEDGER_RETENTION_DAYS", "90"))
-            self.monitoring_retention_days = int(os.environ.get("STOMAR_MONITORING_RETENTION_DAYS", "30"))
-            self.feature_versions_keep = int(os.environ.get("STOMAR_FEATURE_VERSIONS_KEEP", "10"))
-            self.pipeline_logs_retention_days = int(os.environ.get("STOMAR_PIPELINE_LOGS_RETENTION_DAYS", "14"))
+            self.cache_retention_days = _coerce_int("STOMAR_CACHE_RETENTION_DAYS", 7)
+            self.ledger_retention_days = _coerce_int("STOMAR_LEDGER_RETENTION_DAYS", 90)
+            self.monitoring_retention_days = _coerce_int("STOMAR_MONITORING_RETENTION_DAYS", 30)
+            self.feature_versions_keep = _coerce_int("STOMAR_FEATURE_VERSIONS_KEEP", 10)
+            self.pipeline_logs_retention_days = _coerce_int("STOMAR_PIPELINE_LOGS_RETENTION_DAYS", 14)
             # Live Market Data
             self.kite_api_key = os.environ.get("STOMAR_KITE_API_KEY", "")
             self.kite_access_token = os.environ.get("STOMAR_KITE_ACCESS_TOKEN", "")
-            self.live_poll_interval = float(os.environ.get("STOMAR_LIVE_POLL_INTERVAL", "3.0"))
+            self.live_poll_interval = _coerce_float("STOMAR_LIVE_POLL_INTERVAL", 3.0)
             self.live_universe = [
                 s.strip() for s in os.environ.get(
                     "STOMAR_LIVE_UNIVERSE",
@@ -228,10 +250,11 @@ else:
             self.live_confirmation = os.environ.get("STOMAR_LIVE_CONFIRMATION", "")
             self.live_broker = os.environ.get("STOMAR_LIVE_BROKER", "kite")
             self.live_account_id = os.environ.get("STOMAR_LIVE_ACCOUNT_ID", "")
-            self.max_stale_quote_seconds = float(os.environ.get("STOMAR_MAX_STALE_QUOTE_SECONDS", "15"))
-            self.max_daily_orders = int(os.environ.get("STOMAR_MAX_DAILY_ORDERS", "10"))
-            self.min_daily_volume_rs = float(os.environ.get("STOMAR_MIN_DAILY_VOLUME_RS", "1000000"))
-            self.max_expected_slippage_bps = float(os.environ.get("STOMAR_MAX_EXPECTED_SLIPPAGE_BPS", "30"))
-            self.max_gap_pct = float(os.environ.get("STOMAR_MAX_GAP_PCT", "5"))
+            self.max_stale_quote_seconds = _coerce_float("STOMAR_MAX_STALE_QUOTE_SECONDS", 15)
+            self.max_daily_orders = _coerce_int("STOMAR_MAX_DAILY_ORDERS", 10)
+            self.min_daily_volume_rs = _coerce_float("STOMAR_MIN_DAILY_VOLUME_RS", 1000000)
+            self.max_expected_slippage_bps = _coerce_float("STOMAR_MAX_EXPECTED_SLIPPAGE_BPS", 30)
+            self.max_gap_pct = _coerce_float("STOMAR_MAX_GAP_PCT", 5)
+
 
     settings = _FallbackSettings()
