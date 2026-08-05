@@ -1,0 +1,26 @@
+# Global code owner: the project is maintained by a single individual.
+# Review responsibilities fall to the owner by default.
+
+*                                       @uttampaliwal
+
+# CI configuration
+.github/workflows/ci.yml             @uttampaliwal
+
+# Security and audit policy
+SECURITY.md                         @uttampaliwal
+docs/Security-Model.md              @uttampaliwal
+
+# Trading/broker logic (highest risk — mandatory review)
+services/                           @uttampaliwal
+src/                                @uttampaliwal
+
+# HTTP API surface
+api/                                @uttampaliwal
+
+# Frontend
+web/                                @uttampaliwal
+
+# Environment and deployment
+Dockerfile                          @uttampaliwal
+docker-compose.yml                  @uttampaliwal
+pyproject.toml                      @uttampaliwal
