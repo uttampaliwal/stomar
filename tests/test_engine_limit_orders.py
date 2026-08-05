@@ -48,7 +48,8 @@ def _sell_stop(stop, qty=10):
 
 
 def _run(engine, bar):
-    with patch("src.trading.engine.random.random", return_value=0.0):
+    with patch.object(engine, "rng") as mock_rng:
+        mock_rng.random.return_value = 0.0
         return engine.on_bar(bar)
 
 

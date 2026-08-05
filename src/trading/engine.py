@@ -14,10 +14,11 @@ Usage:
 """
 
 import logging
-import random
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -79,13 +80,18 @@ class ExecutionEngine:
     price data, fills orders based on order type and price action.
     """
 
-    def __init__(self, slippage_model=None, fill_probability: float = 1.0):
+    def __init__(self, slippage_model=None, fill_probability: float = 1.0,
+                 rng: "np.random.Generator" = None):
         self.pending_orders: list[Order] = []
         self.filled_orders: list[Order] = []
         self.rejected_orders: list[Order] = []
         self.order_counter = 0
         self.slippage_model = slippage_model or FixedSlippage(0.001)
         self.fill_probability = fill_probability
+        # Per-instance seeded RNG so limit-order fills are reproducible across
+        # runs (backtests, hyperparameter comparisons, regression debugging).
+        # Callers may inject their own Generator to chain experiments.
+        self.rng = rng if rng is not None else np.random.default_rng(42)
 
     def submit_order(self, order: Order) -> Order:
         """Submit an order to the engine."""
@@ -119,7 +125,7 @@ class ExecutionEngine:
 
             if fill_price is not None:
                 prob = self._estimate_fill_probability(order, bar)
-                if random.random() > prob:
+                if self.rng.random() > prob:
                     remaining.append(order)
                     continue
 

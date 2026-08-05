@@ -1,5 +1,6 @@
 """Tests for src/engine.py."""
 
+import numpy as np
 import pytest
 from unittest.mock import patch
 
@@ -79,7 +80,8 @@ class TestLimitOrderFills:
     def test_limit_buy_fills_when_low_touches(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
         engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=101))
-        with patch("src.trading.engine.random.random", return_value=0.0):
+        with patch.object(engine, "rng") as mock_rng:
+            mock_rng.random.return_value = 0.0
             filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price <= 101.0
@@ -93,7 +95,8 @@ class TestLimitOrderFills:
     def test_limit_sell_fills_when_high_touches(self):
         engine = ExecutionEngine(slippage_model=FixedSlippage(0), fill_probability=1.0)
         engine.submit_order(Order("", "TEST.NS", OrderSide.SELL, OrderType.LIMIT, 10, price=103))
-        with patch("src.trading.engine.random.random", return_value=0.0):
+        with patch.object(engine, "rng") as mock_rng:
+            mock_rng.random.return_value = 0.0
             filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price >= 103.0
@@ -128,6 +131,30 @@ class TestStopOrderFills:
         filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
         assert len(filled) == 1
         assert filled[0].filled_price == 100.0  # Market fill at open
+
+
+class TestDeterminism:
+    def test_default_seed_reproduces_limit_fill_sequence(self):
+        # A limit order near the close has prob < 1.0, so the RNG decides
+        # whether it fills. Fresh engines must replay identical outcomes.
+        def run():
+            engine = ExecutionEngine(slippage_model=FixedSlippage(0))
+            outcomes = []
+            for _ in range(50):
+                engine.submit_order(
+                    Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10,
+                          price=98.5)
+                )
+                outcomes.append(len(engine.on_bar(_bar(o=100, h=105, lo=95, c=102))))
+            return outcomes
+
+        assert run() == run()
+
+    def test_injected_rng_is_used(self):
+        import numpy as np
+        rng = np.random.default_rng(7)
+        engine = ExecutionEngine(slippage_model=FixedSlippage(0), rng=rng)
+        assert engine.rng is rng
 
 
 class TestCancelAll:
@@ -217,9 +244,12 @@ class TestFillProbability:
         assert len(filled) == 1
 
     def test_limit_near_close_high_probability(self):
+        # Deterministic: one fresh RNG stream per trial, so the ~70% fill
+        # rate is sampled across seeds instead of the (now-seeded) default.
         results = []
-        for _ in range(20):
-            engine = ExecutionEngine(slippage_model=FixedSlippage(0))
+        for i in range(20):
+            engine = ExecutionEngine(slippage_model=FixedSlippage(0),
+                                     rng=np.random.default_rng(i))
             engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=101))
             filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
             results.append(len(filled) > 0)
@@ -227,8 +257,9 @@ class TestFillProbability:
 
     def test_limit_far_low_probability(self):
         results = []
-        for _ in range(20):
-            engine = ExecutionEngine(slippage_model=FixedSlippage(0))
+        for i in range(20):
+            engine = ExecutionEngine(slippage_model=FixedSlippage(0),
+                                     rng=np.random.default_rng(i))
             engine.submit_order(Order("", "TEST.NS", OrderSide.BUY, OrderType.LIMIT, 10, price=85))
             filled = engine.on_bar(_bar(o=100, h=105, lo=95, c=102))
             results.append(len(filled) > 0)
