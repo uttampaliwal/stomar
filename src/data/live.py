@@ -505,6 +505,7 @@ class LiveDataEngine:
         self._fii_dii: tuple[float, dict] | None = None
         self._minute_accum: dict[str, list[float]] = {}  # symbol -> [open, high, low, close, vol]
         self._minute_key: dict[str, datetime] = {}
+        self._last_volume: dict[str, int] = {}  # symbol -> last observed cumulative volume
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -633,7 +634,19 @@ class LiveDataEngine:
             return
         now = datetime.now()
         key = now.replace(second=0, microsecond=0)
+        volume = int(quote.volume or 0)
         with self._lock:
+            # Quote volume is the session-cumulative traded volume, so only
+            # the delta since the previous observation belongs to this bar.
+            # Adding the raw value on every poll would multiply the daily
+            # volume by the number of polls per minute (#24).
+            last_vol = self._last_volume.get(symbol)
+            if last_vol is None:
+                delta = 0
+            else:
+                delta = max(0, volume - last_vol)  # new session: reset to 0
+            self._last_volume[symbol] = volume
+
             current_key = self._minute_key.get(symbol)
             if current_key != key:
                 self._flush_minute(symbol)
@@ -644,7 +657,7 @@ class LiveDataEngine:
                 bar[1] = max(bar[1], price)
                 bar[2] = min(bar[2], price)
                 bar[3] = price
-            self._minute_accum[symbol][4] += int(quote.volume or 0)
+            self._minute_accum[symbol][4] += delta
 
     def _flush_minute(self, symbol: str):
         bar = self._minute_accum.pop(symbol, None)

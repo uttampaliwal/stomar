@@ -190,9 +190,11 @@ class TestMinuteAggregation:
 
         store = MarketDataStore(str(tmp_path / "live.db"))
         engine = LiveDataEngine(fetchers=[_GoodFetcher()], store=store)
+        # Quote volume is session-cumulative: only the delta between
+        # observations belongs to the bar (#24).
         engine._accumulate_minute("X.NS", LiveQuote(symbol="X.NS", price=100.0, volume=100))
         engine._accumulate_minute("X.NS", LiveQuote(symbol="X.NS", price=102.0, volume=150))
-        engine._accumulate_minute("X.NS", LiveQuote(symbol="X.NS", price=101.0, volume=50))
+        engine._accumulate_minute("X.NS", LiveQuote(symbol="X.NS", price=101.0, volume=200))
         engine.flush_all_minutes()
         hist = store.get_history("X.NS", interval="minute")
         assert len(hist) == 1
@@ -200,7 +202,23 @@ class TestMinuteAggregation:
         assert hist["high"].iloc[0] == pytest.approx(102.0)
         assert hist["low"].iloc[0] == pytest.approx(100.0)
         assert hist["close"].iloc[0] == pytest.approx(101.0)
-        assert hist["volume"].iloc[0] == 300
+        assert hist["volume"].iloc[0] == 100  # deltas only: 0 + 50 + 50
+        store.close()
+
+    def test_cumulative_volume_not_double_counted(self, tmp_path):
+        """Regression: repeated polls must not multiply cumulative volume."""
+        from src.data.store import MarketDataStore
+
+        store = MarketDataStore(str(tmp_path / "live3.db"))
+        engine = LiveDataEngine(fetchers=[_GoodFetcher()], store=store)
+        # A feed that keeps reporting the same cumulative volume (no new
+        # trades) must not inflate the bar's volume.
+        engine._accumulate_minute("X.NS", LiveQuote(symbol="X.NS", price=100.0, volume=500))
+        engine._accumulate_minute("X.NS", LiveQuote(symbol="X.NS", price=100.5, volume=500))
+        engine._accumulate_minute("X.NS", LiveQuote(symbol="X.NS", price=100.2, volume=500))
+        engine.flush_all_minutes()
+        hist = store.get_history("X.NS", interval="minute")
+        assert hist["volume"].iloc[0] == 0
         store.close()
 
     def test_new_minute_flushes_previous(self, tmp_path):

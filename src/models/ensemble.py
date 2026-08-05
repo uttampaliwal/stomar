@@ -227,6 +227,10 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
                      meta_model=None, regime=None):
     """Run ensemble prediction on latest data.
 
+    Deep-learning base models (lstm/gru/transformer) may be None
+    (tree-only bundles, #59); they are skipped and the remaining
+    tree models drive the signal.
+
     Args:
         meta_model: Optional fitted meta-learner Pipeline. When provided,
             uses learned weights instead of manual combination.
@@ -241,29 +245,37 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
         return 0, 0.0, {"error": "insufficient_data"}
 
     latest_scaled = scaler.transform(latest_data.values[-60:])
-    inp = torch.tensor(latest_scaled, dtype=torch.float32).unsqueeze(0).to(DEVICE)
 
-    lstm.eval()
-    gru.eval()
-    transformer.eval()
-    with torch.no_grad():
-        pred_lstm = lstm(inp).item()
-        pred_gru = gru(inp).item()
-        pred_transformer = transformer(inp).item()
+    # Deep-learning base models may be absent (tree-only bundles, #59).
+    has_dl = all(m is not None for m in (lstm, gru, transformer))
+    if has_dl:
+        inp = torch.tensor(latest_scaled, dtype=torch.float32).unsqueeze(0).to(DEVICE)
 
-    current_scaled = latest_scaled[-1, 0]
+        lstm.eval()
+        gru.eval()
+        transformer.eval()
+        with torch.no_grad():
+            pred_lstm = lstm(inp).item()
+            pred_gru = gru(inp).item()
+            pred_transformer = transformer(inp).item()
 
-    # Convert regression outputs to probabilities (sigmoid of price diff)
-    diff_lstm = pred_lstm - current_scaled
-    diff_gru = pred_gru - current_scaled
-    diff_tf = pred_transformer - current_scaled
-    prob_lstm = 1.0 / (1.0 + np.exp(-diff_lstm * 10))
-    prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
-    prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
+        current_scaled = latest_scaled[-1, 0]
 
-    dir_lstm = 1 if pred_lstm > current_scaled else 0
-    dir_gru = 1 if pred_gru > current_scaled else 0
-    dir_transformer = 1 if pred_transformer > current_scaled else 0
+        # Convert regression outputs to probabilities (sigmoid of price diff)
+        diff_lstm = pred_lstm - current_scaled
+        diff_gru = pred_gru - current_scaled
+        diff_tf = pred_transformer - current_scaled
+        prob_lstm = 1.0 / (1.0 + np.exp(-diff_lstm * 10))
+        prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
+        prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
+
+        dir_lstm = 1 if pred_lstm > current_scaled else 0
+        dir_gru = 1 if pred_gru > current_scaled else 0
+        dir_transformer = 1 if pred_transformer > current_scaled else 0
+    else:
+        prob_lstm = prob_gru = prob_tf = 0.5
+        dir_lstm = dir_gru = dir_transformer = 0
+        pred_lstm = pred_gru = pred_transformer = 0.0
 
     xgb_input = latest_data.iloc[-1:][feature_cols]
     xgb_prob = xgb.predict_proba(xgb_input)[0]
@@ -306,12 +318,14 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
             weights = {name: 1.0 / len(MODEL_NAMES) for name in MODEL_NAMES}
 
         # Build available model probabilities and renormalize weights
-        model_probs = [
-            ("lstm", prob_lstm),
-            ("gru", prob_gru),
-            ("transformer", prob_tf),
-            ("xgb", xgb_prob[1]),
-        ]
+        model_probs = []
+        if has_dl:
+            model_probs += [
+                ("lstm", prob_lstm),
+                ("gru", prob_gru),
+                ("transformer", prob_tf),
+            ]
+        model_probs.append(("xgb", xgb_prob[1]))
         if lgb_model is not None:
             model_probs.append(("lgb", lgb_prob[1]))
         if cat_model is not None:
@@ -358,21 +372,25 @@ def _backtest_rows(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
     scaled = scaler.transform(data.values)
     dates = data.index
 
-    lstm.eval()
-    gru.eval()
-    transformer.eval()
+    has_dl = all(m is not None for m in (lstm, gru, transformer))
+    if has_dl:
+        lstm.eval()
+        gru.eval()
+        transformer.eval()
 
     for i in range(seq_length, len(scaled)):
         try:
-            inp = torch.tensor(scaled[i - seq_length:i], dtype=torch.float32).unsqueeze(0).to(DEVICE)
             prev_close = scaled[i - 1, 0]
             actual_close = scaled[i, 0]
             actual_dir = 1 if actual_close > prev_close else 0
 
-            with torch.no_grad():
-                p_lstm = lstm(inp).item()
-                p_gru = gru(inp).item()
-                p_tf = transformer(inp).item()
+            p_lstm = p_gru = p_tf = 0.0
+            if has_dl:
+                inp = torch.tensor(scaled[i - seq_length:i], dtype=torch.float32).unsqueeze(0).to(DEVICE)
+                with torch.no_grad():
+                    p_lstm = lstm(inp).item()
+                    p_gru = gru(inp).item()
+                    p_tf = transformer(inp).item()
 
             xgb_inp = data.iloc[[i - 1]]
             xgb_p = xgb.predict_proba(xgb_inp)[0][1]
@@ -386,12 +404,16 @@ def _backtest_rows(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
                 cat_p = cat_model.predict_proba(xgb_inp)[0][1]
 
             # Convert DL regression to probabilities
-            diff_lstm = p_lstm - prev_close
-            diff_gru = p_gru - prev_close
-            diff_tf = p_tf - prev_close
-            prob_lstm = 1.0 / (1.0 + np.exp(-diff_lstm * 10))
-            prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
-            prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
+            prob_lstm = 0.5
+            prob_gru = 0.5
+            prob_tf = 0.5
+            if has_dl:
+                diff_lstm = p_lstm - prev_close
+                diff_gru = p_gru - prev_close
+                diff_tf = p_tf - prev_close
+                prob_lstm = 1.0 / (1.0 + np.exp(-diff_lstm * 10))
+                prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
+                prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
 
             yield {
                 "date": dates[i],
@@ -455,8 +477,11 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
     results = []
     for r, final_prob in zip(rows, meta_probs):
         final = 1 if final_prob > 0.5 else 0
-        dl_ens = (r["lstm"] + r["gru"] + r["transformer"]) / 3
+        dl_sum = r["lstm"] + r["gru"] + r["transformer"]
+        dl_ens = dl_sum / 3
         dl_dir = 1 if dl_ens > 0.5 else 0
+        if dl_sum == 0:  # tree-only bundle: no DL models to aggregate
+            dl_dir = None
         results.append({
             "actual": r["actual"],
             "lstm": r["lstm"], "gru": r["gru"], "transformer": r["transformer"],
@@ -635,7 +660,13 @@ def regime_adjusted_ensemble(
         regime_info = detect_regime(ohlc)
     regime_key = regime_info["regime_key"]
 
-    active_models = [n for n in MODEL_NAMES if n != "cat" or models.get("cat") is not None]
+    # Active base models: skip CatBoost and any DL model absent from the
+    # bundle (tree-only bundles, #59).
+    active_models = [
+        n for n in MODEL_NAMES
+        if (n != "cat" or models.get("cat") is not None)
+        and (n not in ("lstm", "gru", "transformer") or models.get(n) is not None)
+    ]
 
     if backtest_rows is None:
         backtest_rows = list(_backtest_rows(

@@ -161,29 +161,24 @@ def test_process_ticker_handles_fetch_failure(ledger):
     assert result["action"] == "HOLD"  # default when no data
 
 
-def test_process_ticker_logs_to_ledger(ledger):
-    orch = DailyOrchestrator(tickers=[], ledger=ledger)
-    with patch.object(orch, "_fetch_data") as mock_fetch, \
-         patch.object(orch, "_run_ensemble", return_value={}), \
-         patch.object(orch, "_run_sentiment", return_value={}), \
-         patch.object(orch, "_run_flow", return_value={}), \
-         patch.object(orch, "_run_pcr", return_value={}), \
-         patch.object(orch, "_run_mtf", return_value={}), \
-         patch.object(orch, "_run_regime", return_value={}), \
-         patch.object(orch, "_run_risk", return_value={}), \
-         patch.object(orch, "_run_volatility", return_value={}), \
-         patch.object(orch, "_run_fundamentals", return_value={}):
-        mock_fetch.return_value = pd.DataFrame({
-            "close": np.random.randn(100) + 100,
-            "open": np.random.randn(100) + 100,
-            "high": np.random.randn(100) + 101,
-            "low": np.random.randn(100) + 99,
-            "volume": np.random.randint(1000, 10000, 100).astype(float),
-        }, index=pd.bdate_range("2024-01-01", periods=100))
-        orch._process_ticker("TEST.NS", "2025-01-15", dry_run=False)
+def test_process_ticker_logs_to_ledger_via_run(ledger, monkeypatch):
+    """Decisions are logged with the FINAL action after block checks (#50)."""
+    from src.signals import orchestrator as orch_mod
+
+    monkeypatch.setattr(orch_mod.settings, "max_daily_trades", 0)
+    orch = DailyOrchestrator(tickers=["TEST.NS"], ledger=ledger)
+    with patch.object(orch, "_process_ticker",
+                      return_value={"ticker": "TEST.NS", "action": "BUY",
+                                    "position_size": 0.05, "confidence": 0.8,
+                                    "reasoning": "test",
+                                    "signals": {"sentiment_score": 1.0}}):
+        orch.run("2025-01-15", dry_run=False)
     decisions = ledger.get_decisions()
     assert len(decisions) == 1
     assert decisions[0]["ticker"] == "TEST.NS"
+    # The BUY was the 2nd trade — blocked, so logged as HOLD
+    assert decisions[0]["action"] == "HOLD"
+    assert "limit" in decisions[0]["reasoning"]
 
 
 # --- _make_decision ---

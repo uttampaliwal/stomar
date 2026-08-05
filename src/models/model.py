@@ -292,6 +292,8 @@ def _evict_oldest_model_cache() -> None:
 def load_models(ticker: str, root: str = MODELS_DIR):
     """Load a ticker's model bundle — every artifact hash-verified first.
 
+    Tree-only bundles (no DL artifacts, see ``save_models``) load with
+    ``lstm``/``gru``/``transformer`` set to None; callers must skip them.
     Raises ArtifactVerificationError when the bundle is missing, tampered,
     or when a file changed after verification. This is the ONLY runtime
     entry point for loading ticker models.
@@ -306,19 +308,21 @@ def load_models(ticker: str, root: str = MODELS_DIR):
     bundle = ArtifactBundle.for_ticker(root, ticker)
     ticker_clean = ticker.replace(".", "_")
 
-    input_dim = bundle.load_joblib(f"{ticker_clean}_lstm_dim.pkl")
+    lstm = gru = transformer = None
+    if f"{ticker_clean}_lstm.pt" in bundle.listed_files():
+        input_dim = bundle.load_joblib(f"{ticker_clean}_lstm_dim.pkl")
 
-    lstm = StockLSTM(input_dim=input_dim).to(DEVICE)
-    lstm.load_state_dict(bundle.load_torch(f"{ticker_clean}_lstm.pt"))
-    lstm.eval()
+        lstm = StockLSTM(input_dim=input_dim).to(DEVICE)
+        lstm.load_state_dict(bundle.load_torch(f"{ticker_clean}_lstm.pt"))
+        lstm.eval()
 
-    gru = StockGRU(input_dim=input_dim).to(DEVICE)
-    gru.load_state_dict(bundle.load_torch(f"{ticker_clean}_gru.pt"))
-    gru.eval()
+        gru = StockGRU(input_dim=input_dim).to(DEVICE)
+        gru.load_state_dict(bundle.load_torch(f"{ticker_clean}_gru.pt"))
+        gru.eval()
 
-    transformer = StockTransformer(input_dim=input_dim).to(DEVICE)
-    transformer.load_state_dict(bundle.load_torch(f"{ticker_clean}_transformer.pt"))
-    transformer.eval()
+        transformer = StockTransformer(input_dim=input_dim).to(DEVICE)
+        transformer.load_state_dict(bundle.load_torch(f"{ticker_clean}_transformer.pt"))
+        transformer.eval()
 
     xgb = bundle.load_joblib(f"{ticker_clean}_xgb.pkl", type_check=has_predict)
     scaler = bundle.load_joblib(f"{ticker_clean}_scaler.pkl", type_check=has_transform)
@@ -356,6 +360,9 @@ def model_feature_cols(models: dict) -> list[str]:
 def models_exist(ticker: str, root: str = MODELS_DIR) -> bool:
     """True only when the full verified bundle (incl. manifest) is present.
 
+    Tree-only bundles (xgb + scaler + features, no DL artifacts) count as
+    existing; DL artifacts are optional.
+
     Files must exist, be non-empty, and be loadable — a zero-byte or corrupt
     file passes os.path.exists() but would fail later with a cryptic error,
     so the bundle is rejected up front.
@@ -365,8 +372,7 @@ def models_exist(ticker: str, root: str = MODELS_DIR) -> bool:
     except ArtifactVerificationError:
         return False
     ticker_clean = ticker.replace(".", "_")
-    required = ["lstm.pt", "gru.pt", "transformer.pt", "xgb.pkl",
-                "scaler.pkl", "features.pkl", "lstm_dim.pkl"]
+    required = ["xgb.pkl", "scaler.pkl", "features.pkl"]
     for ext in required:
         name = f"{ticker_clean}_{ext}"
         if name not in bundle.listed_files():

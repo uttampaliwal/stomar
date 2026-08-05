@@ -103,7 +103,12 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
             qty = max(1, int(invest_amount / price))
 
             gate = manager.gate_order(ticker, action, qty,
-                                      order_value=invest_amount)
+                                      order_value=invest_amount,
+                                      is_closing=(
+                                          action == "SELL"
+                                          and ticker in trader.positions
+                                          and trader.positions[ticker].quantity > 0
+                                      ))
             if not gate["approved"]:
                 print(f"  BLOCK {ticker:15s} gate: {gate['reason']}")
                 continue

@@ -99,6 +99,21 @@ class DailyOrchestrator:
 
                 summary["decisions"].append(result)
 
+                # Log the FINAL decision — including blocked trades as
+                # HOLD — so the meta-controller never trains on signals
+                # for orders that were never placed (#50).
+                if not dry_run and result.get("signals"):
+                    decision_id = self.ledger.log_decision(
+                        date=date,
+                        ticker=ticker,
+                        signals=result["signals"],
+                        action=result["action"],
+                        position_size=result["position_size"],
+                        confidence=result["confidence"],
+                        reasoning=result["reasoning"],
+                    )
+                    result["decision_id"] = decision_id
+
                 # Execute paper trade if action is BUY or SELL
                 if not dry_run and result["action"] in ("BUY", "SELL") and result["position_size"] > 0:
                     trade = self._execute_paper_trade(ticker, result)
@@ -142,18 +157,6 @@ class DailyOrchestrator:
                 shap = f.get("shap")
                 parts.append(f"{feat}({shap:+.3f})" if shap is not None else feat)
             result["reasoning"] = f"{decision['reasoning']} | SHAP: {', '.join(parts)}"
-
-        if not dry_run and signals:
-            decision_id = self.ledger.log_decision(
-                date=date,
-                ticker=ticker,
-                signals=signals,
-                action=decision["action"],
-                position_size=decision["position_size"],
-                confidence=decision["confidence"],
-                reasoning=decision["reasoning"],
-            )
-            result["decision_id"] = decision_id
 
         logger.info(f"{ticker}: {decision['action']} (size={decision['position_size']:.2%})")
         return result

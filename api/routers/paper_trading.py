@@ -166,8 +166,16 @@ def place_order(data: dict = Body(...)):
                 return {"error": "Limit price must be within 50% of current price"}
 
         # Full execution gate before any paper order is placed.
+        # Closing orders reduce risk — they must not be blocked by the
+        # exposure/concentration/liquidity checks (#76).
+        is_closing = (
+            side_str == "SELL"
+            and ticker in trader.positions
+            and trader.positions[ticker].quantity > 0
+        )
         gate = get_manager().gate_order(
             ticker, side_str, quantity, order_value=price * quantity,
+            is_closing=is_closing,
         )
         if not gate["approved"]:
             return {"error": f"Risk gate blocked order: {gate['reason']}"}

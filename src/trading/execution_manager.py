@@ -53,6 +53,7 @@ class ExecutionManager:
             audit_dir.mkdir(parents=True, exist_ok=True)
             self._audit_log = audit_dir / f"orders-{date.today().isoformat()}.jsonl"
         self._daily_orders: dict[str, int] = {}
+        self._current_day: str = date.today().isoformat()
         self._intents: dict[str, BrokerOrder] = {}
 
     # ── audit ──────────────────────────────────────────────────────────────
@@ -70,7 +71,7 @@ class ExecutionManager:
                 client_order_id: str | None = None,
                 quotes: dict[str, dict] | None = None,
                 order_value: float | None = None,
-                market=None) -> BrokerOrder:
+                market=None, is_closing: bool = False) -> BrokerOrder:
         """Submit one order intent through the full gate. Returns the order."""
         if quantity <= 0:
             raise ExecutionError(f"invalid quantity {quantity}")
@@ -112,7 +113,8 @@ class ExecutionManager:
 
             # 2. risk gate
             risk_result = self._risk_gate(ticker, side, quantity, order_value,
-                                          quotes or {}, market=market)
+                                          quotes or {}, market=market,
+                                          is_closing=is_closing)
             if not risk_result["approved"]:
                 failed = [c["message"] for c in risk_result["checks"]
                           if not c["passed"] and c.get("message")]
@@ -151,16 +153,16 @@ class ExecutionManager:
     def gate_order(self, ticker: str, side: str, quantity: int,
                    quotes: dict[str, dict] | None = None,
                    order_value: float | None = None,
-                   market=None) -> dict:
+                   market=None, is_closing: bool = False) -> dict:
         """Evaluate the full gate WITHOUT submitting. Returns verdict dict."""
         stale = self._stale_quote_check(ticker, quotes or {})
         if stale:
             return {"approved": False, "reason": stale}
         result = self._risk_gate(ticker, side, quantity, order_value, quotes or {},
-                                 market=market)
+                                 market=market, is_closing=is_closing)
+        reason = result.get("reason", "")
         if not result["approved"]:
             failed = [c["message"] for c in result["checks"] if not c["passed"] and c.get("message")]
-            reason = result.get("reason", "")
             if failed:
                 reason = "; ".join(failed) if not reason else f"{reason}; {'; '.join(failed)}"
         return {
@@ -220,7 +222,7 @@ class ExecutionManager:
 
     def _risk_gate(self, ticker: str, side: str, quantity: int,
                    order_value: float | None, quotes: dict[str, dict],
-                   market=None) -> dict:
+                   market=None, is_closing: bool = False) -> dict:
         price = 0.0
         quote = quotes.get(ticker) or {}
         price = quote.get("close") or quote.get("last_price") or 0.0
@@ -238,8 +240,8 @@ class ExecutionManager:
                 expected_slippage_bps=quote.get("expected_slippage_bps") or 0.0,
             )
 
-        # daily order budget
-        today = date.today().isoformat()
+        # daily order budget (rolls over at midnight in a long-running process)
+        self._rollover_daily_orders()
         if sum(self._daily_orders.values()) >= self.max_daily_orders:
             return {"approved": False, "checks": [{
                 "passed": False, "check": "daily_order_budget",
@@ -254,6 +256,7 @@ class ExecutionManager:
             holdings={},
             prices=quotes,
             market=market,
+            is_closing=is_closing,
         )
         checks = list(result.get("checks", []))
         checks.append({
@@ -267,4 +270,21 @@ class ExecutionManager:
         }
 
     def _bump_daily_order_count(self, client_order_id: str):
+        self._rollover_daily_orders()
         self._daily_orders[client_order_id] = self._daily_orders.get(client_order_id, 0) + 1
+
+    def _rollover_daily_orders(self):
+        """Reset the daily order counter when the calendar day changes.
+
+        A long-running process must not carry yesterday's order count into
+        today, or the daily budget silently shrinks to zero after the first
+        day (#33).
+        """
+        with self._lock:
+            today = date.today().isoformat()
+            if self._current_day != today:
+                if self._daily_orders:
+                    logger.info("resetting daily order count: %d -> 0 (new day %s)",
+                                sum(self._daily_orders.values()), today)
+                self._daily_orders = {}
+                self._current_day = today

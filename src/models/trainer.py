@@ -60,27 +60,32 @@ def _collect_meta_features(lstm, gru, transformer, xgb, scaler, feature_cols,
     meta_X = []
     meta_y = []
 
-    lstm.eval()
-    gru.eval()
-    transformer.eval()
+    has_dl = all(m is not None for m in (lstm, gru, transformer))
+    if has_dl:
+        lstm.eval()
+        gru.eval()
+        transformer.eval()
 
     for i in range(split_idx + seq_length, len(scaled)):
-        inp = torch.tensor(scaled[i - seq_length:i], dtype=torch.float32).unsqueeze(0).to(DEVICE)
         prev_close = scaled[i - 1, 0]
         actual_close = scaled[i, 0]
         actual_dir = 1 if actual_close > prev_close else 0
 
-        with torch.no_grad():
-            p_lstm = lstm(inp).item()
-            p_gru = gru(inp).item()
-            p_tf = transformer(inp).item()
+        p_lstm = p_gru = p_tf = 0.0
+        prob_lstm = prob_gru = prob_tf = 0.5  # placeholders for tree-only bundles
+        if has_dl:
+            inp = torch.tensor(scaled[i - seq_length:i], dtype=torch.float32).unsqueeze(0).to(DEVICE)
+            with torch.no_grad():
+                p_lstm = lstm(inp).item()
+                p_gru = gru(inp).item()
+                p_tf = transformer(inp).item()
 
-        diff_lstm = p_lstm - prev_close
-        diff_gru = p_gru - prev_close
-        diff_tf = p_tf - prev_close
-        prob_lstm = 1.0 / (1.0 + np.exp(-diff_lstm * 10))
-        prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
-        prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
+            diff_lstm = p_lstm - prev_close
+            diff_gru = p_gru - prev_close
+            diff_tf = p_tf - prev_close
+            prob_lstm = 1.0 / (1.0 + np.exp(-diff_lstm * 10))
+            prob_gru = 1.0 / (1.0 + np.exp(-diff_gru * 10))
+            prob_tf = 1.0 / (1.0 + np.exp(-diff_tf * 10))
 
         xgb_inp = data.iloc[[i - 1]]
         xgb_p = xgb.predict_proba(xgb_inp)[0][1]

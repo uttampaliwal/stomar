@@ -267,6 +267,45 @@ def test_daily_order_budget_blocks():
         manager.execute("INFY.NS", "BUY", 1, quotes={"INFY.NS": q}, order_value=2500)
 
 
+def test_daily_order_count_resets_on_new_day():
+    """Regression (#33): a long-running process must not carry yesterday's
+    order count into today, or the daily budget silently collapses."""
+    from unittest.mock import patch
+
+    manager = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000),
+                               max_daily_orders=1)
+    q = fresh_quote()
+    manager.execute("RELIANCE.NS", "BUY", 1, quotes={"RELIANCE.NS": q}, order_value=2500)
+    assert sum(manager._daily_orders.values()) == 1
+
+    with patch("src.trading.execution_manager.date") as mock_date:
+        mock_date.today.return_value.isoformat.return_value = "2999-01-01"
+        # budget was exhausted yesterday — the new day must reset it
+        manager.execute("TCS.NS", "BUY", 1, quotes={"TCS.NS": q}, order_value=2500)
+
+    assert sum(manager._daily_orders.values()) == 1
+    assert manager._current_day == "2999-01-01"
+
+
+def test_closing_order_skips_position_checks():
+    """Regression (#76): closing orders must not be blocked by the
+    position-concentration / exposure checks."""
+    risk = RiskController(RiskLimits(max_position_pct=0.01), 1_000_000)
+    manager = ExecutionManager(DryRunBroker(), risk)
+    q = fresh_quote()
+    # 25k notional on a 1M account = 2.5% > 1% limit — a fresh BUY is blocked
+    with pytest.raises(ExecutionError, match="Position"):
+        manager.execute("RELIANCE.NS", "BUY", 10, quotes={"RELIANCE.NS": q},
+                        order_value=25_000)
+    # ...but the same notional as a closing order passes
+    order = manager.execute("RELIANCE.NS", "SELL", 10, quotes={"RELIANCE.NS": q},
+                            order_value=25_000, is_closing=True)
+    assert order.client_order_id
+    verdict = manager.gate_order("RELIANCE.NS", "SELL", 10, order_value=25_000,
+                                 quotes={"RELIANCE.NS": q}, is_closing=True)
+    assert verdict["approved"] is True
+
+
 def test_broker_idempotent_submit_under_retry():
     broker = DryRunBroker()
     cid = "ord-retry-1"

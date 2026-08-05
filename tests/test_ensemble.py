@@ -317,6 +317,33 @@ class TestRegimeAdjustedEnsemble:
         probs = predict_with_metalearner(model, rng.random((10, 6)))  # 6-col input
         assert probs.shape == (10,)
 
+    def test_tree_only_bundle_produces_signal(self):
+        """Regression (#59): bundles without DL artifacts must still signal."""
+        from src.models.ensemble import predict_ensemble, regime_adjusted_ensemble
+        s = self._setup()
+        models = {
+            "lstm": None, "gru": None, "transformer": None,
+            "xgb": s["xgb"], "lgb": s["lgb"], "cat": s["cat"],
+            "scaler": s["scaler"], "features": s["features"],
+        }
+        out = regime_adjusted_ensemble("NONEXISTENT_TEST.NS", models,
+                                       s["df"], use_meta=False)
+        assert out["signal"] in ("BUY", "SELL")
+        assert 0 <= out["probability_up"] <= 1
+        assert 0 <= out["confidence"] <= 100
+        # DL models must be excluded from the signal, not crash
+        assert set(out["models"].keys()) == {"xgb", "lgb", "cat"}
+        assert set(out["weights"].keys()) == {"xgb", "lgb", "cat"}
+        assert "lstm" not in out["models"]
+
+        dir_, conf, details = predict_ensemble(
+            None, None, None, s["xgb"], s["scaler"], s["features"], s["df"],
+            lgb_model=s["lgb"], cat_model=s["cat"],
+        )
+        assert dir_ in (0, 1)
+        assert "error" not in details
+        assert details["lstm_prob"] == 0.5  # placeholder for missing DL
+
 
 class TestMetaLearnerBeatsEqualWeight:
     def test_on_synthetic_data(self):
