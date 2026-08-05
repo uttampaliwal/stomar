@@ -350,6 +350,16 @@ def compute_features(
         out = add_fii_momentum(out)
 
     out = out.replace([np.inf, -np.inf], np.nan)
+
+    # #64: ``add_ichimoku`` deliberately computes ichimoku_chikou as a
+    # future close (close.shift(-26)) — a documented informational column
+    # used only for charting. Training excludes it (trainer.FEATURE_COLS)
+    # and inference bans it (ensemble.BANNED_LOOKAHEAD_FEATURES), but
+    # compute_features() must not hand future data to any consumer, so the
+    # column is stripped at this boundary. Anyone who needs it for display
+    # calls add_ichimoku() directly.
+    from src.models.ensemble import BANNED_LOOKAHEAD_FEATURES
+    out = out.drop(columns=BANNED_LOOKAHEAD_FEATURES, errors="ignore")
     return out
 
 

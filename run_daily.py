@@ -36,13 +36,35 @@ from src.core.trading_mode import get_trading_mode, mode_banner, require_live_al
 
 def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
                      state_path: str = PAPER_STATE_PATH):
-    """Auto-execute paper trades based on orchestrator decisions."""
+    """Auto-execute paper trades based on orchestrator decisions.
+
+    The daily orchestrator already executes paper trades for BUY/SELL
+    decisions and records them in the ledger (``paper_trades`` table), so
+    any decision that already has a logged trade is skipped — executing it
+    again here would double-trade the same signal (#20).
+    """
     from src.brokers import get_broker
     from src.trading.execution_manager import ExecutionManager
     from src.trading.risk_controls import RiskController
     from src.trading.paper_trader import PaperTrader
     from src.trading.engine import OrderSide, OrderType
     from filelock import FileLock
+
+    # #20: drop decisions the orchestrator already executed and logged. The
+    # decision key is "decision_id" on orchestrator results and "id" on
+    # ledger rows.
+    if ledger is not None:
+        logged = {t.get("decision_id") for t in ledger.get_trades()}
+        pending, already = [], 0
+        for d in decisions:
+            key = d.get("decision_id") or d.get("id")
+            if key is not None and key in logged:
+                already += 1
+            else:
+                pending.append(d)
+        if already:
+            print(f"  Skip {already} decision(s) already executed by the daily orchestrator")
+        decisions = pending
 
     broker = get_broker()  # dry-run unless live gate fully passed (not used here)
     risk = RiskController()
@@ -52,92 +74,92 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
     # Same cross-process lock as the API: serialize with gunicorn workers that
     # read-modify-write paper_state.json, or the script's snapshot would
     # clobber (or be clobbered by) concurrent API mutations.
-    state_lock = FileLock(f"{state_path}.lock", timeout=30)
-    state_lock.acquire()
-    trader.load_state(state_path)
+    # #15: the context manager guarantees release even when execution raises;
+    # a bare acquire()/release() leaks the lock and deadlocks every later run.
+    with FileLock(f"{state_path}.lock", timeout=30):
+        trader.load_state(state_path)
 
-    print("\n=== Paper Trading ===")
-    print(f"Capital:    Rs. {trader.initial_capital:,.0f}")
-    print(f"Cash:       Rs. {trader.cash:,.0f}")
-    print(f"Equity:     Rs. {trader.get_equity():,.0f}")
+        print("\n=== Paper Trading ===")
+        print(f"Capital:    Rs. {trader.initial_capital:,.0f}")
+        print(f"Cash:       Rs. {trader.cash:,.0f}")
+        print(f"Equity:     Rs. {trader.get_equity():,.0f}")
 
-    executed = 0
-    for d in decisions:
-        ticker = d["ticker"]
-        action = d["action"]
-        conf = d.get("confidence", 0)
-        size_pct = d.get("position_size", 0)
+        executed = 0
+        for d in decisions:
+            ticker = d["ticker"]
+            action = d["action"]
+            conf = d.get("confidence", 0)
+            size_pct = d.get("position_size", 0)
 
-        if action == "HOLD" or size_pct <= 0:
-            continue
+            if action == "HOLD" or size_pct <= 0:
+                continue
 
-        price = d.get("current_price", 0)
-        if price <= 0:
-            continue
+            price = d.get("current_price", 0)
+            if price <= 0:
+                continue
 
-        equity = trader.get_equity()
-        invest_amount = equity * size_pct
-        qty = max(1, int(invest_amount / price))
+            equity = trader.get_equity()
+            invest_amount = equity * size_pct
+            qty = max(1, int(invest_amount / price))
 
-        gate = manager.gate_order(ticker, action, qty,
-                                  order_value=invest_amount)
-        if not gate["approved"]:
-            print(f"  BLOCK {ticker:15s} gate: {gate['reason']}")
-            continue
+            gate = manager.gate_order(ticker, action, qty,
+                                      order_value=invest_amount)
+            if not gate["approved"]:
+                print(f"  BLOCK {ticker:15s} gate: {gate['reason']}")
+                continue
 
-        if action == "BUY":
-            from src.data.data_fetcher import get_live_price
-            current_price = get_live_price(ticker)
-            if not current_price or current_price <= 0:
-                current_price = price
+            if action == "BUY":
+                from src.data.data_fetcher import get_live_price
+                current_price = get_live_price(ticker)
+                if not current_price or current_price <= 0:
+                    current_price = price
 
-            order = trader.place_order(
-                ticker, OrderSide.BUY, OrderType.MARKET, qty, price=current_price,
-            )
-            filled = trader.on_bar(ticker, current_price, current_price, current_price, current_price)
-            if filled and any(r.side == "BUY" for r in filled):
-                executed += 1
-                print(f"  BUY  {qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
+                order = trader.place_order(
+                    ticker, OrderSide.BUY, OrderType.MARKET, qty, price=current_price,
+                )
+                filled = trader.on_bar(ticker, current_price, current_price, current_price, current_price)
+                if filled and any(r.side == "BUY" for r in filled):
+                    executed += 1
+                    print(f"  BUY  {qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
 
-        elif action == "SELL":
-            sell_qty = qty
-            if ticker in trader.positions and trader.positions[ticker].quantity > 0:
-                sell_qty = min(qty, trader.positions[ticker].quantity)
-            from src.data.data_fetcher import get_live_price
-            current_price = get_live_price(ticker)
-            if not current_price or current_price <= 0:
-                current_price = price
+            elif action == "SELL":
+                sell_qty = qty
+                if ticker in trader.positions and trader.positions[ticker].quantity > 0:
+                    sell_qty = min(qty, trader.positions[ticker].quantity)
+                from src.data.data_fetcher import get_live_price
+                current_price = get_live_price(ticker)
+                if not current_price or current_price <= 0:
+                    current_price = price
 
-            order = trader.place_order(
-                ticker, OrderSide.SELL, OrderType.MARKET, sell_qty, price=current_price,
-            )
-            filled = trader.on_bar(ticker, current_price, current_price, current_price, current_price)
-            if filled and any(r.side == "SELL" for r in filled):
-                executed += 1
-                print(f"  SELL {sell_qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
+                order = trader.place_order(
+                    ticker, OrderSide.SELL, OrderType.MARKET, sell_qty, price=current_price,
+                )
+                filled = trader.on_bar(ticker, current_price, current_price, current_price, current_price)
+                if filled and any(r.side == "SELL" for r in filled):
+                    executed += 1
+                    print(f"  SELL {sell_qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
 
-    # Update current prices for open positions
-    for ticker in list(trader.positions.keys()):
-        try:
-            from src.data.data_fetcher import get_live_price
-            current_price = get_live_price(ticker)
-            if current_price and current_price > 0:
-                trader.update_prices({ticker: current_price})
-        except Exception:
-            pass
+        # Update current prices for open positions
+        for ticker in list(trader.positions.keys()):
+            try:
+                from src.data.data_fetcher import get_live_price
+                current_price = get_live_price(ticker)
+                if current_price and current_price > 0:
+                    trader.update_prices({ticker: current_price})
+            except Exception:
+                pass
 
-    summary = trader.get_summary()
-    print(f"\nExecuted: {executed} trades")
-    print(f"Equity:   Rs. {summary['current_equity']:,.0f}")
-    print(f"Return:   {summary['total_return_pct']:.2%}")
-    print(f"Trades:   {summary['total_trades']}")
-    if summary['open_positions']:
-        print("Open positions:")
-        for t, p in summary['open_positions'].items():
-            print(f"  {t}: {p['quantity']} @ Rs.{p['avg_cost']:.2f} (P&L: Rs.{p['unrealized_pnl']:,.0f})")
+        summary = trader.get_summary()
+        print(f"\nExecuted: {executed} trades")
+        print(f"Equity:   Rs. {summary['current_equity']:,.0f}")
+        print(f"Return:   {summary['total_return_pct']:.2%}")
+        print(f"Trades:   {summary['total_trades']}")
+        if summary['open_positions']:
+            print("Open positions:")
+            for t, p in summary['open_positions'].items():
+                print(f"  {t}: {p['quantity']} @ Rs.{p['avg_cost']:.2f} (P&L: Rs.{p['unrealized_pnl']:,.0f})")
 
-    trader.save_state(state_path)
-    state_lock.release()
+        trader.save_state(state_path)
     return summary
 
 

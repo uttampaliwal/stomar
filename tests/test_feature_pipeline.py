@@ -293,6 +293,16 @@ class TestComputeFeatures:
         df = compute_features(ohlcv.copy(), include_external=False)
         pd.testing.assert_index_equal(df.index, ohlcv.index)
 
+    def test_chikou_never_emitted_by_compute_features(self, ohlcv):
+        # #64: add_ichimoku still produces the informational future-close
+        # column, but compute_features() must never hand it to consumers —
+        # training filters FEATURE_COLS and inference bans it, yet producing
+        # the future data at this boundary is the footgun.
+        df = compute_features(ohlcv.copy(), include_external=False)
+        assert "ichimoku_chikou" not in df.columns
+        raw = add_ichimoku(ohlcv.copy())
+        assert "ichimoku_chikou" in raw.columns
+
 
 class TestCachedFeatures:
     def test_second_call_hits_cache(self, ohlcv, monkeypatch):

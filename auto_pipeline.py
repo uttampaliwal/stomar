@@ -535,6 +535,7 @@ class AutoPipeline:
             # on exceptions — a bare acquire()/release() leaks the lock if any
             # step raises, deadlocking every subsequent pipeline run.
             paper_trader = None
+            state_loaded = False
             from src.core.constants import PAPER_STATE_PATH
             from filelock import FileLock
             state_lock = FileLock(os.path.join(os.path.dirname(PAPER_STATE_PATH), "paper_state.json.lock"), timeout=30)
@@ -542,7 +543,15 @@ class AutoPipeline:
                 try:
                     from src.trading.paper_trader import PaperTrader
                     paper_trader = PaperTrader(initial_capital=200_000)
-                    paper_trader.load_state()
+                    # #17: a failed load_state() (corrupt or transiently
+                    # unreadable file) must never end with a fresh trader's
+                    # empty state being saved over the existing state. Only
+                    # persist when the state actually loaded — or when there
+                    # is no state file yet (first run).
+                    state_loaded = paper_trader.load_state() or not os.path.exists(PAPER_STATE_PATH)
+                    if not state_loaded:
+                        self._log("WARNING: paper state failed to load — running with fresh "
+                                  "in-memory state, existing file will NOT be overwritten")
                     paper_trader.risk_controller.reset_daily()
                     self._log("Daily P&L counter reset on paper trader")
                 except Exception as e:
@@ -566,7 +575,7 @@ class AutoPipeline:
                 n_errors = len(summary.get("errors", []))
 
                 # Persist updated paper trader state after the daily run
-                if paper_trader is not None:
+                if paper_trader is not None and state_loaded:
                     try:
                         paper_trader.save_state()
                     except Exception as e:

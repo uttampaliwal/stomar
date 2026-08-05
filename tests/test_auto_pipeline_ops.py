@@ -152,3 +152,81 @@ class TestHealthSweep:
 
         health = p._run_health_sweep()
         assert health["model_age_days"]["TEST.NS"] is None
+
+
+class _FakeRiskController:
+    def reset_daily(self):
+        pass
+
+
+class _FakePaperTrader:
+    def __init__(self, load_ok: bool = True):
+        self._load_ok = load_ok
+        self.save_calls = 0
+        self.risk_controller = _FakeRiskController()
+
+    def load_state(self, path=None):
+        return self._load_ok
+
+    def save_state(self, path=None):
+        self.save_calls += 1
+
+
+class TestDailyRunStatePersistence:
+    """#17: _run_daily must never overwrite good paper state on load failure."""
+
+    def _stub_daily(self, monkeypatch, tmp_path, trader):
+        state_path = tmp_path / "paper_state.json"
+        monkeypatch.setattr("src.core.constants.PAPER_STATE_PATH", str(state_path))
+        monkeypatch.setattr(
+            "auto_pipeline.META_CONTROLLER_PATH",
+            str(tmp_path / "no_meta_controller.json"),
+        )
+        monkeypatch.setattr(
+            "src.trading.paper_trader.PaperTrader", lambda *a, **k: trader
+        )
+
+        class FakeOrchestrator:
+            def __init__(self, *a, **k):
+                pass
+
+            def run(self, date=None, dry_run=False, resolve_outcomes=False):
+                return {"decisions": [], "trades": [], "errors": []}
+
+        monkeypatch.setattr(
+            "src.signals.orchestrator.DailyOrchestrator", FakeOrchestrator
+        )
+        monkeypatch.setattr(AutoPipeline, "_check_paper_stops", lambda self, pt: None)
+        return state_path
+
+    def test_load_failure_does_not_overwrite_existing_state(self, monkeypatch, tmp_path):
+        trader = _FakePaperTrader(load_ok=False)
+        state_path = self._stub_daily(monkeypatch, tmp_path, trader)
+        original = '{"cash": 12345, "positions": {}}'
+        state_path.write_text(original)
+
+        p = AutoPipeline(tickers=["TEST.NS"])
+        result = p._run_daily("2026-08-05")
+
+        assert trader.save_calls == 0
+        assert state_path.read_text() == original
+        assert result["decisions"] == 0
+
+    def test_successful_load_persists_state(self, monkeypatch, tmp_path):
+        trader = _FakePaperTrader(load_ok=True)
+        state_path = self._stub_daily(monkeypatch, tmp_path, trader)
+        state_path.write_text('{"cash": 12345, "positions": {}}')
+
+        p = AutoPipeline(tickers=["TEST.NS"])
+        p._run_daily("2026-08-05")
+
+        assert trader.save_calls == 1
+
+    def test_first_run_without_state_file_persists(self, monkeypatch, tmp_path):
+        trader = _FakePaperTrader(load_ok=False)
+        self._stub_daily(monkeypatch, tmp_path, trader)
+
+        p = AutoPipeline(tickers=["TEST.NS"])
+        p._run_daily("2026-08-05")
+
+        assert trader.save_calls == 1
