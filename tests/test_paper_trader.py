@@ -124,6 +124,61 @@ class TestConsecutiveLossCircuitBreaker:
         assert t.risk_controller.consecutive_losses == 0
 
 
+# ── Stop-Loss Execution ──
+
+class TestStopExecution:
+    def test_stop_market_sell_fills_when_price_crosses(self):
+        t = _trader()
+        t.execute_market_trade("TEST.NS", OrderSide.BUY, 10, 100.0)
+        t.place_order("TEST.NS", OrderSide.SELL, OrderType.STOP_MARKET, 10,
+                      stop_price=95.0)
+        assert len(t.engine.get_pending("TEST.NS")) == 1
+
+        records = t.check_stops("TEST.NS", 94.0)
+        assert len(records) == 1
+        assert records[0].side == "SELL"
+        assert records[0].quantity == 10
+        assert "TEST.NS" not in t.positions
+        assert not t.engine.get_pending("TEST.NS")
+
+    def test_stop_not_filled_above_level(self):
+        t = _trader()
+        t.execute_market_trade("TEST.NS", OrderSide.BUY, 10, 100.0)
+        t.place_order("TEST.NS", OrderSide.SELL, OrderType.STOP_MARKET, 10,
+                      stop_price=95.0)
+        assert t.check_stops("TEST.NS", 96.0) == []
+        assert len(t.engine.get_pending("TEST.NS")) == 1
+
+    def test_stop_uses_position_price_when_omitted(self):
+        t = _trader()
+        t.execute_market_trade("TEST.NS", OrderSide.BUY, 10, 100.0)
+        t.place_order("TEST.NS", OrderSide.SELL, OrderType.STOP_MARKET, 10,
+                      stop_price=95.0)
+        t.positions["TEST.NS"].current_price = 93.0
+        records = t.check_stops("TEST.NS")
+        assert len(records) == 1
+
+    def test_check_stops_all_tickers_only_triggers_crossed(self):
+        t = _trader()
+        t.execute_market_trade("A.NS", OrderSide.BUY, 10, 100.0)
+        t.execute_market_trade("B.NS", OrderSide.BUY, 10, 200.0)
+        t.place_order("A.NS", OrderSide.SELL, OrderType.STOP_MARKET, 10,
+                      stop_price=95.0)
+        t.place_order("B.NS", OrderSide.SELL, OrderType.STOP_MARKET, 10,
+                      stop_price=195.0)
+        t.positions["A.NS"].current_price = 90.0
+        t.positions["B.NS"].current_price = 210.0
+
+        records = t.check_stops()
+        assert len(records) == 1
+        assert "A.NS" not in t.positions
+        assert "B.NS" in t.positions
+
+    def test_no_pending_stops_returns_empty(self):
+        t = _trader()
+        assert t.check_stops("TEST.NS", 100.0) == []
+
+
 # ── Trade Log ──
 
 class TestTradeLog:

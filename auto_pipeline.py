@@ -548,6 +548,11 @@ class AutoPipeline:
                 except Exception as e:
                     self._log(f"Paper trader init warning: {e}")
                 # ──────────────────────────────────────────────────────────
+                # ── P0.4b: execute pending stop-loss orders ───────────────
+                # Stops only fill when on_bar() runs for the ticker, and no
+                # background price feed drives it — check them against live
+                # prices once per daily loop, before new decisions are made.
+                self._check_paper_stops(paper_trader)
 
                 orchestrator = DailyOrchestrator(
                     tickers=self.tickers,
@@ -581,6 +586,40 @@ class AutoPipeline:
             self._log(f"Daily orchestrator error: {e}")
             # Failure recording is handled by the retry wrapper (P1.2)
             return {"error": str(e), "decisions": 0}
+
+    def _check_paper_stops(self, paper_trader) -> None:
+        """Fill pending stop-loss orders whose levels the live price crossed.
+
+        Paper stops only execute when ``on_bar`` runs for the ticker, so they
+        must be checked explicitly whenever fresh prices arrive — here, once
+        per daily loop. Failures are logged, never fatal for the run.
+        """
+        if paper_trader is None:
+            return
+        try:
+            from src.trading.engine import OrderType
+            from src.data.data_fetcher import get_live_price
+            stop_types = (OrderType.STOP_LOSS, OrderType.STOP_MARKET)
+            tickers = sorted({
+                o.ticker for o in paper_trader.engine.get_pending()
+                if o.order_type in stop_types
+            })
+            for ticker in tickers:
+                try:
+                    price = get_live_price(ticker)
+                except Exception as exc:
+                    logger.warning("Stop check skipped for %s: %s", ticker, exc)
+                    continue
+                if price is None or price <= 0:
+                    continue
+                records = paper_trader.check_stops(ticker, price)
+                for r in records:
+                    self._log(
+                        f"Stop executed: {r.side} {r.quantity} {r.ticker} "
+                        f"@ Rs.{r.fill_price:.2f}"
+                    )
+        except Exception as e:
+            self._log(f"Paper stop check warning: {e}")
 
     def _run_health_sweep(self) -> dict:
         """Write a daily health summary to MONITORING_DIR/daily_health.json (P5.3).

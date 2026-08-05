@@ -186,6 +186,58 @@ class PaperTrader:
 
         return records
 
+    def check_stops(self, ticker: str = None, price: float = None) -> list:
+        """Execute pending stop orders whose levels are crossed by ``price``.
+
+        Paper stop orders only fill when ``on_bar`` runs for the ticker, and
+        nothing drives it in the background — so callers must check stops
+        explicitly whenever a fresh price arrives (daily pipeline, API order
+        placement). A synthetic bar is fed through the normal engine fill
+        path, so slippage, costs, positions and risk bookkeeping all apply.
+
+        Args:
+            ticker: Restrict to this ticker. When None, checks every ticker
+                with pending stop orders (falling back to each position's
+                current price when no explicit price is given).
+            price: Latest price for the ticker. When None or non-positive,
+                falls back to the position's current price.
+
+        Returns:
+            List of PaperTradeRecord for the fills (empty if nothing
+            triggered).
+        """
+        stop_types = (OrderType.STOP_LOSS, OrderType.STOP_MARKET)
+
+        if ticker is not None:
+            if price is None or price <= 0:
+                if ticker in self.positions:
+                    price = self.positions[ticker].current_price
+                else:
+                    price = None
+            if price is None or price <= 0:
+                return []
+            triggered = [
+                o for o in self.engine.get_pending(ticker)
+                if o.order_type in stop_types
+                and ((o.side == OrderSide.SELL and price <= o.stop_price)
+                     or (o.side == OrderSide.BUY and price >= o.stop_price))
+            ]
+            if not triggered:
+                return []
+            return self.on_bar(
+                ticker, o=price, h=price, low=price, c=price,
+                volume=1_000_000,
+            )
+
+        records = []
+        tickers = sorted({
+            o.ticker for o in self.engine.get_pending()
+            if o.order_type in stop_types
+        })
+        for t in tickers:
+            records.extend(self.check_stops(t))
+        return records
+
     def _record_fill(self, order: Order) -> PaperTradeRecord:
         """Create a trade record from a filled order."""
         pnl = 0.0

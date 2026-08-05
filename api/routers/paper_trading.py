@@ -172,6 +172,11 @@ def place_order(data: dict = Body(...)):
 
         with _operation_lock:
             with _paper_state_session(trader):
+                # Fill any pending stops on this ticker first — the fresh
+                # price may have crossed a stop level since the last on_bar()
+                # for this ticker (no background price feed checks stops).
+                trader.check_stops(ticker, price)
+
                 order = trader.place_order(ticker, side, order_type, quantity, price=price,
                                            stop_price=limit_price or 0)
                 if order is None or order.status.name == "REJECTED":
