@@ -529,39 +529,44 @@ class AutoPipeline:
                     meta_controller = None
 
             # ── P0.4: reset daily P&L on the paper trader ─────────────────
+            # Hold the state lock across the whole daily run (init → signals
+            # → execution → persist) so it never races the API's own
+            # read-modify-write path. A context manager guarantees release even
+            # on exceptions — a bare acquire()/release() leaks the lock if any
+            # step raises, deadlocking every subsequent pipeline run.
             paper_trader = None
             from src.core.constants import PAPER_STATE_PATH
             from filelock import FileLock
             state_lock = FileLock(os.path.join(os.path.dirname(PAPER_STATE_PATH), "paper_state.json.lock"), timeout=30)
-            try:
-                from src.trading.paper_trader import PaperTrader
-                state_lock.acquire()
-                paper_trader = PaperTrader(initial_capital=200_000)
-                paper_trader.load_state()
-                paper_trader.risk_controller.reset_daily()
-                self._log("Daily P&L counter reset on paper trader")
-            except Exception as e:
-                self._log(f"Paper trader init warning: {e}")
-            # ──────────────────────────────────────────────────────────────
-
-            orchestrator = DailyOrchestrator(
-                tickers=self.tickers,
-                ledger=self.ledger,
-                meta_controller=meta_controller,
-                paper_trader=paper_trader,
-            )
-
-            summary = orchestrator.run(date=today, resolve_outcomes=True)
-            n_decisions = len(summary.get("decisions", []))
-            n_errors = len(summary.get("errors", []))
-
-            # Persist updated paper trader state after the daily run
-            if paper_trader is not None:
+            with state_lock:
                 try:
-                    paper_trader.save_state()
-                    state_lock.release()
+                    from src.trading.paper_trader import PaperTrader
+                    paper_trader = PaperTrader(initial_capital=200_000)
+                    paper_trader.load_state()
+                    paper_trader.risk_controller.reset_daily()
+                    self._log("Daily P&L counter reset on paper trader")
                 except Exception as e:
-                    self._log(f"Paper trader save warning: {e}")
+                    self._log(f"Paper trader init warning: {e}")
+                # ──────────────────────────────────────────────────────────
+
+                orchestrator = DailyOrchestrator(
+                    tickers=self.tickers,
+                    ledger=self.ledger,
+                    meta_controller=meta_controller,
+                    paper_trader=paper_trader,
+                )
+
+                summary = orchestrator.run(date=today, resolve_outcomes=True)
+                n_decisions = len(summary.get("decisions", []))
+                n_errors = len(summary.get("errors", []))
+
+                # Persist updated paper trader state after the daily run
+                if paper_trader is not None:
+                    try:
+                        paper_trader.save_state()
+                    except Exception as e:
+                        self._log(f"Paper trader save warning: {e}")
+            # ──────────────────────────────────────────────────────────────
 
             if n_errors > 0:
                 self._record_failure(
