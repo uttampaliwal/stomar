@@ -25,6 +25,10 @@ from src.models.trainer_features import (
 
 warnings.filterwarnings("ignore", category=UserWarning, module="torch")
 warnings.filterwarnings("ignore", category=FutureWarning, module="torch")
+# eval_set is the cross-version LightGBM API (matches the XGBoost/CatBoost
+# calls); lightgbm >= 4.7 deprecates it in favour of eval_X/eval_y, so
+# silence the FutureWarning it emits.
+warnings.filterwarnings("ignore", category=FutureWarning, module="lightgbm")
 
 logger = get_logger("trainer")
 
@@ -305,7 +309,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
     # --- LightGBM ---
     logger.info("training_lightgbm ticker=%s", ticker)
     lgb_model = build_lgb_model()
-    lgb_model.fit(X_tr, y_tr, eval_X=X_te, eval_y=y_te)
+    lgb_model.fit(X_tr, y_tr, eval_set=[(X_te, y_te)])
     y_pr_lgb = lgb_model.predict(X_te)
     lgb_acc = accuracy_score(y_te, y_pr_lgb)
     logger.info("lgb_trained ticker=%s accuracy=%.4f", ticker, lgb_acc)
