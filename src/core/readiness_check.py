@@ -182,7 +182,10 @@ def check_readiness(ledger: Ledger = None, tickers: list[str] = None) -> dict:
         stale_tickers = []
         for ticker in tickers:
             safe = ticker.replace(".", "_")
-            path = os.path.join(MODELS_DIR, f"{safe}_models.pkl")
+            # Models are individual artifacts ({safe}_lstm.pt, {safe}_xgb.pkl,
+            # ...) gated by a SHA-256 manifest; the manifest mtime is the
+            # authoritative "last written" time for the bundle.
+            path = os.path.join(MODELS_DIR, f"{safe}_manifest.json")
             if not os.path.exists(path):
                 stale_tickers.append(ticker)
                 continue

@@ -641,7 +641,10 @@ class AutoPipeline:
                 freshness[ticker] = age
             else:
                 freshness[ticker] = None
-            model_path = os.path.join(MODELS_DIR, f"{safe}_models.pkl")
+            # Models are individual artifacts ({safe}_lstm.pt, {safe}_xgb.pkl,
+            # ...) gated by a SHA-256 manifest; the manifest's mtime is the
+            # authoritative "last written" time for the bundle.
+            model_path = os.path.join(MODELS_DIR, f"{safe}_manifest.json")
             if os.path.exists(model_path):
                 model_age[ticker] = (now - datetime.fromtimestamp(os.path.getmtime(model_path))).days
             else:

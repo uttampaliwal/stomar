@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 
 import pytest
 
@@ -108,7 +109,7 @@ class TestHealthSweep:
         p._status = "completed"
         p._last_run_date = "2026-08-03"
         monkeypatch.setattr("src.core.constants.DATA_DIR", str(tmp_path / "data"))
-        monkeypatch.setattr("src.core.constants.MODELS_DIR", str(tmp_path / "models"))
+        monkeypatch.setattr("auto_pipeline.MODELS_DIR", str(tmp_path / "models"))
         monkeypatch.setattr("src.core.constants.PAPER_STATE_PATH", str(tmp_path / "paper_state.json"))
         monkeypatch.setattr("auto_pipeline.MONITORING_DIR", str(tmp_path / "monitoring"))
 
@@ -121,3 +122,33 @@ class TestHealthSweep:
         assert data["last_run_date"] == "2026-08-03"
         assert data["kill_switch_active"] is False
         assert "TEST.NS" in data["data_freshness_days"]
+
+    def test_model_age_read_from_manifest(self, tmp_path, monkeypatch):
+        # Models are per-artifact files ({ticker}_lstm.pt, {ticker}_xgb.pkl)
+        # gated by {ticker}_manifest.json — the old {ticker}_models.pkl bundle
+        # no longer exists and must not gate freshness.
+        models_dir = tmp_path / "models"
+        models_dir.mkdir()
+        manifest = models_dir / "TEST_NS_manifest.json"
+        manifest.write_text('{"manifest_version": 1, "files": {}}')
+        old = time.time() - 60 * 60 * 24 * 5  # 5 days old
+        os.utime(manifest, (old, old))
+
+        p = AutoPipeline(tickers=["TEST.NS"])
+        monkeypatch.setattr("src.core.constants.DATA_DIR", str(tmp_path / "data"))
+        monkeypatch.setattr("auto_pipeline.MODELS_DIR", str(models_dir))
+        monkeypatch.setattr("src.core.constants.PAPER_STATE_PATH", str(tmp_path / "paper_state.json"))
+        monkeypatch.setattr("auto_pipeline.MONITORING_DIR", str(tmp_path / "monitoring"))
+
+        health = p._run_health_sweep()
+        assert health["model_age_days"]["TEST.NS"] == 5
+
+    def test_model_missing_reports_none(self, tmp_path, monkeypatch):
+        p = AutoPipeline(tickers=["TEST.NS"])
+        monkeypatch.setattr("src.core.constants.DATA_DIR", str(tmp_path / "data"))
+        monkeypatch.setattr("auto_pipeline.MODELS_DIR", str(tmp_path / "models"))
+        monkeypatch.setattr("src.core.constants.PAPER_STATE_PATH", str(tmp_path / "paper_state.json"))
+        monkeypatch.setattr("auto_pipeline.MONITORING_DIR", str(tmp_path / "monitoring"))
+
+        health = p._run_health_sweep()
+        assert health["model_age_days"]["TEST.NS"] is None

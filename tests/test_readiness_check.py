@@ -83,7 +83,7 @@ class TestReadinessGates:
         # Fresh models + no drift alerts
         monkeypatch.setattr(readiness_check, "MODELS_DIR", str(tmp_path))
         for t in ["TEST.NS"]:
-            model = os.path.join(str(tmp_path), f"{t.replace('.', '_')}_models.pkl")
+            model = os.path.join(str(tmp_path), f"{t.replace('.', '_')}_manifest.json")
             with open(model, "w") as f:
                 f.write("x")
             os.utime(model, (datetime.now().timestamp(), datetime.now().timestamp()))
@@ -95,7 +95,7 @@ class TestReadinessGates:
     def test_fails_without_paper_period(self, ledger, tmp_path, monkeypatch):
         monkeypatch.setattr(readiness_check, "MODELS_DIR", str(tmp_path))
         for t in ["TEST.NS"]:
-            model = os.path.join(str(tmp_path), f"{t.replace('.', '_')}_models.pkl")
+            model = os.path.join(str(tmp_path), f"{t.replace('.', '_')}_manifest.json")
             with open(model, "w") as f:
                 f.write("x")
         report = check_readiness(ledger, tickers=["TEST.NS"])
@@ -105,7 +105,7 @@ class TestReadinessGates:
 
     def test_fails_when_accuracy_below_threshold(self, ledger, tmp_path, monkeypatch):
         monkeypatch.setattr(readiness_check, "MODELS_DIR", str(tmp_path))
-        model = os.path.join(str(tmp_path), "TEST_NS_models.pkl")
+        model = os.path.join(str(tmp_path), "TEST_NS_manifest.json")
         with open(model, "w") as f:
             f.write("x")
         _seed_snapshots(ledger, n=65)
@@ -116,7 +116,7 @@ class TestReadinessGates:
 
     def test_fails_on_stale_models(self, ledger, tmp_path, monkeypatch):
         monkeypatch.setattr(readiness_check, "MODELS_DIR", str(tmp_path))
-        model = os.path.join(str(tmp_path), "TEST_NS_models.pkl")
+        model = os.path.join(str(tmp_path), "TEST_NS_manifest.json")
         with open(model, "w") as f:
             f.write("x")
         old = datetime.now() - timedelta(days=90)
@@ -129,7 +129,7 @@ class TestReadinessGates:
 
     def test_fails_on_critical_drift_alerts(self, ledger, tmp_path, monkeypatch):
         monkeypatch.setattr(readiness_check, "MODELS_DIR", str(tmp_path))
-        model = os.path.join(str(tmp_path), "TEST_NS_models.pkl")
+        model = os.path.join(str(tmp_path), "TEST_NS_manifest.json")
         with open(model, "w") as f:
             f.write("x")
         _seed_snapshots(ledger, n=65)
@@ -150,7 +150,7 @@ class TestReadinessGates:
 
     def test_drawdown_gate_detects_deep_equity_drop(self, ledger, tmp_path, monkeypatch):
         monkeypatch.setattr(readiness_check, "MODELS_DIR", str(tmp_path))
-        model = os.path.join(str(tmp_path), "TEST_NS_models.pkl")
+        model = os.path.join(str(tmp_path), "TEST_NS_manifest.json")
         with open(model, "w") as f:
             f.write("x")
         import pandas as pd
@@ -170,7 +170,7 @@ class TestReadinessGates:
 class TestIsReadyWrapper:
     def test_wrapper_returns_bool(self, ledger, tmp_path, monkeypatch):
         monkeypatch.setattr(readiness_check, "MODELS_DIR", str(tmp_path))
-        model = os.path.join(str(tmp_path), "TEST_NS_models.pkl")
+        model = os.path.join(str(tmp_path), "TEST_NS_manifest.json")
         with open(model, "w") as f:
             f.write("x")
         assert readiness_check.is_ready_for_live_trading() is False
