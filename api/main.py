@@ -88,15 +88,6 @@ else:
     _cors_methods = ["*"]
     _cors_headers = ["*"]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=True,
-    allow_methods=_cors_methods,
-    allow_headers=_cors_headers,
-)
-
-
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     """Assign a correlation ID to every request for distributed tracing."""
@@ -298,6 +289,19 @@ async def cache_middleware(request: Request, call_next):
         media_type=response.media_type or "application/json",
         headers={"X-Cache": "MISS"},
     )
+
+
+# CORS is registered last so it is the outermost middleware: preflight
+# OPTIONS requests are answered here and never reach the auth/rate-limit
+# layers, which would otherwise 401 them before the browser gets its
+# Access-Control-Allow-* headers.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=_cors_methods,
+    allow_headers=_cors_headers,
+)
 
 
 app.include_router(market.router, prefix="/api/market", tags=["Market"])

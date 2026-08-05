@@ -68,6 +68,20 @@ class TestAuthGate:
         assert client.post("/api/automation/run").status_code == 401
         assert client.post("/api/automation/run", headers={"X-API-Key": "bad"}).status_code == 401
 
+    def test_options_preflight_on_protected_path_not_rejected(self, client):
+        # CORS must be the outermost middleware; otherwise a browser preflight
+        # without X-API-Key is 401'd by auth before CORS answers it.
+        r = client.options(
+            "/api/paper-trading/order",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "X-API-Key",
+            },
+        )
+        assert r.status_code == 200
+        assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
 
 class TestRateLimitIntegration:
     def test_mutating_burst_blocked_after_limit(self, client, monkeypatch):
