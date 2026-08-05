@@ -1,84 +1,31 @@
 {
-  "initial_capital": 100000,
-  "cash": 96995.3629,
+  "initial_capital": 200000,
+  "cash": 200000,
   "cumulative_pnl": 0.0,
-  "positions": {
-    "A.NS": {
-      "quantity": 10,
-      "avg_cost": 100.0,
-      "current_price": 100.0
-    },
-    "B.NS": {
-      "quantity": 10,
-      "avg_cost": 200.0,
-      "current_price": 200.0
-    }
-  },
+  "positions": {},
   "closed_positions": [],
-  "trade_log": [
-    {
-      "timestamp": "2026-08-05T08:34:40.185006",
-      "ticker": "A.NS",
-      "side": "BUY",
-      "order_type": "MARKET",
-      "quantity": 10,
-      "fill_price": 100.0,
-      "fill_cost": 1001.5457,
-      "slippage": 0.0,
-      "pnl": 0.0,
-      "cumulative_pnl": 0.0,
-      "cash_after": 100000
-    },
-    {
-      "timestamp": "2026-08-05T08:34:40.186166",
-      "ticker": "B.NS",
-      "side": "BUY",
-      "order_type": "MARKET",
-      "quantity": 10,
-      "fill_price": 200.0,
-      "fill_cost": 2003.0914,
-      "slippage": 0.0,
-      "pnl": 0.0,
-      "cumulative_pnl": 0.0,
-      "cash_after": 98998.4543
-    }
-  ],
+  "trade_log": [],
   "risk_daily_pnl": 0.0,
   "risk_weekly_pnl": 0.0,
-  "risk_peak_equity": 100000,
+  "risk_peak_equity": 200000,
   "engine": {
-    "order_counter": 2,
+    "order_counter": 1,
     "pending_orders": [],
     "filled_orders": [
       {
         "order_id": "ORD-000001",
-        "ticker": "A.NS",
+        "ticker": "TEST.NS",
         "side": "BUY",
         "order_type": "MARKET",
-        "quantity": 10,
-        "price": 100.0,
+        "quantity": 20,
+        "price": 500.0,
         "stop_price": 0,
         "status": "FILLED",
-        "filled_price": 100.0,
-        "filled_quantity": 10,
-        "fill_cost": 1001.5457,
+        "filled_price": 500.25,
+        "filled_quantity": 20,
+        "fill_cost": 10020.4648,
         "timestamp": "",
-        "notes": "Fill: 100.00, costs: 1.55"
-      },
-      {
-        "order_id": "ORD-000002",
-        "ticker": "B.NS",
-        "side": "BUY",
-        "order_type": "MARKET",
-        "quantity": 10,
-        "price": 200.0,
-        "stop_price": 0,
-        "status": "FILLED",
-        "filled_price": 200.0,
-        "filled_quantity": 10,
-        "fill_cost": 2003.0914,
-        "timestamp": "",
-        "notes": "Fill: 200.00, costs: 3.09"
+        "notes": "Fill: 500.25, costs: 15.46"
       }
     ],
     "rejected_orders": []

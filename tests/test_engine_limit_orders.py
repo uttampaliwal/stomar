@@ -121,7 +121,7 @@ class TestLimitSellFillPrice:
     def test_exact_touch_at_limit_price(self):
         engine = _make_engine()
         engine.submit_order(_sell_limit(100))
-        filled = _run(engine, _bar(o=99, h=100, lo=95, c=102))
+        filled = _run(engine, _bar(o=99, h=100, lo=95, c=99))
         assert filled[0].filled_price == 100.0
 
     def test_not_filled_when_high_below_limit(self):
@@ -263,6 +263,35 @@ class TestInvalidBarRejection:
         engine = _make_engine()
         engine.submit_order(_buy_limit(98))
         filled = engine.on_bar(_bar(o=100, h=105, lo=-95, c=-102))
+        assert filled == []
+        assert len(engine.get_pending()) == 1
+
+    def test_close_above_high_rejected(self):
+        # close outside [low, high] passes "close > 0" but is a corrupt bar
+        engine = _make_engine()
+        engine.submit_order(_buy_limit(98))
+        filled = engine.on_bar(_bar(o=100, h=100, lo=95, c=101))
+        assert filled == []
+        assert len(engine.get_pending()) == 1
+
+    def test_close_below_low_rejected(self):
+        engine = _make_engine()
+        engine.submit_order(_buy_limit(98))
+        filled = engine.on_bar(_bar(o=100, h=105, lo=98, c=97))
+        assert filled == []
+        assert len(engine.get_pending()) == 1
+
+    def test_open_above_high_rejected(self):
+        engine = _make_engine()
+        engine.submit_order(_buy_limit(98))
+        filled = engine.on_bar(_bar(o=101, h=100, lo=95, c=99))
+        assert filled == []
+        assert len(engine.get_pending()) == 1
+
+    def test_open_below_low_rejected(self):
+        engine = _make_engine()
+        engine.submit_order(_buy_limit(98))
+        filled = engine.on_bar(_bar(o=94, h=105, lo=95, c=100))
         assert filled == []
         assert len(engine.get_pending()) == 1
 

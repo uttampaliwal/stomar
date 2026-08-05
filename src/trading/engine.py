@@ -105,12 +105,19 @@ class ExecutionEngine:
 
     def on_bar(self, bar: Bar) -> list[Order]:
         """Process a new bar. Returns list of filled orders."""
-        # Validate bar prices
-        if bar.high < bar.low:
-            logger.warning(f"Invalid bar for {bar.ticker}: high ({bar.high}) < low ({bar.low})")
-            return []
-        if bar.close <= 0 or bar.open <= 0:
-            logger.warning(f"Invalid bar for {bar.ticker}: non-positive price")
+        # Sanity-check the whole OHLC bar before acting on it. A corrupted
+        # feed can pass "open > 0" and still be nonsense (e.g. close=0 with
+        # high=100). Require positive prices and that open/close both lie
+        # within [low, high]; high==low (doji) remains valid.
+        if not (
+            bar.high >= bar.low > 0
+            and bar.low <= bar.open <= bar.high
+            and bar.low <= bar.close <= bar.high
+        ):
+            logger.warning(
+                f"Invalid bar for {bar.ticker}: "
+                f"O={bar.open} H={bar.high} L={bar.low} C={bar.close}"
+            )
             return []
 
         filled = []
