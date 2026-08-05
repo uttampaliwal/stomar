@@ -162,6 +162,8 @@ def place_order(data: dict = Body(...)):
             if not limit_price or float(limit_price) <= 0:
                 return {"error": "Limit price is required for LIMIT orders"}
             limit_price = float(limit_price)
+            if not (0.5 * price <= limit_price <= 1.5 * price):
+                return {"error": "Limit price must be within 50% of current price"}
 
         # Full execution gate before any paper order is placed.
         gate = get_manager().gate_order(

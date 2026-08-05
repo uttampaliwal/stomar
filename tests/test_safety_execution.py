@@ -123,6 +123,38 @@ def test_execute_routes_through_broker_and_fills():
     assert order.avg_fill_price > 0
 
 
+def test_limit_order_outside_50pct_rejected():
+    broker = DryRunBroker()
+    manager = ExecutionManager(broker, RiskController(RiskLimits(), 1_000_000))
+    q = fresh_quote()  # close = 2500.0
+    with pytest.raises(ExecutionError, match="within 50%"):
+        manager.execute("RELIANCE.NS", "BUY", 10, order_type="LIMIT",
+                        limit_price=1.0,
+                        quotes={"RELIANCE.NS": q}, order_value=25_000)
+    with pytest.raises(ExecutionError, match="within 50%"):
+        manager.execute("RELIANCE.NS", "BUY", 10, order_type="LIMIT",
+                        limit_price=5000.0,
+                        quotes={"RELIANCE.NS": q}, order_value=25_000)
+
+
+def test_limit_order_within_50pct_accepted():
+    broker = DryRunBroker()
+    manager = ExecutionManager(broker, RiskController(RiskLimits(), 1_000_000))
+    q = fresh_quote()  # close = 2500.0
+    order = manager.execute("RELIANCE.NS", "BUY", 10, order_type="LIMIT",
+                            limit_price=2500.0,
+                            quotes={"RELIANCE.NS": q}, order_value=25_000)
+    assert order.client_order_id
+
+
+def test_limit_order_without_price_rejected():
+    broker = DryRunBroker()
+    manager = ExecutionManager(broker, RiskController(RiskLimits(), 1_000_000))
+    with pytest.raises(ExecutionError, match="positive limit price"):
+        manager.execute("RELIANCE.NS", "BUY", 10, order_type="LIMIT",
+                        quotes={"RELIANCE.NS": fresh_quote()}, order_value=25_000)
+
+
 def test_duplicate_intent_never_double_submits():
     broker = DryRunBroker()
     manager = ExecutionManager(broker, RiskController(RiskLimits(), 1_000_000))

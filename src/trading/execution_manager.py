@@ -94,6 +94,22 @@ class ExecutionManager:
                              "ticker": ticker, "side": side, "reason": stale})
                 raise ExecutionError(stale)
 
+            # 2. LIMIT price sanity check against the market quote
+            if order_type.upper() == "LIMIT":
+                if limit_price <= 0:
+                    reason = "LIMIT orders require a positive limit price"
+                    self._audit({"event": "rejected", "client_order_id": cid,
+                                 "ticker": ticker, "side": side, "reason": reason})
+                    raise ExecutionError(reason)
+                quote = (quotes or {}).get(ticker) or {}
+                current = quote.get("close") or quote.get("last_price") or 0.0
+                if current > 0 and not (0.5 * current <= limit_price <= 1.5 * current):
+                    reason = (f"limit price {limit_price} must be within 50% of "
+                              f"current price {current}")
+                    self._audit({"event": "rejected", "client_order_id": cid,
+                                 "ticker": ticker, "side": side, "reason": reason})
+                    raise ExecutionError(reason)
+
             # 2. risk gate
             risk_result = self._risk_gate(ticker, side, quantity, order_value,
                                           quotes or {}, market=market)
