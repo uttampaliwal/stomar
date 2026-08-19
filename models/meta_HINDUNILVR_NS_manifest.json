@@ -4,8 +4,8 @@
   "model_version": "1",
   "feature_schema_version": "1",
   "training_dataset_hash": "",
-  "created_at": "2026-08-19T11:30:20.525236+00:00",
+  "created_at": "2026-08-19T12:37:30.277495+00:00",
   "files": {
-    "meta_HINDUNILVR_NS.pkl": "01d627f568893e960aab6c02099485ca6d2671d7ba18ee1c93567555acd0ad3b"
+    "meta_HINDUNILVR_NS.pkl": "856d02c8502aa1c3d0032a5d63b68cce470e815477e7ca7c94125c1b98d5ff2b"
   }
 }
