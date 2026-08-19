@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from src.brokers.base import BrokerAdapter, BrokerOrder, BrokerOrderStatus, new_client_order_id
 from src.brokers.reconciler import OrderReconciler
@@ -34,18 +36,63 @@ class ExecutionError(Exception):
     """Any failure inside the execution path (rejected by gate, broker, etc.)."""
 
 
+@dataclass
+class PortfolioSnapshot:
+    """Broker-truth portfolio state fed into the pre-trade risk gate.
+
+    holdings maps ticker -> (signed quantity, average price). Quantity is
+    signed: positive = long, negative = short. This is the single source of
+    truth for exposure/concentration checks, so the gate evaluates the whole
+    portfolio after the order rather than the order in isolation.
+    """
+
+    holdings: dict[str, tuple[float, float]] | None = None
+    equity: float | None = None
+
+    def market_value(self) -> float:
+        """Gross exposure: sum of |qty| * price across all positions."""
+        if not self.holdings:
+            return 0.0
+        return sum(abs(q) * p for (q, p) in self.holdings.values())
+
+    def ticker_value(self, ticker: str) -> float:
+        holding = (self.holdings or {}).get(ticker)
+        if holding is None:
+            return 0.0
+        qty, price = holding
+        return abs(qty) * price
+
+    def ticker_quantity(self, ticker: str) -> float:
+        holding = (self.holdings or {}).get(ticker)
+        return holding[0] if holding is not None else 0.0
+
+
+# Order intent classification: how this order interacts with the existing
+# position on the same ticker (used instead of a binary is_closing flag).
+OPENING = "opening"      # new long
+INCREASING = "increasing"  # add to an existing long
+REDUCING = "reducing"    # shrink an existing long/short
+CLOSING = "closing"      # fully exit an existing long/short
+REVERSING = "reversing"  # exceed the existing position (flip direction)
+SHORTING = "shorting"    # new short
+
+_REDUCING_INTENTS = {REDUCING, CLOSING}
+
+
 class ExecutionManager:
     """Centralized order execution with risk + mode enforcement."""
 
     def __init__(self, broker: BrokerAdapter | None, risk: RiskController,
                  audit_dir: str | Path | None = None,
                  max_stale_quote_seconds: float = 15.0,
-                 max_daily_orders: int = 10):
+                 max_daily_orders: int = 10,
+                 portfolio_provider: Callable[[], PortfolioSnapshot] | None = None):
         self.broker = broker
         self.risk = risk
         self.reconciler = OrderReconciler(broker) if broker is not None else None
         self.max_stale_quote_seconds = max_stale_quote_seconds
         self.max_daily_orders = max_daily_orders
+        self.portfolio_provider = portfolio_provider
         self._lock = threading.RLock()
         self._audit_log: Path | None = None
         if audit_dir is not None:
@@ -220,6 +267,87 @@ class ExecutionManager:
                     f"(limit {self.max_stale_quote_seconds:.0f}s)")
         return ""
 
+    def _portfolio_snapshot(self) -> PortfolioSnapshot:
+        """Broker-truth portfolio, from the provider or the broker adapter.
+
+        Never raises: a failure to read positions must not silently turn
+        into an unlimited portfolio — it degrades to an empty snapshot,
+        which the risk engine treats as zero existing exposure.
+        """
+        if self.portfolio_provider is not None:
+            try:
+                snap = self.portfolio_provider()
+                if snap is not None:
+                    return snap
+            except Exception as exc:
+                logger.warning("portfolio provider failed for risk gate: %s", exc)
+        if self.broker is not None:
+            try:
+                positions = self.broker.get_positions()
+                holdings = {
+                    p.ticker: (float(p.quantity), float(p.average_price))
+                    for p in positions
+                    if p.quantity != 0
+                }
+                equity = None
+                try:
+                    margin = self.broker.get_margin()
+                    available = margin.get("available_cash")
+                    exposure = margin.get("total_exposure") or margin.get("used_margin")
+                    if available is not None and exposure is not None:
+                        equity = float(available) + abs(float(exposure))
+                except Exception as exc:
+                    logger.debug("margin unavailable for risk gate equity: %s", exc)
+                return PortfolioSnapshot(holdings=holdings, equity=equity)
+            except Exception as exc:
+                logger.warning("broker positions unavailable for risk gate: %s", exc)
+        return PortfolioSnapshot(holdings={})
+
+    @staticmethod
+    def _classify_intent(ticker: str, side: str, quantity: int,
+                         snapshot: PortfolioSnapshot) -> str:
+        """Classify how this order interacts with the existing position."""
+        cur_qty = snapshot.ticker_quantity(ticker)
+        if cur_qty == 0:
+            return OPENING if side == "BUY" else SHORTING
+        if side == "BUY":
+            if cur_qty > 0:
+                return INCREASING
+            # buying back a short
+            if quantity < abs(cur_qty):
+                return REDUCING
+            return CLOSING if quantity == abs(cur_qty) else REVERSING
+        # SELL against an existing long
+        if quantity < cur_qty:
+            return REDUCING
+        return CLOSING if quantity == cur_qty else REVERSING
+
+    @staticmethod
+    def _post_order_exposure(intent: str, snapshot: PortfolioSnapshot,
+                             ticker: str, order_value: float) -> float:
+        """Direction-aware total exposure AFTER this order fills."""
+        cur_value = snapshot.market_value()
+        if intent in _REDUCING_INTENTS:
+            return max(0.0, cur_value - order_value)
+        if intent == REVERSING:
+            # existing position is exited and replaced by a larger one:
+            # exposure = current - old_ticker_value + new_order_value
+            return max(0.0, cur_value - snapshot.ticker_value(ticker) + order_value)
+        return cur_value + order_value
+
+    @staticmethod
+    def _post_position_value(intent: str, snapshot: PortfolioSnapshot,
+                             ticker: str, order_value: float) -> float | None:
+        """Value of THIS ticker's position after the order (None = skip)."""
+        cur = snapshot.ticker_value(ticker)
+        if intent == INCREASING:
+            return cur + order_value
+        if intent == REVERSING:
+            return max(0.0, order_value - cur)
+        if intent in _REDUCING_INTENTS:
+            return max(0.0, cur - order_value)
+        return None  # opening/shorting: falls back to order_value
+
     def _risk_gate(self, ticker: str, side: str, quantity: int,
                    order_value: float | None, quotes: dict[str, dict],
                    market=None, is_closing: bool = False) -> dict:
@@ -249,24 +377,51 @@ class ExecutionManager:
                             f"({self.max_daily_orders})"),
             }]}
 
+        # Broker-truth portfolio: existing positions drive every exposure and
+        # concentration check, so the gate evaluates the portfolio AFTER
+        # this order, never the order in isolation.
+        snapshot = self._portfolio_snapshot()
+        intent = self._classify_intent(ticker, side, quantity, snapshot)
+        current_value = snapshot.market_value()
+        post_exposure = self._post_order_exposure(intent, snapshot, ticker, order_value)
+        post_position = self._post_position_value(intent, snapshot, ticker, order_value)
+        effective_closing = is_closing or intent in _REDUCING_INTENTS
+
+        # Only an explicit provider (e.g. PaperTrader.get_equity) may update the
+        # risk controller's equity. Equity derived from raw broker margin is
+        # a static, low-quality proxy that would clobber the controller's own
+        # peak/drawdown tracking (e.g. a deliberate test drawdown) on every
+        # gate evaluation.
+        if (self.portfolio_provider is not None
+                and snapshot.equity is not None and snapshot.equity > 0):
+            self.risk.update_equity(snapshot.equity)
+
         result = self.risk.check_order(
             order_value=order_value,
-            current_holdings_value=0.0,
+            current_holdings_value=current_value,
+            post_order_exposure=post_exposure,
+            post_position_value=post_position,
             ticker=ticker,
-            holdings={},
+            holdings=snapshot.holdings,
             prices=quotes,
             market=market,
-            is_closing=is_closing,
+            is_closing=effective_closing,
         )
         checks = list(result.get("checks", []))
         checks.append({
             "passed": True, "check": "execution_path_verified",
             "message": "order routed through ExecutionManager gate",
         })
+        checks.append({
+            "passed": True, "check": "order_intent",
+            "message": (f"intent={intent} current_exposure={current_value:,.0f} "
+                        f"post_exposure={post_exposure:,.0f}"),
+        })
         return {
             "approved": result["approved"] and all(c["passed"] for c in checks),
             "checks": checks,
             "reason": result.get("reason", ""),
+            "intent": intent,
         }
 
     def _bump_daily_order_count(self, client_order_id: str):

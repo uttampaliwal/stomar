@@ -16,7 +16,7 @@ from src.trading.engine import OrderSide, OrderType
 from src.data.data_fetcher import NSE_STOCKS
 from src.core.constants import PAPER_STATE_PATH
 from src.core.trading_mode import get_trading_mode, mode_banner
-from src.trading.execution_manager import ExecutionManager
+from src.trading.execution_manager import ExecutionManager, PortfolioSnapshot
 from src.trading.risk_controls import RiskController, RiskLimits
 
 router = APIRouter()
@@ -37,6 +37,23 @@ _BUSY_MSG = "Paper trading state is busy (pipeline run or another operation in p
 _manager: ExecutionManager | None = None
 
 
+def _paper_portfolio_snapshot() -> PortfolioSnapshot:
+    """Broker-truth for the paper path: the PaperTrader's own positions.
+
+    Without this the ExecutionManager gate would evaluate every paper order
+    against an empty portfolio (zero exposure), letting exposure and
+    concentration limits be exceeded position by position.
+    """
+    trader = get_trader()
+    holdings: dict[str, tuple[float, float]] = {}
+    for t, p in trader.positions.items():
+        if p.quantity == 0:
+            continue
+        price = p.current_price if p.current_price > 0 else p.avg_cost
+        holdings[t] = (float(p.quantity), float(price))
+    return PortfolioSnapshot(holdings=holdings, equity=trader.get_equity())
+
+
 def get_manager() -> ExecutionManager:
     global _manager
     with _trader_lock:
@@ -46,6 +63,7 @@ def get_manager() -> ExecutionManager:
                 risk=RiskController(RiskLimits()),
                 max_stale_quote_seconds=15.0,
                 max_daily_orders=10,
+                portfolio_provider=_paper_portfolio_snapshot,
             )
         return _manager
 

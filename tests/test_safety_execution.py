@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from src.brokers import get_broker, reset_broker
-from src.brokers.base import BrokerOrderStatus
+from src.brokers.base import BrokerOrderStatus, BrokerPosition
 from src.brokers.dryrun import DryRunBroker
 from src.core import trading_mode
 from src.core.trading_mode import (
@@ -23,13 +23,30 @@ from src.core.trading_mode import (
     get_trading_mode,
     is_live_enabled,
 )
-from src.trading.execution_manager import ExecutionError, ExecutionManager
+from src.trading.execution_manager import (
+    ExecutionError,
+    ExecutionManager,
+    PortfolioSnapshot,
+)
 from src.trading.risk_controls import MarketContext, RiskController, RiskLimits
 
 
 def fresh_quote(age_seconds: float = 1.0) -> dict:
     ts = datetime.now(timezone.utc) - timedelta(seconds=age_seconds)
     return {"close": 2500.0, "timestamp": ts.isoformat()}
+
+
+class StubPortfolioBroker(DryRunBroker):
+    """Dry-run broker seeded with a fixed position set for gate tests."""
+
+    def __init__(self, positions: dict[str, tuple[int, float]],
+                 cash: float = 1_000_000.0):
+        super().__init__()
+        self._positions = {
+            t: BrokerPosition(ticker=t, quantity=q, average_price=p)
+            for t, (q, p) in positions.items()
+        }
+        self._cash = cash
 
 
 @pytest.fixture(autouse=True)

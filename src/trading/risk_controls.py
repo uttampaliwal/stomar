@@ -130,17 +130,25 @@ class RiskController:
     def check_order(self, order_value: float, current_holdings_value: float,
                     ticker: str = "", holdings: dict = None,
                     prices: dict = None, is_closing: bool = False,
-                    market: "MarketContext | None" = None) -> dict:
+                    market: "MarketContext | None" = None,
+                    post_order_exposure: float | None = None,
+                    post_position_value: float | None = None) -> dict:
         """Check if an order passes all risk controls.
 
         Args:
             order_value: Notional value of the proposed order.
             current_holdings_value: Current value of all holdings.
             ticker: Symbol being traded.
-            holdings: dict ticker -> (qty, price).
+            holdings: dict ticker -> (qty, price) or position objects.
             prices: dict ticker -> quote dict (kept for back-compat).
             is_closing: True if this order closes/reduces an existing position.
             market: MarketContext with price/liquidity/gap info.
+            post_order_exposure: Total portfolio exposure AFTER this order
+                (direction-aware: closing orders reduce it). When omitted,
+                falls back to current_holdings_value + order_value.
+            post_position_value: Value of THIS ticker's position AFTER the
+                order (increments included). When omitted, falls back to
+                order_value (new-order semantics).
 
         Returns:
             Dict with approved (bool), checks (list), drawdown_pct
@@ -153,7 +161,8 @@ class RiskController:
         total_equity = self.current_equity
 
         # 1. Position concentration (skip if closing/reducing existing position)
-        position_pct = order_value / max(total_equity, 1)
+        position_value = post_position_value if post_position_value is not None else order_value
+        position_pct = position_value / max(total_equity, 1)
         if not is_closing and position_pct > self.limits.max_position_pct:
             max_value = total_equity * self.limits.max_position_pct
             checks.append({
@@ -202,7 +211,10 @@ class RiskController:
             checks.append({"passed": True, "check": "max_drawdown"})
 
         # 5. Total exposure (skip if closing/reducing existing position)
-        total_exposure = current_holdings_value + order_value
+        if post_order_exposure is not None:
+            total_exposure = post_order_exposure
+        else:
+            total_exposure = current_holdings_value + order_value
         exposure_pct = total_exposure / max(self.current_equity, 1)
         if not is_closing and exposure_pct > self.limits.max_total_exposure_pct:
             checks.append({
