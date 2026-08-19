@@ -50,7 +50,7 @@ export default function PaperTrading() {
             <p className="text-sm text-muted-foreground">The same workflow can be launched from the terminal for repeatable paper trading.</p>
           </div>
           <div className="rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs text-muted-foreground">
-            python run_daily.py --paper-trade --capital 200000
+            uv run python run_daily.py --paper-trade --capital 200000
           </div>
         </div>
       </Card>

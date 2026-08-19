@@ -266,8 +266,9 @@ def _walk_forward_dl(scaled, seq_length, n_splits=5):
     return split, []
 
 
-def train_for_ticker(ticker: str, force_retrain: bool = False):
-    logger.info("training_start ticker=%s force_retrain=%s", ticker, force_retrain)
+def train_for_ticker(ticker: str, force_retrain: bool = False,
+                     epochs: int = EPOCHS, save: bool = True):
+    logger.info("training_start ticker=%s force_retrain=%s epochs=%d", ticker, force_retrain, epochs)
 
     df = fetch_stock_data(ticker, period="5y", force_refresh=force_retrain)
     logger.info("data_fetched ticker=%s rows=%d", ticker, len(df))
@@ -366,9 +367,9 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
             loader = DataLoader(TensorDataset(X_tr_l, y_tr_l), batch_size=BATCH_SIZE, shuffle=False)
             input_dim = X_lstm.shape[2]
 
-            lstm_model = _train_one_model(build_lstm(input_dim), loader, X_te_l, y_te_l, "LSTM")
-            gru_model = _train_one_model(build_gru(input_dim), loader, X_te_l, y_te_l, "GRU")
-            tf_model = _train_one_model(build_transformer(input_dim), loader, X_te_l, y_te_l, "Transformer")
+            lstm_model = _train_one_model(build_lstm(input_dim), loader, X_te_l, y_te_l, "LSTM", epochs=epochs)
+            gru_model = _train_one_model(build_gru(input_dim), loader, X_te_l, y_te_l, "GRU", epochs=epochs)
+            tf_model = _train_one_model(build_transformer(input_dim), loader, X_te_l, y_te_l, "Transformer", epochs=epochs)
 
             # Evaluate direction accuracy
             def eval_dir(model, X_te, y_te, scaled_data, split_idx):
@@ -405,12 +406,13 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
         logger.info("skipping_dl ticker=%s reason=insufficient_data rows=%d", ticker, len(df_feat))
         split = 0
 
-    if lstm_model is not None:
-        save_models(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, ticker, lgb_model=lgb_model, cat_model=cat_model, model_version="2")
-    else:
-        # Tree-only bundle — still written through the manifest-aware path.
-        save_models(None, None, None, xgb_model, scaler, lstm_features, ticker,
-                    lgb_model=lgb_model, cat_model=cat_model, model_version="2")
+    if save:
+        if lstm_model is not None:
+            save_models(lstm_model, gru_model, tf_model, xgb_model, scaler, lstm_features, ticker, lgb_model=lgb_model, cat_model=cat_model, model_version="2")
+        else:
+            # Tree-only bundle — still written through the manifest-aware path.
+            save_models(None, None, None, xgb_model, scaler, lstm_features, ticker,
+                        lgb_model=lgb_model, cat_model=cat_model, model_version="2")
 
     logger.info("training_complete ticker=%s xgb=%.4f lgb=%.4f lstm=%.4f gru=%.4f tf=%.4f ensemble=%.4f",
                 ticker, xgb_acc, lgb_acc, lstm_acc, gru_acc, tf_acc, ensemble_acc)
@@ -427,8 +429,9 @@ def train_for_ticker(ticker: str, force_retrain: bool = False):
             X_meta, y_meta = meta_features
             if len(X_meta) >= 50:
                 meta_model = train_meta_learner(X_meta, y_meta)
-                meta_path = os.path.join(MODELS_DIR, f"meta_{ticker.replace('.', '_')}.pkl")
-                save_meta_model(meta_model, meta_path)
+                if save:
+                    meta_path = os.path.join(MODELS_DIR, f"meta_{ticker.replace('.', '_')}.pkl")
+                    save_meta_model(meta_model, meta_path)
                 logger.info("meta_learner_trained ticker=%s samples=%d", ticker, len(X_meta))
     except Exception as e:
         logger.debug(f"Meta-learner training failed: {e}")
