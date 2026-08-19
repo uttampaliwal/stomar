@@ -17,8 +17,8 @@ Dev: `uv run start_dev.sh` (or `.bat`) — Vite on :5173 proxies `/api` to :8000
 1. **CORS** — dev: localhost:5173/3000/127.0.0.1; production: `STOMAR_CORS_ORIGINS`.
 2. **Request ID** — `X-Request-ID` correlation header (echoed/assigned).
 3. **Metrics** — Prometheus counters (`http_requests_total`, `http_request_duration_seconds`) at `GET /api/metrics`.
-4. **Auth** — `X-API-Key` header, constant-time `hmac.compare_digest`; protects paper-trading, automation, pipeline, ledger, and risk-guard routes. Missing config → 503; wrong key → 401.
-5. **Rate limit** — 60 requests / 60 s per IP on protected POST/PUT/PATCH/DELETE → 429.
+4. **Auth** — two fail-closed credential paths on paper-trading, automation, pipeline, ledger, and risk-guard routes: a valid browser session cookie (`POST /api/auth/login`, `STOMAR_AUTH_PASSWORD`, HttpOnly cookie) or the `X-API-Key` header (constant-time `hmac.compare_digest`, for CLI/scripts). Missing config → 503; wrong key/session → 401.
+5. **Rate limit** — 60 requests / 60 s per IP on protected POST/PUT/PATCH/DELETE → 429; `/api/auth/login` limited to 10/min per IP.
 6. **Audit** — every mutation appended to `data/api_audit/mutations-YYYY-MM-DD.jsonl`.
 7. **Cache** — in-memory LRU (TTL 30 s, 50 entries) for GETs on scanner/consensus/ranking/optimizer/correlation/risk-portfolio/pipeline-status/monitoring prefixes; tagged `X-Cache: HIT|MISS`; protected paths never cached.
 
@@ -97,15 +97,23 @@ Paper-trading API **refuses to run when trading mode is `live`**.
 ## Authentication
 
 Protected prefixes: `/api/paper-trading/`, `/api/automation/`, `/api/pipeline/`,
-`/api/ledger/`, `/api/risk-guard/` (27 endpoints). Send the key in every request:
+`/api/ledger/`, `/api/risk-guard/` (27 endpoints).
+
+**Browser sessions (default for the UI):** `POST /api/auth/login` with
+`{"password": "<STOMAR_AUTH_PASSWORD>"}` sets an HttpOnly session cookie
+(`stomar_session`); `GET /api/auth/me` reports `{"authenticated": true|false}`;
+`POST /api/auth/logout` destroys the session. Sessions expire after
+`STOMAR_SESSION_TTL_HOURS` (default 12).
+
+**API key (CLI/scripts/curl):** send the key in every request:
 
 ```
 X-API-Key: <STOMAR_API_KEY>
 ```
 
-In `production` the app refuses to boot without `STOMAR_API_KEY`. The React
-app injects the key at runtime via `window.__STOMAR_API_KEY__` (or
-`VITE_STOMAR_API_KEY` at build time) so it never ships in the static bundle.
+In `production` the app refuses to boot without at least one of
+`STOMAR_AUTH_PASSWORD` / `STOMAR_API_KEY`. The React app uses sessions only —
+no key is bundled into the frontend.
 
 ## Errors
 

@@ -64,7 +64,7 @@ The following are in scope for this policy:
 - `api/` — HTTP API (auth, rate limiting, pipeline/order state)
 - `services/` and `src/` — trading logic, artifact loading
   (`src/models/artifacts.py`), risk guard, kill switch
-- `web/` — frontend key handling and API client
+- `web/` — frontend session handling and API client
 - Deployment guidance in `Dockerfile`, `docker-compose.yml`, and `.env.example`
 
 Out of scope: third-party dependencies (report those to their own projects),

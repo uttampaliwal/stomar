@@ -24,7 +24,8 @@ class _FakeManager:
     def __init__(self, broker, risk):
         pass
 
-    def gate_order(self, ticker, side, quantity, order_value=None):
+    def gate_order(self, ticker, side, quantity, order_value=None,
+                   market=None, is_closing=False, **kwargs):
         return {"approved": True, "reason": "", "checks": []}
 
 

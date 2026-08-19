@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router'
 import { Sidebar } from '@/components/Sidebar'
 import { ThemeProvider } from '@/components/ThemeProvider'
+import { AuthProvider, useAuth } from '@/lib/auth'
 
+import Login from '@/pages/Login'
 import Dashboard from '@/pages/Dashboard'
 import Predictions from '@/pages/Predictions'
 import Scanner from '@/pages/Scanner'
@@ -25,49 +27,70 @@ import Ledger from '@/pages/Ledger'
 import Portfolio from '@/pages/Portfolio'
 import WealthGoals from '@/pages/WealthGoals'
 
-export default function App() {
+function Shell() {
+  const { status } = useAuth()
   const [collapsed, setCollapsed] = useState(false)
 
+  if (status === 'loading') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-cyan border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (status === 'anonymous') {
+    return <Login />
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+      <main className={`transition-all duration-300 ${collapsed ? 'ml-14' : 'ml-52'} p-4`}>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/predictions" element={<Predictions />} />
+          <Route path="/scanner" element={<Scanner />} />
+          <Route path="/consensus" element={<Consensus />} />
+          <Route path="/market-pulse" element={<MarketPulse />} />
+          <Route path="/sentiment" element={<Sentiment />} />
+          <Route path="/backtest" element={<Backtest />} />
+          <Route path="/optimizer" element={<Optimizer />} />
+          <Route path="/risk" element={<Risk />} />
+          <Route path="/volatility" element={<Volatility />} />
+          <Route path="/ranking" element={<Ranking />} />
+          <Route path="/scenarios" element={<Scenarios />} />
+          <Route path="/regime" element={<Regime />} />
+          <Route path="/correlation" element={<Correlation />} />
+          <Route path="/monitoring" element={<Monitoring />} />
+          <Route path="/pipeline" element={<Pipeline />} />
+          <Route path="/paper-trading" element={<PaperTrading />} />
+          <Route path="/mf-tracker" element={<MFTracker />} />
+          <Route path="/ledger" element={<Ledger />} />
+          <Route path="/portfolio" element={<Portfolio />} />
+          <Route path="/wealth-goals" element={<WealthGoals />} />
+        </Routes>
+        {/* Footer */}
+        <div className="mt-8 border-t border-border pt-3 text-center">
+          <p className="text-[0.6rem] font-mono text-muted-foreground">
+            STOMAR v0.0.10 — 5-Model Ensemble • Walk-Forward Backtest • Black-Litterman Optimizer
+          </p>
+          <p className="text-[0.55rem] text-muted-foreground mt-0.5 opacity-40">
+            Educational purposes only — not financial advice.
+          </p>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+export default function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
-        <div className="min-h-screen bg-background">
-          <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
-          <main className={`transition-all duration-300 ${collapsed ? 'ml-14' : 'ml-52'} p-4`}>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/predictions" element={<Predictions />} />
-              <Route path="/scanner" element={<Scanner />} />
-              <Route path="/consensus" element={<Consensus />} />
-              <Route path="/market-pulse" element={<MarketPulse />} />
-              <Route path="/sentiment" element={<Sentiment />} />
-              <Route path="/backtest" element={<Backtest />} />
-              <Route path="/optimizer" element={<Optimizer />} />
-              <Route path="/risk" element={<Risk />} />
-              <Route path="/volatility" element={<Volatility />} />
-              <Route path="/ranking" element={<Ranking />} />
-              <Route path="/scenarios" element={<Scenarios />} />
-              <Route path="/regime" element={<Regime />} />
-              <Route path="/correlation" element={<Correlation />} />
-              <Route path="/monitoring" element={<Monitoring />} />
-              <Route path="/pipeline" element={<Pipeline />} />
-              <Route path="/paper-trading" element={<PaperTrading />} />
-              <Route path="/mf-tracker" element={<MFTracker />} />
-              <Route path="/ledger" element={<Ledger />} />
-              <Route path="/portfolio" element={<Portfolio />} />
-              <Route path="/wealth-goals" element={<WealthGoals />} />
-            </Routes>
-            {/* Footer */}
-            <div className="mt-8 border-t border-border pt-3 text-center">
-              <p className="text-[0.6rem] font-mono text-muted-foreground">
-                STOMAR v0.0.10 — 5-Model Ensemble • Walk-Forward Backtest • Black-Litterman Optimizer
-              </p>
-              <p className="text-[0.55rem] text-muted-foreground mt-0.5 opacity-40">
-                Educational purposes only — not financial advice.
-              </p>
-            </div>
-          </main>
-        </div>
+        <AuthProvider>
+          <Shell />
+        </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>
   )

@@ -15,6 +15,7 @@ try:
 except ImportError:
     pass
 
+from api.auth import SESSION_COOKIE_NAME, session_store
 from src.core.settings import settings
 from src.core.secure_io import atomic_append_jsonl
 from src.core.logging_config import (
@@ -49,6 +50,7 @@ from api.routers import (
     ledger,
     wealth,
     risk_guard,
+    auth,
 )
 
 # Endpoints under these prefixes require a valid API key via X-API-Key header,
@@ -67,12 +69,14 @@ _PROTECTED_PREFIXES = [
 
 app = FastAPI(title="StoMar API", version="0.0.10")
 
-# Fail-closed: in production, a missing STOMAR_API_KEY is a hard error.
-# Without it every protected endpoint would run unauthenticated.
-if settings.env == "production" and not settings.api_key:
+# Fail-closed: in production, missing credentials are a hard error.
+# Either credential path — browser session password or API key for
+# non-browser clients — must be configured; with neither, every protected
+# endpoint would run unauthenticated.
+if settings.env == "production" and not (settings.api_key or settings.auth_password):
     raise RuntimeError(
-        "refusing to start in production without STOMAR_API_KEY set — "
-        "all protected endpoints would be unauthenticated"
+        "refusing to start in production without STOMAR_AUTH_PASSWORD and/or "
+        "STOMAR_API_KEY set — all protected endpoints would be unauthenticated"
     )
 
 if settings.env == "production":
@@ -135,24 +139,36 @@ def _is_protected_path(path: str) -> bool:
     return any(path.startswith(p) for p in _PROTECTED_PREFIXES)
 
 
-def _auth_verdict(path: str, provided_key: str) -> tuple[int, str] | None:
+def _auth_verdict(request: Request) -> tuple[int, str] | None:
     """Return (status, body) when the request must be rejected, else None.
 
     Fail-closed: protected endpoints are never open by configuration drift.
+
+    Credential order:
+    1. a valid browser session cookie (HttpOnly, server-side store);
+    2. a valid X-API-Key header (non-browser clients: CLI, scripts, curl).
+
+    If neither credential is configured at all, the endpoint is disabled
+    (503) rather than silently open.
     """
+    path = request.url.path
     if not _is_protected_path(path):
         return None
-    if not settings.api_key:
-        return 503, '{"detail":"API key not configured; protected endpoints disabled"}'
-    if not hmac.compare_digest(provided_key or "", settings.api_key):
-        return 401, '{"detail":"Invalid or missing API key"}'
-    return None
+    if session_store.validate(request.cookies.get(SESSION_COOKIE_NAME)):
+        return None
+    provided_key = request.headers.get("x-api-key", "")
+    if settings.api_key and hmac.compare_digest(provided_key, settings.api_key):
+        return None
+    if settings.api_key:
+        return 401, '{"detail":"Invalid or missing API key or session"}'
+    if settings.auth_password:
+        return 401, '{"detail":"Authentication required"}'
+    return 503, '{"detail":"No authentication configured; protected endpoints disabled"}'
 
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    verdict = _auth_verdict(request.url.path,
-                            request.headers.get("x-api-key", ""))
+    verdict = _auth_verdict(request)
     if verdict is not None:
         status, body = verdict
         return Response(content=body, status_code=status, media_type="application/json")
@@ -180,7 +196,17 @@ def _rate_limited(key: str) -> bool:
 async def rate_limit_middleware(request: Request, call_next):
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         path = request.url.path
-        if any(path.startswith(p) for p in _PROTECTED_PREFIXES):
+        if path == "/api/auth/login":
+            # strict per-IP limit on password guesses (in addition to the
+            # in-router limiter, which serves single-process setups)
+            client_ip = request.client.host if request.client else "unknown"
+            if _rate_limited(f"login:{client_ip}:{request.method}"):
+                return Response(
+                    content='{"detail":"Rate limit exceeded"}',
+                    status_code=429,
+                    media_type="application/json",
+                )
+        elif any(path.startswith(p) for p in _PROTECTED_PREFIXES):
             client_ip = request.client.host if request.client else "unknown"
             if _rate_limited(f"{client_ip}:{request.method}"):
                 return Response(
@@ -329,6 +355,7 @@ app.include_router(mf_tracker.router, prefix="/api/mf-tracker", tags=["MF Tracke
 app.include_router(ledger.router, prefix="/api/ledger", tags=["Ledger"])
 app.include_router(wealth.router, prefix="/api/wealth", tags=["Wealth"])
 app.include_router(risk_guard.router, prefix="/api/risk-guard", tags=["Risk Guard"])
+app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 
 
 @app.get("/api/health")

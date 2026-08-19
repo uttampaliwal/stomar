@@ -6,15 +6,33 @@ verification cannot run, the sensitive operation is refused.
 
 ## API authentication (`api/main.py`)
 
-- Every request to protected prefixes (`/api/paper-trading/`, `/api/automation/`, `/api/pipeline/`, `/api/ledger/`, `/api/risk-guard/`) requires the `X-API-Key` header.
+Two credential paths, both fail-closed:
+
+**Browser sessions** (`POST /api/auth/login`, `api/auth.py`):
+
+- The browser authenticates with `STOMAR_AUTH_PASSWORD`; a successful login
+  sets an opaque HttpOnly, SameSite=Lax cookie (Secure in production) backed
+  by a server-side session store (`data/sessions.json`).
+- Session tokens are 256-bit CSPRNG values; they expire after
+  `STOMAR_SESSION_TTL_HOURS` (default 12) and are never readable from JS.
+- Sessions persist across API restarts; `POST /api/auth/logout` destroys them.
+- Failed logins are rate-limited per IP (10/min).
+
+**API key** (`X-API-Key` header) — for non-browser clients (CLI, scripts,
+curl):
+
 - Constant-time comparison via `hmac.compare_digest`.
 - Missing config on protected path → `503`; wrong key → `401`.
-- In `production` the API **refuses to boot** without `STOMAR_API_KEY`.
-- Frontend key injection: `web/src/lib/api-client.ts` sends `X-API-Key` from `window.__STOMAR_API_KEY__` (runtime-injected) or `VITE_STOMAR_API_KEY` (build-time) — the key never ships in the static JS bundle.
+- The key is server-side only (`STOMAR_API_KEY`) — it is never bundled into
+  the frontend, which uses sessions instead.
+
+In `production` the API **refuses to boot** without at least one of
+`STOMAR_AUTH_PASSWORD` / `STOMAR_API_KEY`.
 
 ## Rate limiting & audit
 
-- 60 requests / 60 s per IP on protected mutations → `429`.
+- 60 requests / 60 s per IP on protected mutations → `429`; stricter 10/min
+  limit on `/api/auth/login`.
 - Every POST/PUT/PATCH/DELETE appended to `data/api_audit/mutations-YYYY-MM-DD.jsonl` (ts, method, path, status, client, request_id); audit failures never break the request.
 - `X-Request-ID` correlation across middleware and logs.
 

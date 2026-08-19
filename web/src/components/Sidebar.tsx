@@ -4,11 +4,12 @@ import {
   Activity, BarChart3, Brain, Briefcase,
   ChevronLeft, ChevronRight, Coins, FileText,
   FlaskConical, Gauge, Heart, Layers,
-  Network, PieChart, RefreshCcw,
+  LogOut, Network, PieChart, RefreshCcw,
   ScanSearch, Shield, SlidersHorizontal, Sparkles, Target,
   Thermometer, Zap, BookOpen
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
+import { useAuth } from '@/lib/auth'
 
 const navSections = [
   {
@@ -69,6 +70,7 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { theme, toggle } = useTheme()
+  const { logout } = useAuth()
 
   return (
     <aside className={`fixed left-0 top-0 z-40 h-screen border-r border-border bg-card/90 backdrop-blur-xl transition-all duration-300 ${collapsed ? 'w-14' : 'w-52'}`}>
@@ -124,6 +126,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           >
             <span className="text-sm">{theme === 'dark' ? '☀' : '☽'}</span>
             {!collapsed && <span className="font-mono">{theme === 'dark' ? 'Light' : 'Dark'}</span>}
+          </button>
+          <button
+            onClick={logout}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          >
+            <LogOut className="h-3.5 w-3.5 shrink-0" />
+            {!collapsed && <span className="font-mono">Sign out</span>}
           </button>
         </div>
       </div>

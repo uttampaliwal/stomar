@@ -78,15 +78,8 @@ else
     fi
 fi
 
-# --- Seed the frontend API key from the backend .env (if configured) ---
-WEB_ENV="$DIR/web/.env.local"
-if ! grep -q '^VITE_STOMAR_API_KEY=' "$WEB_ENV" 2>/dev/null && [ -f "$DIR/.env" ]; then
-    BACKEND_KEY="$(sed -n 's/^STOMAR_API_KEY=//p' "$DIR/.env" | head -n1 | sed -e 's/^["'\'']//' -e 's/["'\'']$//')"
-    if [ -n "$BACKEND_KEY" ]; then
-        printf 'VITE_STOMAR_API_KEY=%s\n' "$BACKEND_KEY" >> "$WEB_ENV"
-        echo "[setup] Seeded VITE_STOMAR_API_KEY into web/.env.local (matches backend .env)"
-    fi
-fi
+# --- Browser auth uses a server-side session cookie (STOMAR_AUTH_PASSWORD);
+# --- no frontend key seeding needed anymore. ---
 
 echo "[3/3] Starting React frontend on :5173..."
 cd "$DIR/web"

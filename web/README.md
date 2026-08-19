@@ -26,12 +26,11 @@ npm ci
 npm run dev
 ```
 
-> **API key:** protected endpoints (paper-trading, ledger, pipeline, automation, risk-guard)
-> require `X-API-Key`. `./start_dev.sh` seeds `web/.env.local` from `STOMAR_API_KEY`
-> in the root `.env` automatically. For manual setup, set `VITE_STOMAR_API_KEY` in
-> `web/.env.local` (see `web/.env.example`) to the same value as `STOMAR_API_KEY`.
-> The UI fetches are routed through `src/lib/api-client.ts`, which also honors a
-> runtime-injected `window.__STOMAR_API_KEY__` (keeps the key out of the bundle).
+> **Authentication:** the browser authenticates with a password
+> (`STOMAR_AUTH_PASSWORD` in the root `.env`) and receives an HttpOnly session
+> cookie from `POST /api/auth/login` — no key is bundled into the frontend.
+> Non-browser clients (CLI, scripts, curl) still authenticate with the
+> `X-API-Key` header (`STOMAR_API_KEY`).
 
 ### URLs
 | Service | URL |

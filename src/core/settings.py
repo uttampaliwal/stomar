@@ -31,7 +31,9 @@ if _HAS_PYDANTIC_SETTINGS:
 
         # ── Environment ────────────────────────────────────────────────────
         env: str = Field(default="dev", description="dev or production")
-        api_key: str = Field(default="", description="API key for protected endpoints")
+        api_key: str = Field(default="", description="API key for non-browser clients (CLI, scripts, curl)")
+        auth_password: str = Field(default="", description="Login password for browser session authentication (STOMAR_AUTH_PASSWORD)")
+        session_ttl_hours: float = Field(default=12.0, description="Browser session lifetime in hours")
         cors_origins: str = Field(default="", description="Comma-separated CORS origins (production)")
 
         # ── Trading Costs (NSE India) ──────────────────────────────────────
@@ -180,6 +182,8 @@ else:
         def __init__(self):
             self.env = os.environ.get("STOMAR_ENV", "dev")
             self.api_key = os.environ.get("STOMAR_API_KEY", "")
+            self.auth_password = os.environ.get("STOMAR_AUTH_PASSWORD", "")
+            self.session_ttl_hours = _coerce_float("STOMAR_SESSION_TTL_HOURS", 12.0)
             self.cors_origins = os.environ.get("STOMAR_CORS_ORIGINS", "")
             self.brokerage_rate = _coerce_float("STOMAR_BROKERAGE_RATE", 0.0003)
             self.slippage_rate = _coerce_float("STOMAR_SLIPPAGE_RATE", 0.001)

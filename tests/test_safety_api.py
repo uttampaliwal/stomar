@@ -2,6 +2,8 @@
 
 import hmac
 
+from starlette.requests import Request
+
 from src.core.settings import settings
 
 from api.main import (
@@ -13,6 +15,22 @@ from api.main import (
 
 _MUTATING = ("POST", "PUT", "PATCH", "DELETE")
 _READ = ("GET",)
+
+
+def _req(path, headers=None, cookies=None):
+    """Build a minimal Starlette Request for `_auth_verdict`."""
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": path,
+            "query_string": b"",
+            "headers": [
+                (k.lower().encode(), v.encode()) for k, v in (headers or {}).items()
+            ],
+            "cookies": cookies or {},
+        }
+    )
 
 
 def test_protected_prefixes_cover_order_paths():
@@ -38,14 +56,14 @@ def test_all_methods_on_protected_prefixes_require_auth():
 
 def test_missing_api_key_fails_closed(monkeypatch):
     monkeypatch.setattr(settings, "api_key", "")
-    verdict = _auth_verdict("/api/paper-trading/order", "whatever")
+    verdict = _auth_verdict(_req("/api/paper-trading/order", headers={"X-API-Key": "whatever"}))
     assert verdict is not None
     assert verdict[0] == 503  # explicitly disabled, not silently open
 
 
 def test_wrong_key_rejected(monkeypatch):
     monkeypatch.setattr(settings, "api_key", "real-key")
-    verdict = _auth_verdict("/api/paper-trading/state", "wrong-key")
+    verdict = _auth_verdict(_req("/api/paper-trading/state", headers={"X-API-Key": "wrong-key"}))
     assert verdict is not None
     assert verdict[0] == 401
 
@@ -53,8 +71,22 @@ def test_wrong_key_rejected(monkeypatch):
 def test_correct_key_accepted(monkeypatch):
     key = settings.api_key or "test-key"
     monkeypatch.setattr(settings, "api_key", key)
-    assert _auth_verdict("/api/paper-trading/order", key) is None
-    assert _auth_verdict("/api/pipeline/status", key) is None
+    assert _auth_verdict(_req("/api/paper-trading/order", headers={"X-API-Key": key})) is None
+    assert _auth_verdict(_req("/api/pipeline/status", headers={"X-API-Key": key})) is None
+
+
+def test_valid_session_cookie_accepted_without_key(monkeypatch, tmp_path):
+    from api.auth import SessionStore, SESSION_COOKIE_NAME
+    import api.main as api_main
+
+    monkeypatch.setattr(settings, "api_key", "")
+    store = SessionStore(path=tmp_path / "s.json", ttl_hours=1.0)
+    token = store.create()
+    monkeypatch.setattr(api_main, "session_store", store)
+    assert _auth_verdict(
+        _req("/api/paper-trading/order", cookies={SESSION_COOKIE_NAME: token})
+    ) is None
+    assert _auth_verdict(_req("/api/paper-trading/order")) is not None
 
 
 def test_order_quantity_bounds(monkeypatch):
