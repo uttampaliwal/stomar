@@ -41,7 +41,11 @@ def main() -> int:
         print("ERROR: expected a live broker, got a dry-run broker.")
         return 1
 
-    print(f"validating live broker: {broker.name} (account {broker.get_margin().get('available_cash', '?')} cash)")
+    try:
+        cash = broker.get_margin().get("available_cash", "?")
+    except Exception as exc:
+        cash = f"<fetch failed: {exc}>"
+    print(f"validating live broker: {broker.name} (account {cash} cash)")
     report = broker.validate_sandbox(tickers=args.ticker)
     print(json.dumps(report, indent=2))
 

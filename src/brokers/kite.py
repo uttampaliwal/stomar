@@ -248,35 +248,43 @@ class KiteLiveBroker(BrokerAdapter):
         return fills
 
     def get_positions(self) -> list[BrokerPosition]:
+        """Current positions. RAISES on fetch failure (fail-closed).
+
+        A failed request must never look like an empty portfolio: sandbox
+        validation and the execution manager's exposure gate both depend on
+        the distinction.
+        """
+        data = self._kite.positions() or {}
         positions: list[BrokerPosition] = []
-        try:
-            data = self._kite.positions() or {}
-            for p in data.get("net", []) or []:
-                qty = int(p.get("quantity", 0) or 0)
-                if qty == 0:
-                    continue
-                positions.append(BrokerPosition(
-                    ticker=str(p.get("tradingsymbol", "")) + ".NS",
-                    quantity=qty,
-                    average_price=float(p.get("average_price", 0.0) or 0.0),
-                    pnl=float(p.get("pnl", 0.0) or 0.0),
-                    unrealised_pnl=float(p.get("unrealised", 0.0) or 0.0),
-                ))
-        except Exception as exc:
-            logger.error("kite positions fetch failed: %s", exc)
+        for p in data.get("net", []) or []:
+            qty = int(p.get("quantity", 0) or 0)
+            if qty == 0:
+                continue
+            positions.append(BrokerPosition(
+                ticker=str(p.get("tradingsymbol", "")) + ".NS",
+                quantity=qty,
+                average_price=float(p.get("average_price", 0.0) or 0.0),
+                pnl=float(p.get("pnl", 0.0) or 0.0),
+                unrealised_pnl=float(p.get("unrealised", 0.0) or 0.0),
+            ))
         return positions
 
     def get_margin(self) -> dict:
-        try:
-            margins = self._kite.margins() or {}
-            return {
-                "available_cash": float(margins.get("available", {}).get("cash", 0.0) or 0.0),
-                "used_margin": float(margins.get("utilised", {}).get("dealer", 0.0) or 0.0),
-                "total_exposure": float(margins.get("utilised", {}).get("span", 0.0) or 0.0),
-            }
-        except Exception as exc:
-            logger.error("kite margins fetch failed: %s", exc)
-            return {"available_cash": 0.0, "used_margin": 0.0, "total_exposure": 0.0}
+        """Current margin state. RAISES on fetch failure (fail-closed).
+
+        The old implementation swallowed the exception and returned a
+        zero-valued dict, so a dead broker connection could pass the
+        sandbox credentials check (``"available_cash" in margins`` is true
+        even for the failure fallback) and ``health()`` always reported
+        ``ok: true``. Callers that need a graceful path must catch the
+        exception themselves — the failure state must survive.
+        """
+        margins = self._kite.margins() or {}
+        return {
+            "available_cash": float(margins.get("available", {}).get("cash", 0.0) or 0.0),
+            "used_margin": float(margins.get("utilised", {}).get("dealer", 0.0) or 0.0),
+            "total_exposure": float(margins.get("utilised", {}).get("span", 0.0) or 0.0),
+        }
 
     def validate_sandbox(self, tickers: list[str] | None = None) -> dict:
         """Read-only validation of the broker connection. NEVER places orders.
@@ -293,10 +301,10 @@ class KiteLiveBroker(BrokerAdapter):
         try:
             margins = self.get_margin()
             report["checks"]["credentials"] = {
-                "ok": margins.get("available_cash", 0.0) > 0 or margins.get("total_exposure", 0.0) > 0 or "available_cash" in margins,
-                "detail": margins,
+                "ok": True, "detail": margins,
             }
         except Exception as exc:
+            logger.error("kite margins fetch failed: %s", exc)
             report["checks"]["credentials"] = {"ok": False, "detail": str(exc)}
 
         tickers = tickers or ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS"]
@@ -327,7 +335,8 @@ class KiteLiveBroker(BrokerAdapter):
 
     def health(self) -> dict:
         try:
-            margin_ok = self.get_margin()
-            return {"name": self.name, "live": True, "ok": True, "margin": margin_ok}
+            margin = self.get_margin()
+            return {"name": self.name, "live": True, "ok": True, "margin": margin}
         except Exception as exc:
+            logger.error("kite health check failed: %s", exc)
             return {"name": self.name, "live": True, "ok": False, "error": str(exc)}

@@ -412,6 +412,15 @@ class _FakeKiteConnect:
              "exchange": "NSE", "name": "TCS"},
         ]
 
+    def margins(self):
+        return {
+            "available": {"cash": 1_000_000.0},
+            "utilised": {"dealer": 0.0, "span": 0.0},
+        }
+
+    def positions(self):
+        return {"net": []}
+
 
 def _live_gate(monkeypatch):
     monkeypatch.setenv("STOMAR_LIVE_TRADING", "true")
@@ -501,3 +510,142 @@ def test_sandbox_validation_is_read_only(monkeypatch):
     assert report["ok"] is True
     assert report["checks"]["instrument_mapping"]["detail"]["RELIANCE.NS"]["ok"]
     assert _FakeKiteConnect.fetch_count == 1
+
+
+# ── kite failure state must survive (health/sandbox fail-closed) ─────────
+
+def test_get_margin_raises_when_broker_request_fails(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+
+    def boom():
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(broker._kite, "margins", boom)
+    with pytest.raises(RuntimeError, match="network down"):
+        broker.get_margin()
+
+
+def test_get_positions_raises_when_broker_request_fails(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+
+    def boom():
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(broker._kite, "positions", boom)
+    with pytest.raises(RuntimeError, match="network down"):
+        broker.get_positions()
+
+
+def test_sandbox_validation_fails_closed_on_margin_error(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+
+    def boom():
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(broker._kite, "margins", boom)
+    report = broker.validate_sandbox(tickers=["RELIANCE.NS"])
+    assert report["checks"]["credentials"]["ok"] is False
+    assert report["ok"] is False
+
+
+def test_sandbox_validation_fails_closed_on_positions_error(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+
+    def boom():
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(broker._kite, "positions", boom)
+    report = broker.validate_sandbox(tickers=["RELIANCE.NS"])
+    assert report["checks"]["positions"]["ok"] is False
+    assert report["ok"] is False
+
+
+def test_health_reports_failure_when_margin_call_fails(monkeypatch):
+    broker = _kite_broker(monkeypatch)
+
+    def boom():
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(broker._kite, "margins", boom)
+    status = broker.health()
+    assert status["ok"] is False
+    assert "network down" in status.get("error", "")
+
+
+# ── portfolio-aware pre-trade gate ────────────────────────────────────────
+
+def test_gate_uses_broker_positions_for_total_exposure():
+    # Existing position is 80% of equity; adding 20% more would hit 100%,
+    # above the 95% max total exposure. The gate must reject it.
+    broker = StubPortfolioBroker({"RELIANCE.NS": (320, 2500.0)}, cash=1_000_000)
+    risk = RiskController(RiskLimits(), 1_000_000)
+    manager = ExecutionManager(broker, risk)
+    verdict = manager.gate_order(
+        "TCS.NS", "BUY", 80,
+        quotes={"TCS.NS": fresh_quote()}, order_value=200_000,
+    )
+    assert verdict["approved"] is False
+    failed = [c["check"] for c in verdict["checks"] if not c["passed"]]
+    assert "total_exposure" in failed
+
+
+def test_gate_allows_reducing_order_at_exposure_limit():
+    # 90% exposure; selling 10% reduces it to 80% — must not be blocked.
+    broker = StubPortfolioBroker({"RELIANCE.NS": (360, 2500.0)}, cash=1_000_000)
+    risk = RiskController(RiskLimits(), 1_000_000)
+    manager = ExecutionManager(broker, risk)
+    verdict = manager.gate_order(
+        "RELIANCE.NS", "SELL", 40,
+        quotes={"RELIANCE.NS": fresh_quote()}, order_value=100_000,
+    )
+    assert verdict["approved"] is True
+
+
+def test_gate_checks_post_position_value_when_increasing():
+    # Existing RELIANCE position is 200k (20%); buying another 100k would
+    # make it 30% > 25% max position — the increment alone (10%) is under,
+    # but the post-order position is not.
+    broker = StubPortfolioBroker({"RELIANCE.NS": (80, 2500.0)}, cash=1_000_000)
+    risk = RiskController(RiskLimits(), 1_000_000)
+    manager = ExecutionManager(broker, risk)
+    verdict = manager.gate_order(
+        "RELIANCE.NS", "BUY", 40,
+        quotes={"RELIANCE.NS": fresh_quote()}, order_value=100_000,
+    )
+    assert verdict["approved"] is False
+    failed = [c["check"] for c in verdict["checks"] if not c["passed"]]
+    assert "position_concentration" in failed
+
+
+def test_gate_reports_order_intent(monkeypatch):
+    broker = DryRunBroker()
+    manager = ExecutionManager(
+        broker, RiskController(RiskLimits(), 1_000_000),
+        portfolio_provider=lambda: PortfolioSnapshot(
+            holdings={"RELIANCE.NS": (10, 2500.0)}, equity=1_000_000,
+        ),
+    )
+    verdict = manager.gate_order(
+        "RELIANCE.NS", "SELL", 4,
+        quotes={"RELIANCE.NS": fresh_quote()}, order_value=10_000,
+    )
+    assert verdict["approved"] is True
+    intent = [c for c in verdict["checks"] if c["check"] == "order_intent"]
+    assert intent and "intent=reducing" in intent[0]["message"]
+
+
+def test_classify_intent():
+    snap = PortfolioSnapshot(holdings={})
+    assert ExecutionManager._classify_intent("X.NS", "BUY", 10, snap) == "opening"
+    assert ExecutionManager._classify_intent("X.NS", "SELL", 10, snap) == "shorting"
+
+    long_snap = PortfolioSnapshot(holdings={"X.NS": (100, 10.0)})
+    assert ExecutionManager._classify_intent("X.NS", "BUY", 10, long_snap) == "increasing"
+    assert ExecutionManager._classify_intent("X.NS", "SELL", 40, long_snap) == "reducing"
+    assert ExecutionManager._classify_intent("X.NS", "SELL", 100, long_snap) == "closing"
+    assert ExecutionManager._classify_intent("X.NS", "SELL", 150, long_snap) == "reversing"
+
+    short_snap = PortfolioSnapshot(holdings={"X.NS": (-100, 10.0)})
+    assert ExecutionManager._classify_intent("X.NS", "BUY", 40, short_snap) == "reducing"
+    assert ExecutionManager._classify_intent("X.NS", "BUY", 100, short_snap) == "closing"
+    assert ExecutionManager._classify_intent("X.NS", "BUY", 150, short_snap) == "reversing"
