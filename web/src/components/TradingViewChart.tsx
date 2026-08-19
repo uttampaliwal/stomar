@@ -4,6 +4,9 @@ import {
   ColorType,
   CrosshairMode,
   LineStyle,
+  CandlestickSeries,
+  LineSeries,
+  HistogramSeries,
   type IChartApi,
   type ISeriesApi,
   type CandlestickData,
@@ -122,6 +125,7 @@ export default function TradingViewChart({
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const seriesRef = useRef<ISeriesApi<any>[]>([])
   // keep the latest callback without recreating the chart on every render
   const onCrosshairMoveRef = useRef(onCrosshairMove)
   useEffect(() => {
@@ -187,6 +191,13 @@ export default function TradingViewChart({
     const chart = chartRef.current
     if (!chart || !data.length) return
 
+    // Remove series added by a previous run so ticker switches / refetches
+    // don't stack duplicate candles, volumes, and overlays.
+    for (const s of seriesRef.current) {
+      chart.removeSeries(s)
+    }
+    seriesRef.current = []
+
     const candleData: CandlestickData[] = data.map((d) => ({
       time: d.date as unknown as Time,
       open: d.open,
@@ -198,7 +209,7 @@ export default function TradingViewChart({
     const pane = chart.panes()[0]
 
     // Add candlestick series
-    const candleSeries = pane.addSeries('Candlestick' as never, {
+    const candleSeries = pane.addSeries(CandlestickSeries, {
       upColor: '#10b981',
       downColor: '#f43f5e',
       borderUpColor: '#10b981',
@@ -207,7 +218,8 @@ export default function TradingViewChart({
       wickDownColor: '#f43f5e',
     })
     candleSeries.setData(candleData as never)
-    candleSeriesRef.current = candleSeries as unknown as ISeriesApi<'Candlestick'>
+    candleSeriesRef.current = candleSeries
+    seriesRef.current.push(candleSeries)
 
     // Volume histogram
     if (volume) {
@@ -216,7 +228,7 @@ export default function TradingViewChart({
         value: d.volume,
         color: d.close >= d.open ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)',
       }))
-      const volumeSeries = pane.addSeries('Histogram' as never, {
+      const volumeSeries = pane.addSeries(HistogramSeries, {
         priceFormat: { type: 'volume' },
         priceScaleId: 'volume',
       })
@@ -224,6 +236,7 @@ export default function TradingViewChart({
         scaleMargins: { top: 0.8, bottom: 0 },
       })
       volumeSeries.setData(volumeData as never)
+      seriesRef.current.push(volumeSeries)
     }
 
     // SMA overlays
@@ -234,7 +247,7 @@ export default function TradingViewChart({
       const smaData = sma
         .map((v, i) => (v !== null ? { time: data[i].date as unknown as Time, value: v } : null))
         .filter((d): d is { time: Time; value: number } => d !== null)
-      const smaSeries = pane.addSeries('Line' as never, {
+      const smaSeries = pane.addSeries(LineSeries, {
         color: '#8b5cf6',
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
@@ -243,6 +256,7 @@ export default function TradingViewChart({
         crosshairMarkerVisible: false,
       })
       smaSeries.setData(smaData as never)
+      seriesRef.current.push(smaSeries)
     }
 
     if (sma50) {
@@ -250,7 +264,7 @@ export default function TradingViewChart({
       const smaData = sma
         .map((v, i) => (v !== null ? { time: data[i].date as unknown as Time, value: v } : null))
         .filter((d): d is { time: Time; value: number } => d !== null)
-      const smaSeries = pane.addSeries('Line' as never, {
+      const smaSeries = pane.addSeries(LineSeries, {
         color: '#f59e0b',
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
@@ -259,6 +273,7 @@ export default function TradingViewChart({
         crosshairMarkerVisible: false,
       })
       smaSeries.setData(smaData as never)
+      seriesRef.current.push(smaSeries)
     }
 
     if (sma200) {
@@ -266,7 +281,7 @@ export default function TradingViewChart({
       const smaData = sma
         .map((v, i) => (v !== null ? { time: data[i].date as unknown as Time, value: v } : null))
         .filter((d): d is { time: Time; value: number } => d !== null)
-      const smaSeries = pane.addSeries('Line' as never, {
+      const smaSeries = pane.addSeries(LineSeries, {
         color: '#f97316',
         lineWidth: 2,
         lineStyle: LineStyle.LargeDashed,
@@ -275,6 +290,7 @@ export default function TradingViewChart({
         crosshairMarkerVisible: false,
       })
       smaSeries.setData(smaData as never)
+      seriesRef.current.push(smaSeries)
     }
 
     // Bollinger Bands
@@ -284,7 +300,7 @@ export default function TradingViewChart({
         const lineData = values
           .map((v, i) => (v !== null ? { time: data[i].date as unknown as Time, value: v } : null))
           .filter((d): d is { time: Time; value: number } => d !== null)
-        const series = pane.addSeries('Line' as never, {
+        const series = pane.addSeries(LineSeries, {
           color,
           lineWidth: 1,
           lineStyle: style,
@@ -293,6 +309,7 @@ export default function TradingViewChart({
           crosshairMarkerVisible: false,
         })
         series.setData(lineData as never)
+        seriesRef.current.push(series)
       }
       addBandLine(bands.upper, 'rgba(34, 211, 238, 0.4)', LineStyle.Dotted)
       addBandLine(bands.middle, 'rgba(34, 211, 238, 0.2)', LineStyle.Dotted)
