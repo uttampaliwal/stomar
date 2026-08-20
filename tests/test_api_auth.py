@@ -54,8 +54,9 @@ class TestAuthGate:
         assert r.status_code == 200
 
     def test_protected_fails_closed_when_key_not_configured(self, client, monkeypatch):
-        # env=dev with no key -> disabled, never silently open
+        # env=dev with no credentials at all -> disabled, never silently open
         monkeypatch.setattr(api_main.settings, "api_key", "")
+        monkeypatch.setattr(api_main.settings, "auth_password", "")
         r = client.get("/api/risk-guard/status")
         assert r.status_code == 503
 

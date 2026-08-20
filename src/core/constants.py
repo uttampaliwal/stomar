@@ -7,7 +7,8 @@ from src.core.settings import settings
 
 # ─── Paths ───
 PROJECT_ROOT = str(Path(__file__).resolve().parent.parent.parent)
-DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+# STOMAR_DATA_DIR lets deployers (and the test suite) relocate runtime data.
+DATA_DIR = os.environ.get("STOMAR_DATA_DIR") or os.path.join(PROJECT_ROOT, "data")
 MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
 LEDGER_DB = os.path.join(DATA_DIR, "stomar.db")
 META_CONTROLLER_PATH = os.path.join(MODELS_DIR, "meta_controller.pkl")

@@ -19,6 +19,9 @@ _READ = ("GET",)
 
 def _req(path, headers=None, cookies=None):
     """Build a minimal Starlette Request for `_auth_verdict`."""
+    merged = dict(headers or {})
+    if cookies:
+        merged["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
     return Request(
         {
             "type": "http",
@@ -26,9 +29,8 @@ def _req(path, headers=None, cookies=None):
             "path": path,
             "query_string": b"",
             "headers": [
-                (k.lower().encode(), v.encode()) for k, v in (headers or {}).items()
+                (k.lower().encode(), v.encode()) for k, v in merged.items()
             ],
-            "cookies": cookies or {},
         }
     )
 
@@ -56,6 +58,7 @@ def test_all_methods_on_protected_prefixes_require_auth():
 
 def test_missing_api_key_fails_closed(monkeypatch):
     monkeypatch.setattr(settings, "api_key", "")
+    monkeypatch.setattr(settings, "auth_password", "")
     verdict = _auth_verdict(_req("/api/paper-trading/order", headers={"X-API-Key": "whatever"}))
     assert verdict is not None
     assert verdict[0] == 503  # explicitly disabled, not silently open
@@ -80,6 +83,7 @@ def test_valid_session_cookie_accepted_without_key(monkeypatch, tmp_path):
     import api.main as api_main
 
     monkeypatch.setattr(settings, "api_key", "")
+    monkeypatch.setattr(settings, "auth_password", "")
     store = SessionStore(path=tmp_path / "s.json", ttl_hours=1.0)
     token = store.create()
     monkeypatch.setattr(api_main, "session_store", store)

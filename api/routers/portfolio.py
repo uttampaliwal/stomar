@@ -1,7 +1,9 @@
 """Portfolio analytics endpoint."""
 
 import os
+
 from fastapi import APIRouter
+from src.core.constants import PAPER_STATE_PATH
 from src.trading.paper_trader import PaperTrader
 
 router = APIRouter()
@@ -12,11 +14,10 @@ _trader = None
 def _get_trader():
     global _trader
     if _trader is None:
-        state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "paper_state.json")
         _trader = PaperTrader(initial_capital=200000)
-        if os.path.exists(state_path):
+        if os.path.exists(PAPER_STATE_PATH):
             try:
-                _trader.load_state(state_path)
+                _trader.load_state(PAPER_STATE_PATH)
             except Exception:
                 pass
     return _trader

@@ -1,9 +1,20 @@
 """Shared test fixtures for StoMar test suite."""
 import sys
 import os
-import pytest
-import numpy as np
-import pandas as pd
+import tempfile
+
+# Redirect ALL runtime data (DuckDB market store, SQLite ledger, paper/mf/
+# risk-guard state) to a throwaway directory BEFORE anything imports src — the
+# API's market_data service opens the DuckDB store at import time, and state
+# writers default to data/paper_state.json etc. Without this, the test suite
+# would take the production DuckDB's file lock (blocking the live dev server)
+# and pollute the tracked state files in git.
+_TEST_DATA_DIR = tempfile.mkdtemp(prefix="stomar-test-data-")
+os.environ.setdefault("STOMAR_DATA_DIR", _TEST_DATA_DIR)
+
+import pytest  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))

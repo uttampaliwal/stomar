@@ -15,6 +15,7 @@ try:
 except ImportError:
     pass
 
+from src.core.constants import DATA_DIR  # noqa: E402
 from api.auth import SESSION_COOKIE_NAME, session_store
 from src.core.settings import settings
 from src.core.secure_io import atomic_append_jsonl
@@ -219,7 +220,7 @@ async def rate_limit_middleware(request: Request, call_next):
 
 # ── audit log for every mutating request ────────────────────────────────
 
-_AUDIT_LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "api_audit")
+_AUDIT_LOG_DIR = os.path.join(DATA_DIR, "api_audit")
 
 
 @app.middleware("http")
