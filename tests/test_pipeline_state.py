@@ -649,7 +649,7 @@ class TestRetrainingPipelineCheckpoint:
             mock_hash.return_value = "abc123"
             mock_train.return_value = {"metrics": {}}
             mock_bt.return_value = (
-                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "max_drawdown": 0.15},
+                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "simulated_max_drawdown": 0.15},
                 None, [],
             )
 

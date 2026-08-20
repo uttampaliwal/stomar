@@ -281,7 +281,7 @@ class RetrainingPipeline:
 
             oos_accuracy = metrics.get("ensemble_accuracy", 0)
             sharpe = metrics.get("simulated_sharpe", -999)
-            max_dd = metrics.get("max_drawdown", 1.0)
+            max_dd = metrics.get("simulated_max_drawdown", 1.0)
 
             reasons = []
             if oos_accuracy < self.config.min_oos_accuracy:

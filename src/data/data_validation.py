@@ -146,7 +146,12 @@ def validate_prices(df: pd.DataFrame) -> list:
     if len(bad_hl) > 0:
         errors.append(f"high < low on {len(bad_hl)} days")
 
+    # A bar with no intraday range (open == high == low) is an in-progress
+    # session snapshot (yfinance sets O/H/L to the same price and close to the
+    # last trade), not a data error — skip it for the close-range check.
+    partial = (df["open"] == df["high"]) & (df["high"] == df["low"])
     bad_close = df[(df["close"] > df["high"] * 1.001) | (df["close"] < df["low"] * 0.999)]
+    bad_close = bad_close[~partial.reindex(bad_close.index).fillna(False)]
     if len(bad_close) > 0:
         errors.append(f"close outside high-low range on {len(bad_close)} days")
 
@@ -178,6 +183,15 @@ def validate_data(df: pd.DataFrame, ticker: str) -> dict:
 
     price_errors = validate_prices(df)
     errors.extend(price_errors)
+
+    partial_count = 0
+    if {"open", "high", "low"} <= set(df.columns):
+        partial_count = int(((df["open"] == df["high"]) & (df["high"] == df["low"])).sum())
+    if partial_count:
+        warnings.append(
+            f"{partial_count} bar(s) with no intraday range (open=high=low) — "
+            "usually the in-progress session"
+        )
 
     gaps = detect_gaps(df)
     if gaps:

@@ -1,6 +1,7 @@
 """Tests for backtester module — focus on no-data-leakage verification."""
 import numpy as np
 import pandas as pd
+import pytest
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -75,3 +76,29 @@ class TestComputeMetrics:
         from src.core.constants import RISK_FREE_RATE
         metrics = compute_metrics(sample_equity_curve, [], risk_free_rate=RISK_FREE_RATE)
         assert metrics["sharpe_ratio"] is not None
+
+
+class TestSimulatedMetrics:
+    """Pipeline evaluate-gate key mapping (simulated_sharpe / simulated_max_drawdown)."""
+
+    def test_maps_ratio_and_drawdown_fraction(self):
+        from src.trading.backtester import _attach_simulated_metrics
+        metrics = _attach_simulated_metrics(
+            {}, {"sharpe_ratio": 1.234, "max_drawdown": -12.34}
+        )
+        assert metrics["simulated_sharpe"] == 1.234
+        assert metrics["simulated_max_drawdown"] == pytest.approx(0.1234)
+
+    def test_ignores_missing_keys(self):
+        from src.trading.backtester import _attach_simulated_metrics
+        metrics = _attach_simulated_metrics({}, {"total_return": 0.5})
+        assert "simulated_sharpe" not in metrics
+        assert "simulated_max_drawdown" not in metrics
+
+    def test_preserves_existing_metrics(self):
+        from src.trading.backtester import _attach_simulated_metrics
+        metrics = _attach_simulated_metrics(
+            {"ensemble_accuracy": 0.55}, {"sharpe_ratio": 0.9, "max_drawdown": -5.0}
+        )
+        assert metrics["ensemble_accuracy"] == 0.55
+        assert metrics["simulated_max_drawdown"] == pytest.approx(0.05)

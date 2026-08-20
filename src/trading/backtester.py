@@ -112,6 +112,20 @@ def compute_metrics(equity_curve, trades, risk_free_rate=RISK_FREE_RATE):
     }
 
 
+def _attach_simulated_metrics(metrics: dict, eq_metrics: dict) -> dict:
+    """Expose equity metrics under the pipeline evaluate-gate key names.
+
+    The pipeline gate (and its tests) read ``simulated_sharpe`` as a ratio and
+    ``simulated_max_drawdown`` as a positive fraction, while ``compute_metrics``
+    returns ``sharpe_ratio`` and ``max_drawdown`` as a negative percentage.
+    """
+    if "sharpe_ratio" in eq_metrics:
+        metrics["simulated_sharpe"] = eq_metrics["sharpe_ratio"]
+    if "max_drawdown" in eq_metrics:
+        metrics["simulated_max_drawdown"] = abs(eq_metrics["max_drawdown"]) / 100.0
+    return metrics
+
+
 def run_walk_forward_backtest(
     ticker,
     df_feat,
@@ -291,6 +305,7 @@ def run_walk_forward_backtest(
         eq_df = pd.DataFrame(equity_points)
         eq_metrics = compute_metrics(eq_df, portfolio.trades)
         metrics.update(eq_metrics)
+        _attach_simulated_metrics(metrics, eq_metrics)
 
     return metrics, portfolio, all_test_results
 

@@ -111,7 +111,7 @@ class TestPipelineStages:
             mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_bt.return_value = (
-                {"ensemble_accuracy": 0.48, "simulated_sharpe": -0.5, "max_drawdown": 0.15},
+                {"ensemble_accuracy": 0.48, "simulated_sharpe": -0.5, "simulated_max_drawdown": 0.15},
                 None, [],
             )
             pipeline = RetrainingPipeline(PipelineConfig(min_oos_accuracy=0.55))
@@ -126,7 +126,7 @@ class TestPipelineStages:
             mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_bt.return_value = (
-                {"ensemble_accuracy": 0.53, "simulated_sharpe": -1.0, "max_drawdown": 0.15},
+                {"ensemble_accuracy": 0.53, "simulated_sharpe": -1.0, "simulated_max_drawdown": 0.15},
                 None, [],
             )
             pipeline = RetrainingPipeline(PipelineConfig(min_oos_sharpe=-0.5))
@@ -141,7 +141,7 @@ class TestPipelineStages:
             mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_bt.return_value = (
-                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "max_drawdown": 0.35},
+                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "simulated_max_drawdown": 0.35},
                 None, [],
             )
             pipeline = RetrainingPipeline(PipelineConfig(max_drawdown_threshold=0.20))
@@ -156,7 +156,7 @@ class TestPipelineStages:
             mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
             mock_bt.return_value = (
-                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "max_drawdown": 0.15},
+                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "simulated_max_drawdown": 0.15},
                 None, [],
             )
             pipeline = RetrainingPipeline()
@@ -225,7 +225,7 @@ class TestPipelineRun:
             mock_pipe_fetch.return_value = _mock_df()
             mock_pipe_feat.return_value = _mock_df()
             mock_bt.return_value = (
-                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "max_drawdown": 0.15},
+                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "simulated_max_drawdown": 0.15},
                 None, [],
             )
             result = pipeline.run("TEST.NS")
