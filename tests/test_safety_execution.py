@@ -284,24 +284,75 @@ def test_daily_order_budget_blocks():
         manager.execute("INFY.NS", "BUY", 1, quotes={"INFY.NS": q}, order_value=2500)
 
 
-def test_daily_order_count_resets_on_new_day():
-    """Regression (#33): a long-running process must not carry yesterday's
-    order count into today, or the daily budget silently collapses."""
+def test_daily_order_count_resets_on_new_day(tmp_path):
+    """Regression (#33): the budget is per calendar day.
+
+    With the ledger-derived counter the day boundary is the audit file name:
+    a new day is a new file, so yesterday's orders never carry into today.
+    """
     from unittest.mock import patch
 
     manager = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000),
-                               max_daily_orders=1)
+                               max_daily_orders=1, audit_dir=tmp_path)
     q = fresh_quote()
     manager.execute("RELIANCE.NS", "BUY", 1, quotes={"RELIANCE.NS": q}, order_value=2500)
-    assert sum(manager._daily_orders.values()) == 1
+    assert manager.status()["orders_today"] == 1
+    with pytest.raises(ExecutionError, match="order budget"):
+        manager.execute("TCS.NS", "BUY", 1, quotes={"TCS.NS": q}, order_value=2500)
 
     with patch("src.trading.execution_manager.date") as mock_date:
         mock_date.today.return_value.isoformat.return_value = "2999-01-01"
-        # budget was exhausted yesterday — the new day must reset it
+        # budget was exhausted yesterday — the new day gets a fresh file
         manager.execute("TCS.NS", "BUY", 1, quotes={"TCS.NS": q}, order_value=2500)
 
-    assert sum(manager._daily_orders.values()) == 1
-    assert manager._current_day == "2999-01-01"
+    assert manager.status()["orders_today"] == 1
+
+
+def test_daily_budget_persists_across_restart(tmp_path):
+    """The daily order budget is enforced by the audit ledger, so it survives
+    process restarts and is shared across processes writing to the same dir —
+    a restart must not silently re-open the budget."""
+    q = fresh_quote()
+
+    # "day 1" process: two orders consume the full budget
+    m1 = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000),
+                          max_daily_orders=2, audit_dir=tmp_path)
+    m1.execute("RELIANCE.NS", "BUY", 1, quotes={"RELIANCE.NS": q}, order_value=2500)
+    m1.execute("TCS.NS", "BUY", 1, quotes={"TCS.NS": q}, order_value=2500)
+
+    # "restart": a brand-new manager with the same ledger must see the same count
+    m2 = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000),
+                          max_daily_orders=2, audit_dir=tmp_path)
+    assert m2.status()["orders_today"] == 2
+    with pytest.raises(ExecutionError, match="order budget"):
+        m2.execute("INFY.NS", "BUY", 1, quotes={"INFY.NS": q}, order_value=2500)
+
+    # a third process sharing the dir sees the same global budget
+    m3 = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000),
+                          max_daily_orders=2, audit_dir=tmp_path)
+    assert m3.status()["orders_today"] == 2
+
+
+def test_gate_only_path_records_orders_in_budget(tmp_path):
+    """run_daily / paper-router style flow (gate_order + record_submitted).
+
+    These paths place orders outside execute(), so the submission must be
+    recorded in the audit ledger — otherwise the daily budget would never
+    see those orders, and a restart would re-open it."""
+    q = fresh_quote()
+    m1 = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000),
+                          max_daily_orders=2, audit_dir=tmp_path)
+    assert m1.gate_order("A.NS", "BUY", 1, quotes={"A.NS": q}, order_value=2500)["approved"] is True
+    m1.record_submitted("A.NS", "BUY", 1)
+    assert m1.gate_order("B.NS", "BUY", 1, quotes={"B.NS": q}, order_value=2500)["approved"] is True
+    m1.record_submitted("B.NS", "BUY", 1)
+    assert m1.gate_order("C.NS", "BUY", 1, quotes={"C.NS": q}, order_value=2500)["approved"] is False
+
+    # restart: the recorded orders still consume the budget
+    m2 = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000),
+                          max_daily_orders=2, audit_dir=tmp_path)
+    assert m2.status()["orders_today"] == 2
+    assert m2.gate_order("C.NS", "BUY", 1, quotes={"C.NS": q}, order_value=2500)["approved"] is False
 
 
 def test_closing_order_skips_position_checks():

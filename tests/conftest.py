@@ -20,6 +20,20 @@ import pandas as pd  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
+@pytest.fixture(autouse=True)
+def _isolated_execution_audit_dir(monkeypatch, tmp_path):
+    """Give every test its own default order-audit dir.
+
+    ExecutionManager now derives the daily order budget from its audit
+    ledger, defaulting to the (session-wide) project audit dir. Isolating it
+    per test prevents one test's submitted orders from exhausting another
+    test's budget.
+    """
+    monkeypatch.setattr(
+        "src.trading.execution_manager.AUDIT_DIR", str(tmp_path / "audit")
+    )
+
+
 @pytest.fixture
 def sample_prices():
     """Generate sample OHLCV price data for testing."""

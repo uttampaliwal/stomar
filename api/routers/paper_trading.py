@@ -210,6 +210,14 @@ def place_order(data: dict = Body(...)):
                 if order is None or order.status.name == "REJECTED":
                     return {"order_id": order.order_id if order else None, "status": "rejected", "price": price}
 
+                # The daily order budget is counted from the audit ledger:
+                # record this submission so the budget is enforced across
+                # restarts and across processes sharing the audit dir.
+                get_manager().record_submitted(
+                    ticker, side_str, quantity, order_type=order_type_str,
+                    client_order_id=order.order_id,
+                )
+
                 # For MARKET orders, fill immediately
                 if order_type == OrderType.MARKET:
                     trader.on_bar(ticker, o=price, h=price, low=price, c=price, volume=1_000_000)

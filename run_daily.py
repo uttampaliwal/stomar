@@ -125,6 +125,10 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
                 filled = trader.on_bar(ticker, current_price, current_price, current_price, current_price)
                 if filled and any(r.side == "BUY" for r in filled):
                     executed += 1
+                    # The daily order budget is counted from the audit ledger
+                    # (survives restarts); record this submission so the
+                    # paper flow enforces the same budget as the API path.
+                    manager.record_submitted(ticker, "BUY", qty)
                     print(f"  BUY  {qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
 
             elif action == "SELL":
@@ -142,7 +146,8 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
                 filled = trader.on_bar(ticker, current_price, current_price, current_price, current_price)
                 if filled and any(r.side == "SELL" for r in filled):
                     executed += 1
-                    print(f"  SELL {sell_qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
+                    manager.record_submitted(ticker, "SELL", sell_qty)
+                    print(f" SELL  {sell_qty:4d} {ticker:15s} @ Rs.{current_price:.2f}  (conf={conf:.2f})")
 
         # Update current prices for open positions
         for ticker in list(trader.positions.keys()):

@@ -16,6 +16,7 @@ operations can reconstruct exactly what the system decided and why.
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from dataclasses import dataclass
@@ -23,8 +24,11 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from filelock import FileLock
+
 from src.brokers.base import BrokerAdapter, BrokerOrder, BrokerOrderStatus, new_client_order_id
 from src.brokers.reconciler import OrderReconciler
+from src.core.constants import AUDIT_DIR
 from src.core.secure_io import atomic_append_jsonl
 from src.core.trading_mode import get_trading_mode, require_live_allowed
 from src.trading.risk_controls import RiskController
@@ -94,22 +98,50 @@ class ExecutionManager:
         self.max_daily_orders = max_daily_orders
         self.portfolio_provider = portfolio_provider
         self._lock = threading.RLock()
-        self._audit_log: Path | None = None
-        if audit_dir is not None:
-            audit_dir = Path(audit_dir)
-            audit_dir.mkdir(parents=True, exist_ok=True)
-            self._audit_log = audit_dir / f"orders-{date.today().isoformat()}.jsonl"
-        self._daily_orders: dict[str, int] = {}
-        self._current_day: str = date.today().isoformat()
+        # Audit ledger is the source of truth for the daily order budget:
+        # every submitted order is appended to a per-day JSONL file, so the
+        # count survives restarts and is shared across processes. Defaults to
+        # the project-wide audit dir (gitignored, already used by the API).
+        self._audit_dir = Path(audit_dir) if audit_dir is not None else Path(AUDIT_DIR)
+        self._audit_dir.mkdir(parents=True, exist_ok=True)
         self._intents: dict[str, BrokerOrder] = {}
 
     # ── audit ──────────────────────────────────────────────────────────────
 
+    def _audit_path(self) -> Path:
+        # Per-day file: the day boundary is the file boundary, so the budget
+        # rolls over automatically at midnight without any in-memory state.
+        return self._audit_dir / f"orders-{date.today().isoformat()}.jsonl"
+
     def _audit(self, entry: dict):
-        if self._audit_log is None:
-            return
         entry = {"ts": datetime.now(timezone.utc).isoformat(), **entry}
-        atomic_append_jsonl(self._audit_log, entry)
+        atomic_append_jsonl(self._audit_path(), entry)
+
+    def _daily_order_count(self) -> int:
+        """Number of orders actually submitted today, from the audit ledger.
+
+        The ledger is append-only and per-day, so this is authoritative across
+        process restarts and across concurrent processes sharing the audit dir.
+        A failure to read the ledger fails closed (returns the limit) rather
+        than silently re-opening the budget.
+        """
+        path = self._audit_path()
+        try:
+            if not path.exists():
+                return 0
+            count = 0
+            with FileLock(f"{path}.lock", timeout=5):
+                for line in path.read_text().splitlines():
+                    try:
+                        entry = json.loads(line)
+                    except ValueError:
+                        continue
+                    if entry.get("event") == "submitted":
+                        count += 1
+            return count
+        except Exception as exc:
+            logger.warning("ledger read failed for daily order count: %s", exc)
+            return self.max_daily_orders  # fail closed
 
     # ── public API ─────────────────────────────────────────────────────────
 
@@ -181,7 +213,6 @@ class ExecutionManager:
             )
             self.reconciler.track(order)
             self._intents[cid] = order
-            self._bump_daily_order_count(cid)
             self._audit({
                 "event": "submitted", "client_order_id": cid,
                 "broker_order_id": order.broker_order_id, "ticker": ticker,
@@ -218,6 +249,26 @@ class ExecutionManager:
             "checks": result["checks"],
         }
 
+    def record_submitted(self, ticker: str, side: str, quantity: int,
+                         order_type: str = "MARKET",
+                         client_order_id: str | None = None,
+                         broker_order_id: str | None = None) -> None:
+        """Record a successful submission in the audit ledger.
+
+        The daily order budget is counted from this ledger, so every path
+        that places orders OUTSIDE ``execute()`` (the paper-trading router,
+        run_daily) must call this after a successful placement — otherwise
+        the budget would only ever see orders routed through ``execute()``.
+        """
+        mode = get_trading_mode()
+        self._audit({
+            "event": "submitted",
+            "client_order_id": client_order_id or new_client_order_id(),
+            "broker_order_id": broker_order_id or "paper",
+            "ticker": ticker, "side": side, "quantity": quantity,
+            "order_type": order_type, "mode": mode.value,
+        })
+
     def cancel(self, client_order_id: str) -> BrokerOrder:
         with self._lock:
             order = self.broker.cancel_order(client_order_id)
@@ -240,7 +291,7 @@ class ExecutionManager:
             "reconciler": (
                 self.reconciler.summary() if self.reconciler is not None else {}
             ),
-            "orders_today": sum(self._daily_orders.values()),
+            "orders_today": self._daily_order_count(),
             "max_daily_orders": self.max_daily_orders,
         }
 
@@ -368,9 +419,9 @@ class ExecutionManager:
                 expected_slippage_bps=quote.get("expected_slippage_bps") or 0.0,
             )
 
-        # daily order budget (rolls over at midnight in a long-running process)
-        self._rollover_daily_orders()
-        if sum(self._daily_orders.values()) >= self.max_daily_orders:
+        # daily order budget — counted from the audit ledger (survives
+        # restarts and is shared across processes)
+        if self._daily_order_count() >= self.max_daily_orders:
             return {"approved": False, "checks": [{
                 "passed": False, "check": "daily_order_budget",
                 "message": (f"daily order budget exhausted "
@@ -423,23 +474,3 @@ class ExecutionManager:
             "reason": result.get("reason", ""),
             "intent": intent,
         }
-
-    def _bump_daily_order_count(self, client_order_id: str):
-        self._rollover_daily_orders()
-        self._daily_orders[client_order_id] = self._daily_orders.get(client_order_id, 0) + 1
-
-    def _rollover_daily_orders(self):
-        """Reset the daily order counter when the calendar day changes.
-
-        A long-running process must not carry yesterday's order count into
-        today, or the daily budget silently shrinks to zero after the first
-        day (#33).
-        """
-        with self._lock:
-            today = date.today().isoformat()
-            if self._current_day != today:
-                if self._daily_orders:
-                    logger.info("resetting daily order count: %d -> 0 (new day %s)",
-                                sum(self._daily_orders.values()), today)
-                self._daily_orders = {}
-                self._current_day = today
