@@ -72,6 +72,12 @@ class DryRunBroker(BrokerAdapter):
             order.status = BrokerOrderStatus.FILLED
         else:
             order.status = BrokerOrderStatus.PARTIALLY_FILLED
+        # Cash moves with every fill: buys debit, sells credit (shorts
+        # credit proceeds now and debit on cover via the same rule). Without
+        # this, margin/equity derived from get_margin() drifts upward as
+        # positions accumulate — invisible in single-day use, compounding
+        # across a multi-day dry-run.
+        self._cash -= qty * price if order.side == "BUY" else -qty * price
         self._fills.append(BrokerFill(
             broker_order_id=order.broker_order_id,
             client_order_id=order.client_order_id,
