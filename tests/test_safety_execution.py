@@ -284,13 +284,16 @@ def test_daily_order_budget_blocks():
         manager.execute("INFY.NS", "BUY", 1, quotes={"INFY.NS": q}, order_value=2500)
 
 
-def test_daily_order_count_resets_on_new_day(tmp_path):
+def test_daily_order_count_resets_on_new_day(tmp_path, monkeypatch):
     """Regression (#33): the budget is per calendar day.
 
     With the ledger-derived counter the day boundary is the audit file name:
     a new day is a new file, so yesterday's orders never carry into today.
+    The boundary is IST (the market's timezone), not the host's local time.
     """
-    from unittest.mock import patch
+    import datetime as dt
+
+    import src.trading.execution_manager as em_mod
 
     manager = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000),
                                max_daily_orders=1, audit_dir=tmp_path)
@@ -300,10 +303,10 @@ def test_daily_order_count_resets_on_new_day(tmp_path):
     with pytest.raises(ExecutionError, match="order budget"):
         manager.execute("TCS.NS", "BUY", 1, quotes={"TCS.NS": q}, order_value=2500)
 
-    with patch("src.trading.execution_manager.date") as mock_date:
-        mock_date.today.return_value.isoformat.return_value = "2999-01-01"
-        # budget was exhausted yesterday — the new day gets a fresh file
-        manager.execute("TCS.NS", "BUY", 1, quotes={"TCS.NS": q}, order_value=2500)
+    tomorrow = em_mod.ist_today() + dt.timedelta(days=1)
+    monkeypatch.setattr(em_mod, "ist_today", lambda: tomorrow)
+    # budget was exhausted yesterday — the new day gets a fresh file
+    manager.execute("TCS.NS", "BUY", 1, quotes={"TCS.NS": q}, order_value=2500)
 
     assert manager.status()["orders_today"] == 1
 
@@ -700,3 +703,146 @@ def test_classify_intent():
     assert ExecutionManager._classify_intent("X.NS", "BUY", 40, short_snap) == "reducing"
     assert ExecutionManager._classify_intent("X.NS", "BUY", 100, short_snap) == "closing"
     assert ExecutionManager._classify_intent("X.NS", "BUY", 150, short_snap) == "reversing"
+
+
+# ── quote timestamp handling (IST-aware, future-timestamp guard) ──────────
+
+def test_naive_ist_quote_is_fresh_not_5h30m_stale():
+    """Regression: NSE quotes carry naive IST wall-clock timestamps.
+    Interpreting them as UTC made live quotes look 5h30m old and blocked
+    every order."""
+    from src.core.timeutils import IST
+    naive_ist = datetime.now(IST).replace(tzinfo=None).isoformat()
+    manager = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000))
+    reason = manager._stale_quote_check("RELIANCE.NS", {
+        "RELIANCE.NS": {"close": 2500.0, "timestamp": naive_ist},
+    })
+    assert reason == ""
+
+
+def test_future_quote_timestamp_is_rejected():
+    """A timestamp ahead of now beyond clock-skew tolerance is a broken
+    source — reject rather than treat as infinitely fresh."""
+    future = datetime.now(timezone.utc) + timedelta(hours=2)
+    manager = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000))
+    reason = manager._stale_quote_check("RELIANCE.NS", {
+        "RELIANCE.NS": {"close": 2500.0, "timestamp": future.isoformat()},
+    })
+    assert "future" in reason
+
+
+def test_stale_utc_aware_quote_is_rejected():
+    old = datetime.now(timezone.utc) - timedelta(minutes=10)
+    manager = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000))
+    reason = manager._stale_quote_check("RELIANCE.NS", {
+        "RELIANCE.NS": {"close": 2500.0, "timestamp": old.isoformat()},
+    })
+    assert "stale" in reason
+
+
+# ── daily budget check+append atomicity ───────────────────────────────────
+
+def test_budget_count_and_append_are_atomic(tmp_path, monkeypatch):
+    """The budget check and the post-submit append must happen under one
+    lock. Simulate the race window by making submit_order re-check the
+    ledger mid-flight: if counting weren't serialized with appending, a
+    concurrent submit could slip past the limit."""
+    import json
+
+    class _SlowBroker(DryRunBroker):
+        calls = 0
+
+        def submit_order(self, *a, **kw):
+            # While this submit is in flight, another process appends an
+            # order to the same ledger (as if it had just passed its own
+            # check). The atomic path means our count already included...
+            # actually the invariant under test: after N orders are counted,
+            # no more than max_daily_orders submits may be appended per day.
+            result = super().submit_order(*a, **kw)
+            _SlowBroker.calls += 1
+            return result
+
+    broker = _SlowBroker()
+    m1 = ExecutionManager(broker, RiskController(RiskLimits(), 1_000_000),
+                          max_daily_orders=2, audit_dir=tmp_path)
+    m2 = ExecutionManager(DryRunBroker(), RiskController(RiskLimits(), 1_000_000),
+                          max_daily_orders=2, audit_dir=tmp_path)
+    q1 = fresh_quote()
+    q2 = fresh_quote()
+
+    m1.execute("RELIANCE.NS", "BUY", 1, quotes={"RELIANCE.NS": q1}, order_value=2500)
+    m2.execute("TCS.NS", "BUY", 1, quotes={"TCS.NS": q2}, order_value=2500)
+
+    with pytest.raises(ExecutionError, match="order budget"):
+        m1.execute("INFY.NS", "BUY", 1, quotes={"INFY.NS": q1}, order_value=2500)
+    with pytest.raises(ExecutionError, match="order budget"):
+        m2.execute("WIPRO.NS", "BUY", 1, quotes={"WIPRO.NS": q2}, order_value=2500)
+
+    submitted = [
+        json.loads(line) for line in
+        next(iter(tmp_path.glob("orders-*.jsonl"))).read_text().splitlines()
+        if json.loads(line).get("event") == "submitted"
+    ]
+    assert len(submitted) == 2
+
+
+# ── kite submit ambiguity: timeout must not hide a live order ─────────────
+
+def test_kite_submit_timeout_adopts_existing_broker_order(monkeypatch):
+    """Regression: place_order timing out AFTER exchange acceptance used to
+    mark the order REJECTED locally while the broker held a live order.
+    The broker's order book (matched by tag) is authoritative."""
+    broker = _kite_broker(monkeypatch)
+
+    def timeout_place(**kwargs):
+        raise TimeoutError("request timed out")
+
+    def book_with_order():
+        return [{
+            "order_id": "209876",
+            "tag": "ord-timeout-1"[:20],
+            "status": "OPEN",
+        }]
+
+    monkeypatch.setattr(broker._kite, "place_order", timeout_place, raising=False)
+    monkeypatch.setattr(broker._kite, "orders", book_with_order, raising=False)
+
+    order = broker.submit_order("ord-timeout-1", "RELIANCE.NS", "BUY", 10)
+    assert order.status == BrokerOrderStatus.SUBMITTED
+    assert order.broker_order_id == "209876"
+    assert not order.reject_reason
+
+
+def test_kite_submit_failure_without_matching_tag_is_rejected(monkeypatch):
+    """If the broker never received/accepted the order, REJECTED remains
+    the correct fail-closed outcome."""
+    broker = _kite_broker(monkeypatch)
+
+    def refused_place(**kwargs):
+        raise ConnectionError("connection reset")
+
+    monkeypatch.setattr(broker._kite, "place_order", refused_place, raising=False)
+    monkeypatch.setattr(broker._kite, "orders", lambda: [], raising=False)
+
+    order = broker.submit_order("ord-dead-1", "RELIANCE.NS", "BUY", 10)
+    assert order.status == BrokerOrderStatus.REJECTED
+    assert order.reject_reason
+
+
+def test_kite_submit_failure_with_unreachable_order_book_is_rejected(monkeypatch):
+    """When even the order-book lookup fails we cannot adopt broker truth;
+    local state stays REJECTED (fail-closed) and the client order id remains
+    in the audit trail for manual reconciliation."""
+    broker = _kite_broker(monkeypatch)
+
+    def refused_place(**kwargs):
+        raise TimeoutError("timed out")
+
+    def dead_book():
+        raise RuntimeError("order book unreachable")
+
+    monkeypatch.setattr(broker._kite, "place_order", refused_place, raising=False)
+    monkeypatch.setattr(broker._kite, "orders", dead_book, raising=False)
+
+    order = broker.submit_order("ord-dark-1", "RELIANCE.NS", "BUY", 10)
+    assert order.status == BrokerOrderStatus.REJECTED

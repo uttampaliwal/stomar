@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -30,10 +32,15 @@ from src.brokers.base import BrokerAdapter, BrokerOrder, BrokerOrderStatus, new_
 from src.brokers.reconciler import OrderReconciler
 from src.core.constants import AUDIT_DIR
 from src.core.secure_io import atomic_append_jsonl
+from src.core.timeutils import ist_today, parse_quote_timestamp
 from src.core.trading_mode import get_trading_mode, require_live_allowed
 from src.trading.risk_controls import RiskController
 
 logger = logging.getLogger(__name__)
+
+# A quote timestamp this far in the future is a clock error, not a fresh
+# quote — reject rather than treat as infinitely fresh.
+FUTURE_QUOTE_TOLERANCE_SECONDS = 60.0
 
 
 class ExecutionError(Exception):
@@ -111,37 +118,72 @@ class ExecutionManager:
     def _audit_path(self) -> Path:
         # Per-day file: the day boundary is the file boundary, so the budget
         # rolls over automatically at midnight without any in-memory state.
-        return self._audit_dir / f"orders-{date.today().isoformat()}.jsonl"
+        # The day is defined in the MARKET timezone (Asia/Kolkata), not the
+        # host's local timezone — on a UTC server, date.today() would roll
+        # at 05:30 IST and split the trading session across two budgets.
+        return self._audit_dir / f"orders-{ist_today().isoformat()}.jsonl"
 
     def _audit(self, entry: dict):
         entry = {"ts": datetime.now(timezone.utc).isoformat(), **entry}
         atomic_append_jsonl(self._audit_path(), entry)
 
-    def _daily_order_count(self) -> int:
-        """Number of orders actually submitted today, from the audit ledger.
+    @contextmanager
+    def _day_ledger(self):
+        """Hold the per-day ledger lock across check AND append.
 
-        The ledger is append-only and per-day, so this is authoritative across
-        process restarts and across concurrent processes sharing the audit dir.
-        A failure to read the ledger fails closed (returns the limit) rather
-        than silently re-opening the budget.
+        The daily order budget is only correct if counting and recording
+        happen atomically: if the lock were released between the count
+        check and the post-submit append, two concurrent processes could
+        both pass the budget check and both submit (check-then-act race).
+        Holding this lock serializes order submission across processes for
+        the day — exactly the semantics a daily budget requires. Callers
+        must use :meth:`_append_line` (not :meth:`_audit`) inside the
+        block, since atomic_append_jsonl would re-acquire the same lock.
         """
         path = self._audit_path()
+        with FileLock(f"{path}.lock", timeout=10):
+            yield path
+
+    @staticmethod
+    def _append_line(path: Path, entry: dict) -> None:
+        """Append one audit line assuming the caller holds the day lock."""
+        line = json.dumps(
+            {"ts": datetime.now(timezone.utc).isoformat(), **entry},
+            default=str,
+        ) + "\n"
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line)
+            f.flush()
+            os.fsync(f.fileno())
+
+    def _count_submitted(self, path: Path) -> int:
+        """Count today's submitted orders in the ledger (day lock held).
+
+        The ledger is append-only and per-day, so this is authoritative
+        across process restarts and across concurrent processes sharing the
+        audit dir. A failure to read the ledger fails closed (returns the
+        limit) rather than silently re-opening the budget.
+        """
         try:
             if not path.exists():
                 return 0
             count = 0
-            with FileLock(f"{path}.lock", timeout=5):
-                for line in path.read_text().splitlines():
-                    try:
-                        entry = json.loads(line)
-                    except ValueError:
-                        continue
-                    if entry.get("event") == "submitted":
-                        count += 1
+            for line in path.read_text().splitlines():
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if entry.get("event") == "submitted":
+                    count += 1
             return count
         except Exception as exc:
             logger.warning("ledger read failed for daily order count: %s", exc)
             return self.max_daily_orders  # fail closed
+
+    def _daily_order_count(self) -> int:
+        path = self._audit_path()
+        with FileLock(f"{path}.lock", timeout=5):
+            return self._count_submitted(path)
 
     # ── public API ─────────────────────────────────────────────────────────
 
@@ -167,60 +209,86 @@ class ExecutionManager:
             if mode.value == "live":
                 require_live_allowed()  # re-verify the gate on every execution
 
-            # 1. stale quotes
-            stale = self._stale_quote_check(ticker, quotes or {})
-            if stale:
-                self._audit({"event": "rejected", "client_order_id": cid,
-                             "ticker": ticker, "side": side, "reason": stale})
-                raise ExecutionError(stale)
+            # Everything from the budget check through the audit append is
+            # serialized across processes by the day-ledger lock: counting
+            # and recording must be atomic or concurrent submitters can
+            # exceed the daily budget (check-then-act race).
+            with self._day_ledger() as ledger:
+                # 1. daily order budget — counted under the same lock that
+                # will record this order, so no two submitters can pass it.
+                if self._count_submitted(ledger) >= self.max_daily_orders:
+                    self._append_line(ledger, {
+                        "event": "rejected", "client_order_id": cid,
+                        "ticker": ticker, "side": side,
+                        "reason": "daily_order_budget",
+                    })
+                    raise ExecutionError(
+                        f"daily order budget exhausted ({self.max_daily_orders})")
 
-            # 2. LIMIT price sanity check against the market quote
-            if order_type.upper() == "LIMIT":
-                if limit_price <= 0:
-                    reason = "LIMIT orders require a positive limit price"
-                    self._audit({"event": "rejected", "client_order_id": cid,
-                                 "ticker": ticker, "side": side, "reason": reason})
-                    raise ExecutionError(reason)
-                quote = (quotes or {}).get(ticker) or {}
-                current = quote.get("close") or quote.get("last_price") or 0.0
-                if current > 0 and not (0.5 * current <= limit_price <= 1.5 * current):
-                    reason = (f"limit price {limit_price} must be within 50% of "
-                              f"current price {current}")
-                    self._audit({"event": "rejected", "client_order_id": cid,
-                                 "ticker": ticker, "side": side, "reason": reason})
-                    raise ExecutionError(reason)
+                # 2. stale quotes
+                stale = self._stale_quote_check(ticker, quotes or {})
+                if stale:
+                    self._append_line(ledger, {
+                        "event": "rejected", "client_order_id": cid,
+                        "ticker": ticker, "side": side, "reason": stale,
+                    })
+                    raise ExecutionError(stale)
 
-            # 2. risk gate
-            risk_result = self._risk_gate(ticker, side, quantity, order_value,
-                                          quotes or {}, market=market,
-                                          is_closing=is_closing)
-            if not risk_result["approved"]:
-                failed = [c["message"] for c in risk_result["checks"]
-                          if not c["passed"] and c.get("message")]
-                reason = risk_result.get("reason", "")
-                if failed:
-                    reason = "; ".join(failed) if not reason else f"{reason}; {'; '.join(failed)}"
-                self._audit({"event": "rejected", "client_order_id": cid,
-                             "ticker": ticker, "side": side, "reason": reason})
-                raise ExecutionError(f"risk gate rejected: {reason}")
+                # 3. LIMIT price sanity check against the market quote
+                if order_type.upper() == "LIMIT":
+                    if limit_price <= 0:
+                        reason = "LIMIT orders require a positive limit price"
+                        self._append_line(ledger, {
+                            "event": "rejected", "client_order_id": cid,
+                            "ticker": ticker, "side": side, "reason": reason,
+                        })
+                        raise ExecutionError(reason)
+                    quote = (quotes or {}).get(ticker) or {}
+                    current = quote.get("close") or quote.get("last_price") or 0.0
+                    if current > 0 and not (0.5 * current <= limit_price <= 1.5 * current):
+                        reason = (f"limit price {limit_price} must be within 50% of "
+                                  f"current price {current}")
+                        self._append_line(ledger, {
+                            "event": "rejected", "client_order_id": cid,
+                            "ticker": ticker, "side": side, "reason": reason,
+                        })
+                        raise ExecutionError(reason)
 
-            # 3. submit
-            if self.broker is None:
-                raise ExecutionError("no broker configured for execution")
-            order = self.broker.submit_order(
-                client_order_id=cid, ticker=ticker, side=side,
-                quantity=quantity, order_type=order_type, limit_price=limit_price,
-            )
-            self.reconciler.track(order)
-            self._intents[cid] = order
-            self._audit({
-                "event": "submitted", "client_order_id": cid,
-                "broker_order_id": order.broker_order_id, "ticker": ticker,
-                "side": side, "quantity": quantity, "order_type": order_type,
-                "mode": mode.value,
-            })
+                # 4. risk gate
+                risk_result = self._risk_gate(ticker, side, quantity, order_value,
+                                              quotes or {}, market=market,
+                                              is_closing=is_closing)
+                if not risk_result["approved"]:
+                    failed = [c["message"] for c in risk_result["checks"]
+                              if not c["passed"] and c.get("message")]
+                    reason = risk_result.get("reason", "")
+                    if failed:
+                        reason = ("; ".join(failed) if not reason
+                                  else f"{reason}; {'; '.join(failed)}")
+                    self._append_line(ledger, {
+                        "event": "rejected", "client_order_id": cid,
+                        "ticker": ticker, "side": side, "reason": reason,
+                    })
+                    raise ExecutionError(f"risk gate rejected: {reason}")
 
-            # 4. immediate reconciliation attempt
+                # 5. submit
+                if self.broker is None:
+                    raise ExecutionError("no broker configured for execution")
+                order = self.broker.submit_order(
+                    client_order_id=cid, ticker=ticker, side=side,
+                    quantity=quantity, order_type=order_type, limit_price=limit_price,
+                )
+                self.reconciler.track(order)
+                self._intents[cid] = order
+                self._append_line(ledger, {
+                    "event": "submitted", "client_order_id": cid,
+                    "broker_order_id": order.broker_order_id, "ticker": ticker,
+                    "side": side, "quantity": quantity, "order_type": order_type,
+                    "mode": mode.value,
+                })
+
+            # 6. immediate reconciliation attempt (outside the ledger lock —
+            # broker calls must not serialize other processes' submissions)
             if order.status == BrokerOrderStatus.SUBMITTED:
                 try:
                     order = self.reconciler.refresh(cid)
@@ -232,7 +300,22 @@ class ExecutionManager:
                    quotes: dict[str, dict] | None = None,
                    order_value: float | None = None,
                    market=None, is_closing: bool = False) -> dict:
-        """Evaluate the full gate WITHOUT submitting. Returns verdict dict."""
+        """Evaluate the full gate WITHOUT submitting. Returns verdict dict.
+
+        Advisory only: the authoritative budget enforcement lives in
+        execute() under the day-ledger lock. This read-only view includes
+        the budget so pre-flight callers (paper router, run_daily) see the
+        same verdict execute() will produce.
+        """
+        if self._daily_order_count() >= self.max_daily_orders:
+            return {
+                "approved": False,
+                "reason": f"daily order budget exhausted ({self.max_daily_orders})",
+                "checks": [{
+                    "passed": False, "check": "daily_order_budget",
+                    "message": f"daily order budget exhausted ({self.max_daily_orders})",
+                }],
+            }
         stale = self._stale_quote_check(ticker, quotes or {})
         if stale:
             return {"approved": False, "reason": stale}
@@ -306,13 +389,17 @@ class ExecutionManager:
         price = quote.get("close") or quote.get("last_price") or 0.0
         if price <= 0:
             return f"non-positive quote price for {ticker}"
-        try:
-            quoted_at = datetime.fromisoformat(ts)
-            if quoted_at.tzinfo is None:
-                quoted_at = quoted_at.replace(tzinfo=timezone.utc)
-        except (ValueError, TypeError):
+        quoted_at = parse_quote_timestamp(ts)
+        if quoted_at is None:
             return f"unparseable quote timestamp for {ticker}: {ts!r}"
+        # NSE quote sources report IST; naive timestamps are interpreted as
+        # IST by parse_quote_timestamp (assuming UTC made live quotes look
+        # 5h30m old). A timestamp in the future beyond clock-skew tolerance
+        # is a broken source — reject it instead of treating it as fresh.
         age = (datetime.now(timezone.utc) - quoted_at).total_seconds()
+        if age < -FUTURE_QUOTE_TOLERANCE_SECONDS:
+            return (f"quote timestamp for {ticker} is in the future "
+                    f"({-age:.0f}s ahead) — rejecting as unreliable")
         if age > self.max_stale_quote_seconds:
             return (f"stale quote for {ticker}: {age:.0f}s old "
                     f"(limit {self.max_stale_quote_seconds:.0f}s)")
@@ -419,14 +506,11 @@ class ExecutionManager:
                 expected_slippage_bps=quote.get("expected_slippage_bps") or 0.0,
             )
 
-        # daily order budget — counted from the audit ledger (survives
-        # restarts and is shared across processes)
-        if self._daily_order_count() >= self.max_daily_orders:
-            return {"approved": False, "checks": [{
-                "passed": False, "check": "daily_order_budget",
-                "message": (f"daily order budget exhausted "
-                            f"({self.max_daily_orders})"),
-            }]}
+        # NOTE: the daily order budget is NOT checked here. It is enforced
+        # in execute() under the day-ledger lock (count + append atomic).
+        # A check here would deadlock — _daily_order_count acquires the
+        # same per-day lock this gate runs under — and a lock-free read
+        # would reopen the check-then-act race this design closes.
 
         # Broker-truth portfolio: existing positions drive every exposure and
         # concentration check, so the gate evaluates the portfolio AFTER

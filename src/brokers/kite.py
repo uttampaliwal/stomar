@@ -126,6 +126,26 @@ class KiteLiveBroker(BrokerAdapter):
         }
         return mapping.get(status, BrokerOrderStatus.UNCONFIRMED)
 
+    def _find_order_by_tag(self, client_order_id: str) -> dict | None:
+        """Look up today's open orders by our client order tag.
+
+        Kite echoes the ``tag`` we send with every order back in the
+        order book. This is the only reliable way to discover whether a
+        request that errored client-side (timeout, connection reset) was
+        actually ACCEPTED by the exchange — the classic failure mode where
+        local state says REJECTED while the broker holds a live order.
+        Returns the latest matching order row, or None.
+        """
+        try:
+            orders = self._kite.orders() or []
+        except Exception as exc:
+            logger.error("kite order-book fetch failed while resolving %s: %s",
+                         client_order_id, exc)
+            return None
+        tag = client_order_id[:20]
+        matches = [o for o in orders if str(o.get("tag", "")) == tag]
+        return matches[-1] if matches else None
+
     def submit_order(self, client_order_id: str, ticker: str, side: str,
                      quantity: int, order_type: str = "MARKET",
                      limit_price: float = 0.0) -> BrokerOrder:
@@ -169,6 +189,22 @@ class KiteLiveBroker(BrokerAdapter):
             )
             return order
         except Exception as exc:
+            # The request failed CLIENT-SIDE. It may still have been
+            # accepted by the broker (timeout after acceptance). Before
+            # declaring REJECTED — which would let upstream logic believe
+            # there is no live order when there is one — check the order
+            # book by tag and adopt the broker's truth.
+            adopted = self._find_order_by_tag(client_order_id)
+            if adopted is not None:
+                order.broker_order_id = str(adopted.get("order_id", ""))
+                order.status = self._map_status(str(adopted.get("status", "")))
+                order.updated_at = datetime.now(timezone.utc).isoformat()
+                logger.warning(
+                    "kite submit errored (%s) but order %s EXISTS at the "
+                    "broker for client=%s — adopting broker truth (%s)",
+                    exc, order.broker_order_id, client_order_id, order.status,
+                )
+                return order
             order.status = BrokerOrderStatus.REJECTED
             order.reject_reason = str(exc)[:500]
             order.updated_at = datetime.now(timezone.utc).isoformat()
