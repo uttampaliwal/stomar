@@ -37,6 +37,25 @@ EPOCHS = DEFAULT_EPOCHS
 BATCH_SIZE = DEFAULT_BATCH_SIZE
 LEARNING_RATE = DEFAULT_LEARNING_RATE
 
+# Fraction of the TRAINING sequences reserved as an early-stopping
+# validation window. The test set must never drive model selection.
+DL_VALIDATION_FRACTION = 0.15
+
+
+def carve_dl_validation(n_train: int,
+                        fraction: float = DL_VALIDATION_FRACTION) -> int:
+    """Validation size carved from the training-sequence tail.
+
+    Early stopping selects the epoch with the lowest validation loss. If
+    that "validation" set is the TEST set (the previous behaviour), model
+    selection leaks held-out information and every reported accuracy is
+    optimistic. The honest alternative is a chronological hold-out from
+    the END of the training region — recent data the model never fits.
+    """
+    if n_train < 2:
+        return 0
+    return max(1, min(int(n_train * fraction), n_train - 1))
+
 
 def _collect_meta_features(lstm, gru, transformer, xgb, scaler, feature_cols,
                            df_feat, split_idx, seq_length, lgb_model=None,
@@ -359,17 +378,22 @@ def train_for_ticker(ticker: str, force_retrain: bool = False,
 
         split = dl_split_to_lstm_split(dl_split, seq_length=SEQ_LENGTH, total=len(scaled))
         if split > 0 and len(X_lstm) > split:
-            X_tr_l = torch.tensor(X_lstm[:split]).to(DEVICE)
-            y_tr_l = torch.tensor(y_lstm[:split]).to(DEVICE)
+            # Validation window comes from the TRAIN tail, never the test
+            # set — see carve_dl_validation.
+            val_size = carve_dl_validation(split)
+            X_tr_l = torch.tensor(X_lstm[:split - val_size]).to(DEVICE)
+            y_tr_l = torch.tensor(y_lstm[:split - val_size]).to(DEVICE)
+            X_val_dl = torch.tensor(X_lstm[split - val_size:split]).to(DEVICE)
+            y_val_dl = torch.tensor(y_lstm[split - val_size:split]).to(DEVICE)
             X_te_l = torch.tensor(X_lstm[split:]).to(DEVICE)
             y_te_l = torch.tensor(y_lstm[split:]).to(DEVICE)
 
             loader = DataLoader(TensorDataset(X_tr_l, y_tr_l), batch_size=BATCH_SIZE, shuffle=False)
             input_dim = X_lstm.shape[2]
 
-            lstm_model = _train_one_model(build_lstm(input_dim), loader, X_te_l, y_te_l, "LSTM", epochs=epochs)
-            gru_model = _train_one_model(build_gru(input_dim), loader, X_te_l, y_te_l, "GRU", epochs=epochs)
-            tf_model = _train_one_model(build_transformer(input_dim), loader, X_te_l, y_te_l, "Transformer", epochs=epochs)
+            lstm_model = _train_one_model(build_lstm(input_dim), loader, X_val_dl, y_val_dl, "LSTM", epochs=epochs)
+            gru_model = _train_one_model(build_gru(input_dim), loader, X_val_dl, y_val_dl, "GRU", epochs=epochs)
+            tf_model = _train_one_model(build_transformer(input_dim), loader, X_val_dl, y_val_dl, "Transformer", epochs=epochs)
 
             # Evaluate direction accuracy
             def eval_dir(model, X_te, y_te, scaled_data, split_idx):

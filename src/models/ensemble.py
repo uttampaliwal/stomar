@@ -44,6 +44,26 @@ META_COLUMNS = ["xgb", "lgb", "lstm", "gru", "transformer", "cat"]
 
 WILSON_Z = 1.645  # 90% confidence
 
+# The conviction interval is computed over the trailing fraction of
+# backtest rows only. _backtest_rows spans the FULL history (mostly the
+# models' own training window); scoring all of it reports in-sample
+# accuracy as if it were out-of-sample and inflates every confidence
+# interval. Mirroring the trainer's ~80/20 chronological split, the last
+# 25% of rows is an approximately out-of-sample window (margin included).
+APPROX_OOS_FRACTION = 0.25
+
+
+def approx_oos_rows(backtest_rows: list[dict]) -> list[dict]:
+    """Trailing approximately-out-of-sample slice of backtest rows.
+
+    See APPROX_OOS_FRACTION. Returns at least one row for non-empty input
+    so tiny histories still yield an interval (a wide, honest one).
+    """
+    if not backtest_rows:
+        return []
+    n_oos = max(1, int(len(backtest_rows) * APPROX_OOS_FRACTION))
+    return backtest_rows[-n_oos:]
+
 
 # ── Regime-Conditional Static Weights ──
 
@@ -632,9 +652,10 @@ def regime_adjusted_ensemble(
            performance, regime-conditional).
         3. Weight the base-model probability outputs by those scores
            (or by the stacked meta-learner when one is fitted).
-        4. Compute the ensemble probability, a Wilson confidence interval on
-           the ensemble's regime-conditional OOS accuracy, and a conviction
-           label.
+        4. Compute the ensemble probability and a Wilson confidence
+            interval on the ensemble's APPROXIMATELY out-of-sample accuracy
+            (the trailing APPROX_OOS_FRACTION of backtest rows — scoring the
+            full history would present training-window accuracy as OOS).
 
     Args:
         ticker: Symbol (used for the optional meta-learner file lookup).
@@ -723,11 +744,17 @@ def regime_adjusted_ensemble(
         weight_method = "fallback"
         weights = {n: 1.0 / len(active_models) for n in active_models}
 
-    # Wilson CI on the ensemble's regime-conditional OOS accuracy
+    # Wilson CI on the ensemble's accuracy, restricted to the approximate
+    # out-of-sample window (trailing rows the models did not train on).
+    # Scoring the full history would present in-sample accuracy as OOS and
+    # overstate conviction.
     n_correct = 0
     n_total = 0
+    ci_basis = "insufficient_rows"
     if backtest_rows:
-        for r in backtest_rows:
+        oos_rows = approx_oos_rows(backtest_rows)
+        ci_basis = f"approx_oos_tail_{len(oos_rows)}_rows"
+        for r in oos_rows:
             if regime_series is not None and r["date"] in regime_series.index and \
                regime_series.loc[r["date"]] == regime_key:
                 # ensemble direction from the same weighting logic
@@ -753,6 +780,11 @@ def regime_adjusted_ensemble(
         "confidence": round(float(confidence), 2),
         "conviction": conviction,
         "confidence_interval": [round(ci_lo, 4), round(ci_hi, 4)],
+        "confidence_interval_basis": {
+            "window": ci_basis,
+            "n_samples": n_total,
+            "regime_filtered": True,
+        },
         "method": weight_method,
         "weights": weights,
         "model_performance": dyn["accuracies"],

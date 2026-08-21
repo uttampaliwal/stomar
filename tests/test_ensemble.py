@@ -390,3 +390,72 @@ class TestMetaLearnerCoefficients:
         model = train_meta_learner(meta_X, y)
         coefs = model.named_steps["clf"].coef_[0]
         assert all(np.isfinite(coefs))
+
+
+
+
+# ── conviction CI must describe approximately-out-of-sample rows only ─────
+
+def test_approx_oos_rows_returns_trailing_quarter():
+    from src.models.ensemble import approx_oos_rows
+    rows = list(range(100))
+    assert approx_oos_rows(rows) == list(range(75, 100))
+
+
+def test_approx_oos_rows_at_least_one():
+    from src.models.ensemble import approx_oos_rows
+    assert approx_oos_rows([1, 2]) == [2]
+    assert approx_oos_rows([]) == []
+
+
+def test_regime_adjusted_ci_counts_only_oos_window(monkeypatch):
+    """Regression: the Wilson interval used to be computed over the FULL
+    backtest row history — mostly in-sample — overstating conviction.
+    With a perfect model inside the approx-OOS window and a coin-flip
+    before it, the interval must describe the OOS window only."""
+    import pandas as pd
+
+    from src.models import ensemble as ens
+
+    n_hist = 200
+    n_oos = int(n_hist * ens.APPROX_OOS_FRACTION)
+    dates = [pd.Timestamp("2025-01-01") + pd.Timedelta(days=i) for i in range(n_hist)]
+    rows = []
+    for i, ts in enumerate(dates):
+        oos = i >= n_hist - n_oos
+        prob = 0.9 if oos else 0.5
+        rows.append({
+            "date": ts,
+            "actual": 1,
+            "lstm": 1, "gru": 1, "transformer": 1, "xgb": 1, "lgb": 1, "cat": 1,
+            "lstm_prob": prob, "gru_prob": prob, "transformer_prob": prob,
+            "xgb_prob": prob, "lgb_prob": prob, "cat_prob": prob,
+            "meta_X": [prob] * 6,
+        })
+
+    # Constant "Sideways" regime across the whole history.
+    regime_series = pd.Series("Sideways", index=pd.DatetimeIndex(dates))
+    monkeypatch.setattr(
+        "src.signals.regime_hmm.state_sequence", lambda ohlc: regime_series
+    )
+
+    df_feat = pd.DataFrame({
+        "open": [1.0], "high": [1.0], "low": [1.0],
+        "close": [1.0], "volume": [1],
+    })
+    result = ens.regime_adjusted_ensemble(
+        "TEST.NS",
+        {"lstm": None, "gru": None, "transformer": None, "xgb": object(),
+         "lgb": None, "cat": None, "scaler": None, "features": []},
+        df_feat=df_feat,
+        backtest_rows=rows,
+        regime_info={"regime": "Sideways", "regime_key": "Sideways",
+                     "probabilities": {}, "risk": {}},
+    )
+
+    basis = result["confidence_interval_basis"]
+    assert basis["window"] == f"approx_oos_tail_{n_oos}_rows"
+    assert basis["n_samples"] == n_oos
+    # OOS window is perfect (prob .9 > .5 vs actual 1) → tight high bound;
+    # the old full-history behaviour (half the rows wrong) gave ci_lo ≈ 0.
+    assert result["confidence_interval"][0] > 0.8
