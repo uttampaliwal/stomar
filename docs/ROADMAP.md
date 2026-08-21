@@ -297,7 +297,7 @@
 
 > **Why this phase comes last:** RL needs a replay buffer of real forward-looking episodes.
 > Using backfill data → RL overfits to historical patterns and then fails live.
-> The meta-controller (contextual bandit) already does RL-lite. True RL is an upgrade, not a replacement.
+> The meta-controller's learned signal weighting is RL-lite. True RL is an upgrade, not a replacement.
 
 - [ ] 🟢 **P7.1** Define the RL environment correctly
   - New file: `src/rl/trading_env.py`

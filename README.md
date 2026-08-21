@@ -56,7 +56,7 @@ everything reproducibly — no manual venv/pip management.
                             │ calls
 ┌───────────────────────────▼─────────────────────────────────────┐
 │                    META-CONTROLLER                               │
-│  14 signal modules → 1 decision (contextual bandit)              │
+│  14 signal modules → 1 decision (learned weighting)              │
 │  Regime routing, confidence scaling, position sizing             │
 └───────────────────────────┬─────────────────────────────────────┘
                             │ signals from
@@ -119,11 +119,16 @@ everything reproducibly — no manual venv/pip management.
 
 ### Triple-Barrier Labels
 
-Superior ML training targets that account for realistic trading conditions:
+Advanced ML training targets that account for realistic trading conditions:
 - **Upper barrier** — Profit-taking level (2% default)
 - **Lower barrier** — Stop-loss level (2% default)
 - **Vertical barrier** — Maximum holding period (5 days default)
 - Labels: 1 = profit hit first, 0 = loss hit first, 2 = time expired
+
+> **Note:** triple-barrier labels are computed in `features.py` (`tb_label`)
+> and available as a training target, but the current supervised models are
+> trained on the simple next-day direction target (`target_direction`).
+> Switching training to `tb_label` is planned — see `docs/ROADMAP.md`.
 
 ### Autonomous Daily Loop
 
@@ -273,7 +278,7 @@ stomar/
 │   │   ├── model.py           # 5 model architectures + save/load
 │   │   ├── trainer.py         # Training + walk-forward validation
 │   │   ├── ensemble.py        # Meta-learner + DL probability scaling
-│   │   ├── meta_controller.py # Contextual bandit (14 → 1 decision)
+│   │   ├── meta_controller.py # Learned signal weighting (14 → 1 decision)
 │   │   └── model_registry.py  # Model versioning + lifecycle
 │   ├── signals/               # Signal modules (16)
 │   │   ├── orchestrator.py    # Daily signal pipeline
@@ -436,7 +441,7 @@ uv run ruff check .
 | **ML Models** | 5-model ensemble + meta-learner | Single model (Random Forest/LSTM) |
 | **Target Labels** | Triple-barrier (profit/loss/time) | Simple 1-day return direction |
 | **Validation** | Walk-forward chronological splits | Random train/test split (leaky) |
-| **Signal Integration** | 14 modules via contextual bandit | Single technical indicator |
+| **Signal Integration** | 14 modules via regularized logistic meta-model | Single technical indicator |
 | **Risk Management** | VaR, CVaR, Kelly, kill switch | Basic stop-loss |
 | **Interpretability** | Feature importance + SHAP + explanations | None |
 | **Cost Modeling** | Full NSE costs (STT, brokerage, GST) | Ignored or simplified |

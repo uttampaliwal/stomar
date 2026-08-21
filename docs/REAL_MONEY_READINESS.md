@@ -156,3 +156,33 @@ STOMAR_MAX_EXPECTED_SLIPPAGE_BPS=30      # slippage ceiling
 STOMAR_MAX_GAP_PCT=5                     # gap ceiling
 STOMAR_API_KEY=...                       # required in production
 ```
+
+---
+
+## 6. Hardening log — 2026-08-21 audit fixes
+
+Follow-up to the §1 verdict; each item is regression-tested:
+
+- **Daily/weekly loss limits are now live controls.** Realized P&L is fed
+  from `PaperTrader._record_fill` into `RiskController` and persisted to
+  `data/risk_state.json` (IST day/ISO-week keyed) so a restart can no
+  longer reset the loss windows or the consecutive-loss breaker.
+- **Kite submit ambiguity closed.** A client-side submit error no longer
+  marks the order REJECTED before the broker's order book is checked by
+  tag; an accepted-but-timed-out order is adopted from broker truth.
+- **Daily order budget is atomic.** Count + append happen under one
+  per-day ledger lock in `execute()`; the check-then-act race across
+  processes is closed. Day boundaries use Asia/Kolkata, not host-local
+  time. Naive quote timestamps are read as IST, and future-dated quotes
+  are rejected.
+- **Honest model reporting.** DL early-stopping validates on a hold-out
+  carved from the training tail (never the test set); the ensemble
+  conviction Wilson interval is computed over the trailing ~25% of
+  backtest rows (approximately out-of-sample) instead of the full,
+  mostly-in-sample history.
+- **Next-open backtest execution.** Walk-forward and simple backtests now
+  fill at the next bar's open (+slippage) instead of the same close that
+  decided the label.
+- README/meta-controller claims corrected: learned signal weighting via
+  regularized logistic regression (not a "contextual bandit"); triple-
+  barrier labels documented as computed-but-not-yet-the-training-target.
