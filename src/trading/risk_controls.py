@@ -31,6 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.core.constants import DATA_DIR
+from src.core.secure_io import atomic_write_json
+from src.core.timeutils import ist_today, iso_week_key
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +74,9 @@ class RiskController:
     """Pre-trade risk checks. Validates orders before submission."""
 
     def __init__(self, limits: RiskLimits = None, initial_capital: float = 100000,
-                 kill_switch_file: str | Path | None = None):
+                 kill_switch_file: str | Path | None = None,
+                 state_file: str | Path | None = None,
+                 persist_state: bool = False):
         self.limits = limits or RiskLimits()
         self.initial_capital = initial_capital
         self.daily_pnl = 0.0
@@ -88,7 +92,87 @@ class RiskController:
             Path(kill_switch_file) if kill_switch_file
             else Path(DATA_DIR) / "kill_switch.json"
         )
+        # Loss-limit state persistence: daily/weekly P&L and the consecutive
+        # loss counter are only meaningful if they survive a process restart.
+        # Without persistence, restarting the process mid-day resets every
+        # loss counter to zero and reopens the loss budget — a restart then
+        # becomes a way to bypass the daily loss limit. Persistence is
+        # opt-in (tests construct many short-lived controllers; production
+        # call sites pass persist_state=True explicitly).
+        self.state_file = (
+            Path(state_file) if state_file
+            else self.kill_switch_file.parent / "risk_state.json"
+        )
+        self.persist_state = persist_state
         self._load_persistent_kill_switch()
+        if persist_state:
+            self._load_risk_state()
+
+    # ── persisted risk state (daily/weekly P&L, loss streak, equity) ──────
+
+    def _risk_state(self) -> dict:
+        now = ist_today()
+        return {
+            "day_key": now.isoformat(),
+            "week_key": iso_week_key(now),
+            "daily_pnl": self.daily_pnl,
+            "weekly_pnl": self.weekly_pnl,
+            "consecutive_losses": self.consecutive_losses,
+            "peak_equity": self.peak_equity,
+            "current_equity": self.current_equity,
+            "initial_capital": self.initial_capital,
+        }
+
+    def _save_risk_state(self):
+        if not self.persist_state:
+            return
+        try:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_json(str(self.state_file), self._risk_state())
+        except OSError as exc:
+            logger.error("failed to persist risk state to %s: %s",
+                         self.state_file, exc)
+
+    def _load_risk_state(self):
+        """Restore loss counters from disk, rolling stale windows forward.
+
+        Day/week keys are IST-based (the market's timezone). A state file
+        from a previous day keeps the weekly P&L and loss streak but resets
+        the daily window; a file from a previous ISO week resets both.
+        """
+        try:
+            if not self.state_file.exists():
+                return
+            data = json.loads(self.state_file.read_text())
+        except (OSError, ValueError) as exc:
+            logger.error("failed to read risk state from %s: %s",
+                         self.state_file, exc)
+            return
+
+        today = ist_today().isoformat()
+        # Pass today explicitly so every window decision flows through THIS
+        # module's ist_today (single injectable source of "now").
+        week = iso_week_key(ist_today())
+
+        same_week = data.get("week_key") == week
+        same_day = same_week and data.get("day_key") == today
+
+        self.daily_pnl = float(data.get("daily_pnl", 0.0)) if same_day else 0.0
+        self.weekly_pnl = float(data.get("weekly_pnl", 0.0)) if same_week else 0.0
+        self.consecutive_losses = int(data.get("consecutive_losses", 0))
+
+        peak = float(data.get("peak_equity", 0.0))
+        current = float(data.get("current_equity", 0.0))
+        if peak > 0:
+            self.peak_equity = peak
+        if current > 0:
+            self.current_equity = current
+        logger.info(
+            "risk state restored from %s (daily_pnl=%.2f weekly_pnl=%.2f "
+            "consecutive_losses=%d day_key=%s)",
+            self.state_file, self.daily_pnl, self.weekly_pnl,
+            self.consecutive_losses, data.get("day_key"),
+        )
 
     # ── persistent kill switch ─────────────────────────────────────────────
 
@@ -282,19 +366,29 @@ class RiskController:
         """Update equity and track peak."""
         self.current_equity = new_equity
         self.peak_equity = max(self.peak_equity, new_equity)
+        self._save_risk_state()
 
     def update_daily_pnl(self, pnl: float):
-        """Add to daily P&L tracker."""
+        """Add realized P&L to the daily AND weekly loss-limit windows.
+
+        This is the feed that makes the daily/weekly loss limits real:
+        without a caller supplying realized P&L, ``daily_pnl`` stays 0 and
+        the limits can never trip (PaperTrader._record_fill feeds this).
+        """
         self.daily_pnl += pnl
+        self.weekly_pnl += pnl
+        self._save_risk_state()
 
     def reset_daily(self):
-        """Reset daily P&L."""
+        """Reset the daily P&L window (called at each new trading day)."""
         self.daily_pnl = 0.0
+        self._save_risk_state()
 
     def reset_weekly(self):
-        """Reset weekly P&L."""
+        """Reset the weekly P&L window (implies a fresh daily window)."""
         self.weekly_pnl = 0.0
         self.daily_pnl = 0.0
+        self._save_risk_state()
 
     def resume_trading(self):
         """Manually resume trading after halt (also clears persistent file)."""
@@ -340,16 +434,19 @@ class RiskController:
         }
 
     def update_consecutive_losses(self, is_loss: bool):
-        """Track consecutive losses for circuit breaker."""
+        """Track consecutive losses for circuit breaker (persisted)."""
         if is_loss:
             self.consecutive_losses += 1
+            self._save_risk_state()
             if self.consecutive_losses >= self.limits.max_consecutive_losses:
                 self.kill_switch(
                     f"Consecutive losses ({self.consecutive_losses}) "
                     f"exceed limit ({self.limits.max_consecutive_losses})"
                 )
         else:
-            self.consecutive_losses = 0
+            if self.consecutive_losses:
+                self.consecutive_losses = 0
+                self._save_risk_state()
 
     def update_correlation(self, ticker_a: str, ticker_b: str, corr: float):
         """Update correlation between two positions."""

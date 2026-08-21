@@ -542,7 +542,7 @@ class AutoPipeline:
             with state_lock:
                 try:
                     from src.trading.paper_trader import PaperTrader
-                    paper_trader = PaperTrader(initial_capital=200_000)
+                    paper_trader = PaperTrader(initial_capital=200_000, persist_risk_state=True)
                     # #17: a failed load_state() (corrupt or transiently
                     # unreadable file) must never end with a fresh trader's
                     # empty state being saved over the existing state. Only

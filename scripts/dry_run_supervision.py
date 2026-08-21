@@ -60,7 +60,7 @@ def run_supervision(tickers: list[str], capital: float = 500_000,
 
     os.makedirs(_REPORT_DIR, exist_ok=True)
     audit_dir = _REPORT_DIR
-    risk = RiskController(RiskLimits(), initial_capital=capital)
+    risk = RiskController(RiskLimits(), initial_capital=capital, persist_state=True)
     manager = ExecutionManager(broker, risk, audit_dir=audit_dir)
 
     ledger = Ledger(db_path)

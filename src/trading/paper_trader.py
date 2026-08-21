@@ -16,6 +16,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from src.trading.engine import (
@@ -71,7 +72,9 @@ class PaperTrader:
 
     def __init__(self, initial_capital: float = 100_000,
                  slippage_bps: int = 5,
-                 risk_limits: Optional[RiskLimits] = None):
+                 risk_limits: Optional[RiskLimits] = None,
+                 persist_risk_state: bool = False,
+                 risk_state_file: str | Path = None):
         self.initial_capital = initial_capital
         self.cash = initial_capital
         self.positions: dict[str, Position] = {}
@@ -82,8 +85,15 @@ class PaperTrader:
             avg_volume=1_000_000,
         )
         self.engine = ExecutionEngine(slippage_model=self.slippage_model)
+        # Production callers pass persist_risk_state=True: the daily/weekly
+        # loss windows and the consecutive-loss circuit breaker must survive
+        # a process restart, otherwise restarting mid-day reopens every loss
+        # budget. Defaults off so short-lived instances (tests, tools) don't
+        # inherit or overwrite persistent loss counters.
         self.risk_controller = RiskController(
-            limits=risk_limits or RiskLimits(), initial_capital=initial_capital
+            limits=risk_limits or RiskLimits(), initial_capital=initial_capital,
+            persist_state=persist_risk_state,
+            state_file=risk_state_file,
         )
         self.trade_log: list[PaperTradeRecord] = []
         self.cumulative_pnl = 0.0
@@ -260,6 +270,10 @@ class PaperTrader:
         # Entry fills (pnl == 0) must not reset the losing streak.
         if pnl != 0.0:
             self.risk_controller.update_consecutive_losses(pnl < 0)
+            # Feed realized P&L into the daily/weekly loss-limit windows.
+            # Without this feed the limits compare against a constant 0 and
+            # can never trip — the loss budget would be infinite.
+            self.risk_controller.update_daily_pnl(pnl)
 
         record = PaperTradeRecord(
             timestamp=datetime.now().isoformat(),
@@ -561,5 +575,11 @@ class PaperTrader:
         self.cumulative_pnl = 0.0
         self.engine = ExecutionEngine(slippage_model=self.slippage_model)
         self.risk_controller = RiskController(
-            limits=self.risk_controller.limits, initial_capital=self.initial_capital
+            limits=self.risk_controller.limits,
+            initial_capital=self.initial_capital,
+            persist_state=self.risk_controller.persist_state,
+            state_file=self.risk_controller.state_file,
         )
+        # A deliberate account reset also clears the persisted loss windows
+        # and streak, so the fresh session starts with a clean risk slate.
+        self.risk_controller.reset_weekly()

@@ -255,3 +255,113 @@ class TestStatus:
         rc.reset_weekly()
         assert rc.weekly_pnl == 0.0
         assert rc.daily_pnl == 0.0
+
+
+# ── Persisted risk state (daily/weekly P&L, loss streak, equity) ─────────
+
+class TestPersistedRiskState:
+    def test_no_state_file_written_by_default(self, tmp_path):
+        rc = _rc(kill_switch_file=tmp_path / "ks.json")
+        rc.update_daily_pnl(-5_000)
+        rc.update_consecutive_losses(True)
+        assert not (tmp_path / "risk_state.json").exists()
+
+    def test_loss_counters_survive_restart(self, tmp_path):
+        state = tmp_path / "risk_state.json"
+        rc1 = RiskController(initial_capital=100_000,
+                             kill_switch_file=tmp_path / "ks.json",
+                             state_file=state, persist_state=True)
+        rc1.update_equity(98_000)
+        rc1.update_daily_pnl(-2_000)
+        rc1.update_consecutive_losses(True)
+        rc1.update_consecutive_losses(True)
+
+        restarted = RiskController(initial_capital=100_000,
+                                   kill_switch_file=tmp_path / "ks.json",
+                                   state_file=state, persist_state=True)
+        assert restarted.daily_pnl == -2_000.0
+        assert restarted.weekly_pnl == -2_000.0
+        assert restarted.consecutive_losses == 2
+        assert restarted.current_equity == 98_000.0
+        assert restarted.peak_equity == 100_000.0
+
+    def test_daily_loss_limit_trips_after_restart(self, tmp_path):
+        """The whole point of persistence: the 2% daily loss limit must
+        still fire after a process restart mid-day."""
+        state = tmp_path / "risk_state.json"
+        rc1 = RiskController(initial_capital=100_000,
+                             kill_switch_file=tmp_path / "ks.json",
+                             state_file=state, persist_state=True)
+        rc1.update_daily_pnl(-1_500)  # below the 2% (2000) limit
+
+        restarted = RiskController(initial_capital=100_000,
+                                   kill_switch_file=tmp_path / "ks.json",
+                                   state_file=state, persist_state=True)
+        restarted.update_daily_pnl(-1_000)  # cumulative -2500 > -2000
+        result = restarted.check_order(order_value=10_000, current_holdings_value=0)
+        checks = {c["check"]: c["passed"] for c in result["checks"]}
+        assert checks["daily_loss"] is False
+
+    def test_new_day_resets_daily_window_keeps_weekly(self, tmp_path, monkeypatch):
+        import src.trading.risk_controls as rc_mod
+
+        state = tmp_path / "risk_state.json"
+        rc1 = RiskController(initial_capital=100_000,
+                             kill_switch_file=tmp_path / "ks.json",
+                             state_file=state, persist_state=True)
+        rc1.update_daily_pnl(-3_000)
+
+        # Simulate a restart on the NEXT IST day within the same ISO week.
+        tomorrow = rc_mod.ist_today() + __import__("datetime").timedelta(days=1)
+        monkeypatch.setattr(rc_mod, "ist_today", lambda: tomorrow)
+
+        restarted = RiskController(initial_capital=100_000,
+                                   kill_switch_file=tmp_path / "ks.json",
+                                   state_file=state, persist_state=True)
+        assert restarted.daily_pnl == 0.0
+        # weekly window spans days: still carries the loss
+        assert restarted.weekly_pnl == -3_000.0
+
+    def test_new_week_resets_weekly_window(self, tmp_path, monkeypatch):
+        import datetime as dt
+        import src.trading.risk_controls as rc_mod
+
+        state = tmp_path / "risk_state.json"
+        rc1 = RiskController(initial_capital=100_000,
+                             kill_switch_file=tmp_path / "ks.json",
+                             state_file=state, persist_state=True)
+        rc1.update_daily_pnl(-3_000)
+
+        next_week = dt.date.fromisocalendar(2026, 1, 1)
+        if rc_mod.iso_week_key(next_week) == rc_mod.iso_week_key():
+            next_week = next_week + dt.timedelta(days=7)
+        monkeypatch.setattr(rc_mod, "ist_today", lambda: next_week)
+
+        restarted = RiskController(initial_capital=100_000,
+                                   kill_switch_file=tmp_path / "ks.json",
+                                   state_file=state, persist_state=True)
+        assert restarted.daily_pnl == 0.0
+        assert restarted.weekly_pnl == 0.0
+
+    def test_consecutive_loss_breaker_fires_across_restart(self, tmp_path):
+        state = tmp_path / "risk_state.json"
+        rc1 = RiskController(initial_capital=100_000,
+                             kill_switch_file=tmp_path / "ks.json",
+                             state_file=state, persist_state=True)
+        for _ in range(4):
+            rc1.update_consecutive_losses(True)
+        assert not rc1.halted
+
+        restarted = RiskController(initial_capital=100_000,
+                                   kill_switch_file=tmp_path / "ks.json",
+                                   state_file=state, persist_state=True)
+        restarted.update_consecutive_losses(True)  # 5th consecutive loss
+        assert restarted.halted is True
+
+    def test_corrupt_state_file_is_not_fatal(self, tmp_path):
+        state = tmp_path / "risk_state.json"
+        state.write_text("{not json")
+        rc = RiskController(initial_capital=100_000,
+                            kill_switch_file=tmp_path / "ks.json",
+                            state_file=state, persist_state=True)
+        assert rc.daily_pnl == 0.0

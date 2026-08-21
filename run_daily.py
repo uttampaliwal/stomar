@@ -67,10 +67,10 @@ def run_paper_trades(decisions: list, ledger, capital: float = 200_000,
         decisions = pending
 
     broker = get_broker()  # dry-run unless live gate fully passed (not used here)
-    risk = RiskController()
+    risk = RiskController(persist_state=True)  # loss windows survive restarts
     manager = ExecutionManager(broker, risk)
 
-    trader = PaperTrader(initial_capital=capital)
+    trader = PaperTrader(initial_capital=capital, persist_risk_state=True)
     # Same cross-process lock as the API: serialize with gunicorn workers that
     # read-modify-write paper_state.json, or the script's snapshot would
     # clobber (or be clobbered by) concurrent API mutations.

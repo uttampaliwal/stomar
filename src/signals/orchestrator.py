@@ -241,7 +241,7 @@ class DailyOrchestrator:
             trader = self.paper_trader
             if trader is None:
                 from src.core.constants import PAPER_STATE_PATH
-                trader = PaperTrader(initial_capital=200000)
+                trader = PaperTrader(initial_capital=200000, persist_risk_state=True)
                 if os.path.exists(PAPER_STATE_PATH):
                     try:
                         trader.load_state(PAPER_STATE_PATH)

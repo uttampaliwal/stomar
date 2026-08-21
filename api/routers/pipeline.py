@@ -79,7 +79,7 @@ def _run_worker(tickers: list[str]):
         from filelock import FileLock
 
         ledger = Ledger()
-        trader = PaperTrader(initial_capital=200000)
+        trader = PaperTrader(initial_capital=200000, persist_risk_state=True)
 
         # Cross-process lock: the same paper_state.json is read-modify-written by
         # every gunicorn worker's paper-trading router. Hold it for the whole

@@ -60,7 +60,7 @@ def get_manager() -> ExecutionManager:
         if _manager is None:
             _manager = ExecutionManager(
                 broker=None,  # paper path uses PaperTrader directly; gate-only
-                risk=RiskController(RiskLimits()),
+                risk=RiskController(RiskLimits(), persist_state=True),
                 max_stale_quote_seconds=15.0,
                 max_daily_orders=10,
                 portfolio_provider=_paper_portfolio_snapshot,
@@ -72,7 +72,9 @@ def get_trader():
     global _trader
     with _trader_lock:
         if _trader is None:
-            _trader = PaperTrader(initial_capital=200000)
+            # persist_risk_state=True: this router places orders, so the
+            # loss-limit counters it feeds must survive process restarts.
+            _trader = PaperTrader(initial_capital=200000, persist_risk_state=True)
             _trader.load_state(PAPER_STATE_PATH)
         return _trader
 
