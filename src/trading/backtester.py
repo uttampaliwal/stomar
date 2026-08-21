@@ -149,13 +149,17 @@ def run_walk_forward_backtest(
     import torch
 
     feature_cols = [c for c in feature_cols if c in df_feat.columns]
-    df_clean = df_feat[feature_cols + ["close"]].dropna()
+    # "open" is appended AFTER the features and "close" so every existing
+    # slice (features = [:, :len(feature_cols)], close = close_idx) keeps
+    # its meaning; open_idx is the next-open execution price column.
+    df_clean = df_feat[feature_cols + ["close", "open"]].dropna()
     df_clean = df_clean[~df_clean.index.duplicated(keep="first")]
     dates = df_clean.index.tolist()
     values = df_clean.values
     n = len(df_clean)
     feat_idx = {c: i for i, c in enumerate(feature_cols)}
     close_idx = len(feature_cols)
+    open_idx = close_idx + 1
 
     splits = walk_forward_split(df_clean, train_years, test_years, step_months)
     if not splits:
@@ -263,7 +267,14 @@ def run_walk_forward_backtest(
                 "lstm": d_l, "gru": d_g, "transformer": d_t, "xgb_prob": xgb_p,
             })
 
-            exec_price = curr_close_raw * (1 + slippage) if final_dir == 1 else curr_close_raw * (1 - slippage)
+            # Execution at the NEXT bar's open: every model input here is
+            # known by the close of bar i-1 (DL window ends at i-1, xgb
+            # uses row i-1), so the first price a real order could reach is
+            # bar i's open. Filling at close_i — the very price that
+            # decides `actual_dir` — let the backtest trade on the outcome
+            # it was scored against.
+            open_raw = test_values[i, open_idx]
+            exec_price = open_raw * (1 + slippage) if final_dir == 1 else open_raw * (1 - slippage)
 
             if final_dir == 1 and not in_position:
                 qty = int(portfolio.cash * position_pct / exec_price) if exec_price > 0 else 0
@@ -326,16 +337,21 @@ def run_simple_backtest(df_feat, signals, initial_capital=100000, brokerage=BROK
             price = signal.get("price", 0)
             if price == 0:
                 continue
+            # Signals are decided on information available at the PREVIOUS
+            # close, so execution happens at this bar's OPEN (next-open
+            # semantics). Fall back to the close reference when a caller
+            # did not supply "open" (legacy signal dicts).
+            exec_ref = signal.get("open") or price
 
             if signal["direction"] == 1 and not in_position.get(ticker):
-                exec_price = price * (1 + slippage)
+                exec_price = exec_ref * (1 + slippage)
                 qty = int(portfolio.cash * 0.25 / exec_price) if exec_price > 0 else 0
                 if qty > 0:
                     portfolio.buy(ticker, exec_price, qty, date, brokerage)
                     in_position[ticker] = {"qty": qty, "entry": exec_price, "date": date}
 
             elif signal["direction"] == 0 and in_position.get(ticker):
-                exec_price = price * (1 - slippage)
+                exec_price = exec_ref * (1 - slippage)
                 pos = in_position[ticker]
                 portfolio.sell(ticker, exec_price, pos["qty"], date, brokerage)
                 in_position[ticker] = None
@@ -399,6 +415,11 @@ def generate_model_signals(ticker, df_feat, lstm, gru, transformer, xgb, scaler,
             "direction": final,
             "confidence": conf,
             "price": float(data.loc[data.index[i], "close"]),
+            # Next bar's tradable reference: signals are known by the prior
+            # close, so the realistic fill reference is this bar's OPEN.
+            "open": float(df_feat.loc[data.index[i], "open"])
+            if "open" in df_feat.columns and pd.notna(df_feat.loc[data.index[i], "open"])
+            else float(data.loc[data.index[i], "close"]),
             "actual": 1 if scaled[i, 0] > prev_close else 0,
         }
     return {ticker: signals}

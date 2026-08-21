@@ -102,3 +102,46 @@ class TestSimulatedMetrics:
         )
         assert metrics["ensemble_accuracy"] == 0.55
         assert metrics["simulated_max_drawdown"] == pytest.approx(0.05)
+
+
+# ── next-open execution semantics ─────────────────────────────────────────
+
+def _sig(direction, close, open_):
+    return {"direction": direction, "confidence": 0.9,
+            "price": close, "open": open_, "actual": direction}
+
+
+def test_simple_backtest_buys_at_next_open_not_signal_close():
+    """Signals are known by the prior close; fills must reference this
+    bar's OPEN, not the close that decided the label."""
+    from src.trading.backtester import run_simple_backtest
+
+    signals = {"TEST.NS": {
+        "2026-01-05": _sig(1, close=110.0, open_=100.0),  # buy signal day
+        "2026-01-06": _sig(0, close=90.0, open_=105.0),   # exit signal day
+    }}
+    stats, portfolio = run_simple_backtest(
+        df_feat=None, signals=signals, initial_capital=100_000, slippage=0.0
+    )
+
+    buys = [t for t in portfolio.trades if t["action"] == "BUY"]
+    sells = [t for t in portfolio.trades if t["action"] == "SELL"]
+    assert buys, "expected a buy fill"
+    assert buys[0]["price"] == 100.0  # OPEN of the buy-signal bar
+    assert buys[0]["price"] != 110.0  # ...not its close
+    assert sells, "expected an exit fill"
+    assert sells[0]["price"] == 105.0  # OPEN of the exit-signal bar
+
+
+def test_simple_backtest_legacy_signals_fall_back_to_close():
+    """Signal dicts without an 'open' key keep working (close reference)."""
+    from src.trading.backtester import run_simple_backtest
+
+    signals = {"TEST.NS": {
+        "2026-01-05": {"direction": 1, "price": 100.0},
+    }}
+    stats, portfolio = run_simple_backtest(
+        df_feat=None, signals=signals, initial_capital=100_000, slippage=0.0
+    )
+    buys = [t for t in portfolio.trades if t["action"] == "BUY"]
+    assert buys and buys[0]["price"] == 100.0
