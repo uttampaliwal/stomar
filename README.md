@@ -381,6 +381,12 @@ uv run run_pipeline.py --paper                   # Train + paper trade
 uv run schedule_pipeline.py                      # Install daily 15:45 IST + boot catch-up
 uv run schedule_pipeline.py --remove             # Remove task
 uv run schedule_pipeline.py --run-now            # Run immediately
+
+# Readiness automation (live-money gate evidence, paper-only)
+uv run scripts/readiness_watchdog.py             # One daily cycle (battery + supervised dry-run)
+uv run scripts/readiness_watchdog.py --install   # Timers: Mon-Fri 16:10 + Sat deep replay
+uv run scripts/readiness_watchdog.py --status    # Green-streak progress (x/14)
+uv run scripts/readiness_report.py               # GO/NO-GO verdict across all requirements
 ```
 
 ---

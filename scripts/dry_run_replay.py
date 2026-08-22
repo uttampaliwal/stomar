@@ -538,6 +538,16 @@ def run_replay(tickers: list[str], days: int, capital: float,
           f"(capital ₹{capital:,.0f}, budget {max_daily_orders}/day)")
 
     os.makedirs(REPLAY_DIR, exist_ok=True)
+    # Audit ledgers are append-only, so stale files from previous runs would
+    # corrupt the audit-vs-report reconciliation. Session artifacts are
+    # fully regenerable — clear them (scenario subdirs are untouched).
+    for name in os.listdir(REPLAY_DIR):
+        if name.startswith(("orders-", "state-")) and \
+                (name.endswith(".jsonl") or name.endswith(".json")):
+            try:
+                os.unlink(os.path.join(REPLAY_DIR, name))
+            except OSError:
+                pass
     audit_dir = REPLAY_DIR
     broker = DryRunBroker(initial_cash=capital, slippage_bps=5.0)
     risk = RiskController(RiskLimits(), initial_capital=capital,
@@ -761,6 +771,25 @@ def verify_replay(result: dict, ledger_db="data/stomar.db"):
 
 # ── entrypoint ─────────────────────────────────────────────────────────────
 
+def run_safety_scenarios() -> tuple[list[dict], list[str]]:
+    """Run the full safety-scenario battery (isolated dirs, real paths).
+
+    Returns (checks, failures) so external callers (readiness watchdog)
+    can reuse the battery without going through main().
+    """
+    global CHECKS, FAILURES
+    CHECKS, FAILURES = [], []
+    scenario_mode_gate()
+    scenario_artifact_verification()
+    scenario_quote_freshness()
+    scenario_duplicate_and_cancel()
+    scenario_budget_rollover()
+    scenario_risk_blocks()
+    scenario_kill_switch()
+    scenario_partial_fill()
+    return list(CHECKS), list(FAILURES)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Historical replay dry-run")
     parser.add_argument("--days", type=int, default=15)
@@ -784,14 +813,7 @@ def main() -> int:
     print("=" * 68)
 
     if not args.skip_scenarios:
-        scenario_mode_gate()
-        scenario_artifact_verification()
-        scenario_quote_freshness()
-        scenario_duplicate_and_cancel()
-        scenario_budget_rollover()
-        scenario_risk_blocks()
-        scenario_kill_switch()
-        scenario_partial_fill()
+        run_safety_scenarios()
 
     result = run_replay(tickers, args.days, args.capital, args.max_daily_orders)
     verify_replay(result)

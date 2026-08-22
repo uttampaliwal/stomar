@@ -119,13 +119,30 @@ period. With those closed, the gate described in §3 can be opened.
 3. **Operator credentials & checklist.** Set `STOMAR_API_KEY`, broker
    credentials, and the confirmation phrase deliberately; document who
    holds the kill-switch override.
-4. **Supervised dry-run period** — TOOLING READY, PERIOD NOT RUN.
-   `scripts/dry_run_supervision.py` runs the real execution path
-   (ExecutionManager → DryRunBroker → reconciler) from today's
-   orchestrator decisions, writes daily reports to `data/dry_run/`
-   (order audit JSONL + `state.json` with positions, margin, risk status,
-   gate state). `DryRunBroker` now honors `initial_cash`. Run it daily for
-   ≥ 2 weeks; watch the audit log, reconciliations, and risk counters.
+4. **Supervised dry-run period** — AUTOMATED, WINDOW IN PROGRESS.
+    The full evidence loop now runs itself:
+
+    - **Daily (Mon–Fri 16:10 IST, systemd timer):**
+      `scripts/readiness_watchdog.py` executes the safety-scenario battery
+      (23 checks) plus today's supervised dry-run through the real
+      execution path, records a pass/fail entry in
+      `data/readiness/progress.json`, notifies on failure, and prunes old
+      artifacts. Idempotent per day; paper-only by construction.
+    - **Weekly (Sat 10:00 IST):** the same watchdog forces the full
+      historical replay regression (15 sessions × 20 tickers, 7
+      invariants).
+    - **Any time:** `scripts/readiness_report.py` prints the GO/NO-GO
+      verdict across all four blocking requirements (models schema,
+      sandbox validation, credentials acknowledged, dry-run streak ≥ 14).
+
+    Install/remove with `python scripts/readiness_watchdog.py --install |
+    --remove`; inspect with `--status`. Both timers use
+    `Persistent=true`, so a powered-off machine catches up on boot.
+
+    Remaining operator steps once the streak reaches 14: run
+    `scripts/validate_kite_sandbox.py` against the Zerodha sandbox (writes
+    `data/readiness/kite_sandbox.json`), set the five live-gate env vars
+    deliberately, then re-run the report.
 
 ## 4. Recommended (non-blocking)
 

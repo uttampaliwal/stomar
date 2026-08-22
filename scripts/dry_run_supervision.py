@@ -73,7 +73,7 @@ def run_supervision(tickers: list[str], capital: float = 500_000,
     )
 
     print("=== StoMar Supervised Dry-Run ===")
-    print(mode_banner())
+    print(mode_banner(mode))
     print(f"Broker:   {broker.name} (live={broker.is_live})")
     print(f"Capital:  Rs {capital:,.0f}")
     print(f"Audit:    {audit_dir}")
