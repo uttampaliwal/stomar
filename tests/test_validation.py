@@ -161,22 +161,30 @@ class TestPurgedWalkForward:
 
 class TestOOSMetrics:
     def test_constant_positive_returns(self):
+        from src.trading.simulate import nse_cost_rates
+        buy = nse_cost_rates()["buy"]
         df = pd.DataFrame({"y_true": np.full(100, 0.01), "y_pred": np.full(100, 0.9)})
         m = oos_metrics(df)
-        assert m["total_return"] == pytest.approx(1.01 ** 100 - 1, abs=1e-4)
+        # single entry pays the buy rate once; holding is free
+        expected_total = (1.01 - buy) * (1.01 ** 99) - 1
+        assert m["total_return"] == pytest.approx(expected_total, abs=1e-4)
         assert m["n_periods"] == 100
-        assert m["volatility"] == 0.0
-        assert m["sharpe"] == 0.0
+        assert m["volatility"] < 0.01
+        assert m["sharpe"] > 0
         assert isinstance(m["details"], dict)
 
     def test_balanced_alternation(self):
+        from src.trading.simulate import nse_cost_rates
+        buy = nse_cost_rates()["buy"]
         rets = np.tile([0.01, -0.01], 100)
         df = pd.DataFrame({"y_true": rets, "y_pred": np.full(200, 0.9)})
         m = oos_metrics(df)
-        assert m["total_return"] == pytest.approx(0.9999 ** 100 - 1, abs=5e-3)
+        # long throughout: only the entry pays; 199 remaining bars alternate
+        expected_total = (1.01 - buy) * (0.99 * 1.01) ** 99 * 0.99 - 1
+        assert m["total_return"] == pytest.approx(expected_total, abs=5e-3)
         vol = np.std(rets, ddof=1)
-        assert m["volatility"] == pytest.approx(round(vol * np.sqrt(252), 4), abs=1e-9)
-        assert m["sharpe"] == 0.0
+        assert m["volatility"] == pytest.approx(round(vol * np.sqrt(252), 4), abs=1e-2)
+        assert m["sharpe"] <= 0
 
     def test_signed_strategy(self):
         rets = np.tile([0.01, -0.01], 50)
@@ -194,21 +202,26 @@ class TestOOSMetrics:
         assert m["sharpe"] == 0.0
 
     def test_all_zero_returns(self):
+        from src.trading.simulate import nse_cost_rates
+        buy = nse_cost_rates()["buy"]
         df = pd.DataFrame({"y_true": np.zeros(50), "y_pred": np.full(50, 0.9)})
         m = oos_metrics(df)
-        assert m["volatility"] == 0.0
-        assert m["sharpe"] == 0.0
-        assert m["total_return"] == 0.0
+        assert m["total_return"] == pytest.approx((1 - buy) ** 1 * 1.0 ** 49 - 1, abs=1e-4)
 
     def test_known_drawdown(self):
-        # long when +1%, flat when -1% -> no drawdown
+        from src.trading.simulate import nse_cost_rates
+        rates = nse_cost_rates()
+        # long when up, flat when down -> daily round trips pay both rates
         df = pd.DataFrame({
             "y_true": np.tile([0.01, -0.01], 50),
             "y_pred": np.array([0.9, 0.1] * 50),
         })
         m = oos_metrics(df)
-        assert m["max_drawdown"] == 0.0
-        assert m["total_return"] == pytest.approx(1.01 ** 50 - 1, abs=1e-4)
+        expected_total = ((1.01 - rates["buy"]) * (1 - rates["sell"])) ** 50 - 1
+        assert m["total_return"] == pytest.approx(expected_total, abs=1e-4)
+        # flat periods bleed the sell rate below the local peak
+        assert m["max_drawdown"] < 0
+        assert m["max_drawdown"] > -0.01
 
 
 class TestPerformanceMetrics:

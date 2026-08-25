@@ -239,10 +239,15 @@ def _walk_forward_xgb(X, y, ticker, n_splits=5, returns=None, embargo=5, horizon
 
     oos_metric_dict = {}
     if returns is not None and oos_chunks:
+        from src.trading.simulate import positions_from_predictions, strategy_return_series
+
         oos_df = pd.concat(oos_chunks, ignore_index=True)
-        pos = np.where(oos_df["y_pred"].values > 0.5, 1.0, 0.0)
-        strat_ret = pos * oos_df["ret"].values
+        # Shared convention (src/trading/simulate.py): directional long-flat
+        # positions at full exposure, NSE costs charged on every position change.
+        position = positions_from_predictions(oos_df["y_pred"].values)
+        strat_ret = strategy_return_series(position, oos_df["ret"].values)
         oos_metric_dict = performance_metrics(pd.Series(strat_ret))
+        oos_metric_dict["cost_model"] = "nse_effective"
         oos_metric_dict["n_folds"] = len(oos_chunks)
         oos_metric_dict["fold_accuracies"] = [round(a, 4) for a in fold_accs]
 

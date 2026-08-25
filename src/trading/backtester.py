@@ -141,6 +141,14 @@ def run_walk_forward_backtest(
     brokerage=BROKERAGE_RATE,
     slippage=SLIPPAGE_RATE,
 ):
+    """Walk-forward train/predict/trade loop used by the pipeline evaluate gate.
+
+    Follows the shared convention in src/trading/simulate.py: signals from
+    data <= t trade at t's close (+ slippage) and earn t -> t+1; every trade
+    pays NSE costs via Portfolio.calculate_nse_costs. This event-driven
+    portfolio path and the vectorized simulate.engine must stay consistent;
+    research numbers should use simulate.strategy_return_series.
+    """
     from src.models.model import build_lstm, build_gru, build_transformer, build_xgb_model, DEVICE
     from src.models.trainer import _train_one_model, SEQ_LENGTH, BATCH_SIZE
     from sklearn.preprocessing import MinMaxScaler

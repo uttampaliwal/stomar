@@ -338,13 +338,12 @@ def oos_metrics(
     y_true = predictions["y_true"].astype(float).values
     y_pred = predictions["y_pred"].astype(float).values
 
-    if strategy == "signed":
-        position = 2.0 * y_pred - 1.0
-    else:
-        position = np.where(y_pred > 0.5, 1.0, 0.0)
+    from src.trading.simulate import positions_from_predictions, strategy_return_series
 
-    # Strategy returns: long gets the full move, flat gets 0
-    strat_returns = position * y_true
+    position = positions_from_predictions(y_pred, strategy=strategy)
+
+    # Cost-adjusted strategy returns under the shared simulate.py convention
+    strat_returns = strategy_return_series(position, y_true)
     cum = np.cumprod(1.0 + strat_returns)
     peak = np.maximum.accumulate(cum)
     drawdown = cum / peak - 1.0
