@@ -16,6 +16,7 @@ from src.models.model import (
 )
 from src.core.constants import DEFAULT_SEQ_LENGTH, DEFAULT_EPOCHS, DEFAULT_BATCH_SIZE, DEFAULT_LEARNING_RATE, MODELS_DIR
 from src.core.logging_config import get_logger
+from src.core.settings import settings
 from src.models.trainer_features import (
     FEATURE_COLS as FEATURE_COLS,  # re-export: model.py / test_safety_leakage import it from here
     OPTIONAL_FEATURES as OPTIONAL_FEATURES,
@@ -59,17 +60,27 @@ def carve_dl_validation(n_train: int,
 
 def _collect_meta_features(lstm, gru, transformer, xgb, scaler, feature_cols,
                            df_feat, split_idx, seq_length, lgb_model=None,
-                           cat_model=None):
+                           cat_model=None, labels=None):
     """Collect out-of-fold predictions from base models for meta-learner training.
 
     Returns (X_meta, y_meta) where X_meta is (N, 6) with columns:
     [xgb_prob_up, lgb_prob_up, lstm_prob, gru_prob, transformer_prob, cat_prob_up]
     and y_meta is binary direction labels.
+
+    Args:
+        labels: Optional full-index Series aligned with df_feat providing the
+            target for each row (e.g. triple-barrier outcomes with NaN for
+            time-barrier rows). When given, NaN rows are skipped; otherwise
+            y is derived from close-to-close direction.
     """
     feature_cols_valid = [c for c in feature_cols if c in df_feat.columns]
     data = df_feat[feature_cols_valid].dropna()
     if len(data) < seq_length + split_idx + 10:
         return None
+
+    label_arr = None
+    if labels is not None:
+        label_arr = labels.reindex(data.index).to_numpy(dtype=float)
 
     scaled = scaler.transform(data.values)
     n_samples = len(scaled) - seq_length - split_idx
@@ -88,7 +99,13 @@ def _collect_meta_features(lstm, gru, transformer, xgb, scaler, feature_cols,
     for i in range(split_idx + seq_length, len(scaled)):
         prev_close = scaled[i - 1, 0]
         actual_close = scaled[i, 0]
-        actual_dir = 1 if actual_close > prev_close else 0
+        if label_arr is not None:
+            y_true_row = label_arr[i]
+            if np.isnan(y_true_row):
+                continue  # time-barrier row: no usable target
+            actual_dir = int(y_true_row)
+        else:
+            actual_dir = 1 if actual_close > prev_close else 0
 
         p_lstm = p_gru = p_tf = 0.0
         prob_lstm = prob_gru = prob_tf = 0.5  # placeholders for tree-only bundles
@@ -290,6 +307,65 @@ def _walk_forward_dl(scaled, seq_length, n_splits=5):
     return split, []
 
 
+def barrier_binary_labels(df_feat) -> "pd.Series | None":
+    """Triple-barrier outcomes as a full-index binary Series.
+
+    1.0 = profit barrier hit first, 0.0 = loss barrier hit first,
+    NaN = time-barrier (no clean hit within the window) or column missing.
+    The NaN rows are unusable as class targets — callers either drop them
+    (tree training) or skip them (meta-learner collection).
+    """
+    if df_feat is None or "tb_label" not in df_feat.columns:
+        return None
+    labels = pd.Series(np.nan, index=df_feat.index)
+    labels[df_feat["tb_label"] == 1] = 1.0
+    labels[df_feat["tb_label"] == 0] = 0.0
+    return labels
+
+
+def build_tree_targets(df_feat, feature_cols: list, label_type: str = "direction"):
+    """Supervised frame for the tree models under the configured label type.
+
+    direction:
+        y = target_direction (next-day close up/down), every row kept.
+    triple_barrier:
+        y = tb_label in {0, 1} (profit-first vs loss-first within the barrier
+        window); time-barrier rows are dropped — they say nothing tradeable
+        and would blur both classes. Forward returns stay aligned for OOS
+        strategy metrics.
+
+    Returns:
+        (X, y, fwd_returns) — fwd_returns is None when unavailable,
+        or (None, None, None) when too little usable data remains.
+    """
+    cols = [c for c in feature_cols + ["target_direction", "target", "tb_label"]
+            if c in df_feat.columns]
+    data = df_feat[cols].dropna()
+
+    if label_type == "triple_barrier":
+        if "tb_label" not in data.columns:
+            logger.warning("label_type=triple_barrier but tb_label missing; "
+                           "falling back to direction labels")
+            label_type = "direction"
+        else:
+            data = data[data["tb_label"].isin([0, 1])]
+            if len(data) < 100:
+                logger.warning("triple_barrier rows=%d < 100 after dropping "
+                               "time-barrier rows; falling back to direction "
+                               "labels", len(data))
+                data = df_feat[cols].dropna()
+                label_type = "direction"
+
+    if len(data) < 50:
+        return None, None, None
+
+    X = data[feature_cols]
+    y = data["tb_label"].astype(int) if label_type == "triple_barrier" else data["target_direction"]
+    y = y.rename("y")
+    fwd = data["target"] if "target" in data.columns else None
+    return X, y, fwd
+
+
 def train_for_ticker(ticker: str, force_retrain: bool = False,
                      epochs: int = EPOCHS, save: bool = True):
     logger.info("training_start ticker=%s force_retrain=%s epochs=%d", ticker, force_retrain, epochs)
@@ -316,15 +392,20 @@ def train_for_ticker(ticker: str, force_retrain: bool = False,
 
     lstm_features = select_training_features(df_feat, ticker)
 
+    label_type = getattr(settings, "label_type", "direction")
+    logger.info("label_convention ticker=%s label_type=%s", ticker, label_type)
+
     # --- XGBoost (purged walk-forward) ---
     logger.info("training_xgboost ticker=%s", ticker)
-    xgb_cols = lstm_features + ["target_direction", "target"]
-    xgb_data = df_feat[[c for c in xgb_cols if c in df_feat.columns]].dropna()
-    X_xgb = xgb_data[lstm_features]
-    y_xgb = xgb_data["target_direction"]
-    fwd_returns = xgb_data["target"] if "target" in xgb_data.columns else None
+    X_xgb, y_xgb, fwd_returns = build_tree_targets(df_feat, lstm_features, label_type)
+    if X_xgb is None:
+        raise ValueError(f"insufficient usable rows for tree training on {ticker}")
+    barrier_labels_full = (
+        barrier_binary_labels(df_feat) if label_type == "triple_barrier" else None
+    )
     up_c, dn_c = int(y_xgb.sum()), len(y_xgb) - int(y_xgb.sum())
-    logger.info("xgb_class_distribution ticker=%s up=%d down=%d", ticker, up_c, dn_c)
+    logger.info("xgb_class_distribution ticker=%s up=%d down=%d rows=%d",
+                ticker, up_c, dn_c, len(y_xgb))
 
     X_tr, X_te, y_tr, y_te, fold_accs = _walk_forward_xgb(
         X_xgb, y_xgb, ticker, returns=fwd_returns
@@ -453,6 +534,7 @@ def train_for_ticker(ticker: str, force_retrain: bool = False,
         meta_features = _collect_meta_features(
             lstm_model, gru_model, tf_model, xgb_model, scaler,
             lstm_features, df_feat, split, SEQ_LENGTH, lgb_model, cat_model,
+            labels=barrier_labels_full,
         )
         if meta_features is not None:
             X_meta, y_meta = meta_features

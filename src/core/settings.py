@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 try:
-    from pydantic import Field
+    from pydantic import Field, field_validator
     from pydantic_settings import BaseSettings
     _HAS_PYDANTIC_SETTINGS = True
 except ImportError:
@@ -109,6 +109,22 @@ if _HAS_PYDANTIC_SETTINGS:
         min_oos_accuracy: float = Field(default=0.50, description="Min out-of-sample accuracy gate")
         min_oos_sharpe: float = Field(default=0.0, description="Min out-of-sample Sharpe gate")
         max_drawdown_threshold: float = Field(default=0.30, description="Max drawdown gate for pipeline")
+        label_type: str = Field(
+            default="direction",
+            description="Training labels: 'direction' (next-day up/down) or "
+            "'triple_barrier' (profit-first vs loss-first within the barrier "
+            "window; time-barrier rows dropped)",
+        )
+
+        @field_validator("label_type")
+        @classmethod
+        def _validate_label_type(cls, v: str) -> str:
+            v = str(v).strip().lower()
+            if v not in ("direction", "triple_barrier"):
+                raise ValueError(
+                    f"STOMAR_LABEL_TYPE must be 'direction' or 'triple_barrier', got {v!r}"
+                )
+            return v
 
         # ── Data Retention ─────────────────────────────────────────────────
         cache_retention_days: int = Field(default=7, description="Days to keep stale cache files (parquet, pkl, json)")
@@ -228,6 +244,12 @@ else:
             self.min_oos_accuracy = _coerce_float("STOMAR_MIN_OOS_ACCURACY", 0.50)
             self.min_oos_sharpe = _coerce_float("STOMAR_MIN_OOS_SHARPE", 0.0)
             self.max_drawdown_threshold = _coerce_float("STOMAR_MAX_DRAWDOWN_THRESHOLD", 0.30)
+            self.label_type = os.environ.get("STOMAR_LABEL_TYPE", "direction").strip().lower()
+            if self.label_type not in ("direction", "triple_barrier"):
+                raise ValueError(
+                    f"STOMAR_LABEL_TYPE must be 'direction' or 'triple_barrier', "
+                    f"got {self.label_type!r}"
+                )
             # Data Retention
             self.cache_retention_days = _coerce_int("STOMAR_CACHE_RETENTION_DAYS", 7)
             self.ledger_retention_days = _coerce_int("STOMAR_LEDGER_RETENTION_DAYS", 90)
