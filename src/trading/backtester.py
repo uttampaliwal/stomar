@@ -126,6 +126,23 @@ def _attach_simulated_metrics(metrics: dict, eq_metrics: dict) -> dict:
     return metrics
 
 
+def _barrier_exit(bar_open, bar_high, bar_low, stop_price, take_profit_price):
+    """Intraday stop-loss / take-profit fill for one daily bar, gap-aware.
+
+    A stop that gaps (open beyond the level) fills at the open — you cannot
+    conjure the stop price out of a gap. Stop takes precedence over target
+    when both are touched in one bar (pessimistic by convention).
+
+    Returns:
+        (fill_price, reason) or (None, None) when neither barrier is hit.
+    """
+    if bar_low <= stop_price:
+        return min(bar_open, stop_price), "stop_loss"
+    if bar_high >= take_profit_price:
+        return max(bar_open, take_profit_price), "take_profit"
+    return None, None
+
+
 def run_walk_forward_backtest(
     ticker,
     df_feat,
@@ -144,10 +161,15 @@ def run_walk_forward_backtest(
     """Walk-forward train/predict/trade loop used by the pipeline evaluate gate.
 
     Follows the shared convention in src/trading/simulate.py: signals from
-    data <= t trade at t's close (+ slippage) and earn t -> t+1; every trade
-    pays NSE costs via Portfolio.calculate_nse_costs. This event-driven
-    portfolio path and the vectorized simulate.engine must stay consistent;
+    data <= t-1 execute at bar t's open (+ slippage); every trade pays NSE
+    costs via Portfolio.calculate_nse_costs. While holding, intraday
+    stop-loss/take-profit barriers are enforced against each bar's high/low
+    (gap-through fills at the open; stop takes precedence when both are
+    touched; no same-bar re-entry after a barrier exit). This event-driven
+    portfolio path and the vectorized simulate engine must stay consistent;
     research numbers should use simulate.strategy_return_series.
+
+    Note: max_positions is vestigial for this single-ticker loop (always 1).
     """
     from src.models.model import build_lstm, build_gru, build_transformer, build_xgb_model, DEVICE
     from src.models.trainer import _train_one_model, SEQ_LENGTH, BATCH_SIZE
@@ -157,17 +179,20 @@ def run_walk_forward_backtest(
     import torch
 
     feature_cols = [c for c in feature_cols if c in df_feat.columns]
-    # "open" is appended AFTER the features and "close" so every existing
-    # slice (features = [:, :len(feature_cols)], close = close_idx) keeps
-    # its meaning; open_idx is the next-open execution price column.
-    df_clean = df_feat[feature_cols + ["close", "open"]].dropna()
+    # "open"/"high"/"low" are appended AFTER the features and "close" so every
+    # existing slice (features = [:, :len(feature_cols)], close = close_idx)
+    # keeps its meaning; open drives next-open execution, high/low drive the
+    # intraday stop-loss/take-profit barriers.
+    ohlc_cols = [c for c in ("open", "high", "low") if c in df_feat.columns]
+    df_clean = df_feat[feature_cols + ["close"] + ohlc_cols].dropna()
     df_clean = df_clean[~df_clean.index.duplicated(keep="first")]
     dates = df_clean.index.tolist()
     values = df_clean.values
     n = len(df_clean)
     feat_idx = {c: i for i, c in enumerate(feature_cols)}
     close_idx = len(feature_cols)
-    open_idx = close_idx + 1
+    col_idx = {name: close_idx + 1 + j for j, name in enumerate(ohlc_cols)}
+    has_range = {"open", "high", "low"} <= set(col_idx)
 
     splits = walk_forward_split(df_clean, train_years, test_years, step_months)
     if not splits:
@@ -177,6 +202,7 @@ def run_walk_forward_backtest(
     portfolio = Portfolio(initial_capital)
     equity_points = []
     in_position = False
+    entry_stop_tp = None  # (stop_price, take_profit_price) while holding
 
     logger.info("walk_forward_start windows=%d train_years=%d test_years=%d", len(splits), train_years, test_years)
 
@@ -281,20 +307,45 @@ def run_walk_forward_backtest(
             # bar i's open. Filling at close_i — the very price that
             # decides `actual_dir` — let the backtest trade on the outcome
             # it was scored against.
-            open_raw = test_values[i, open_idx]
+            open_raw = test_values[i, col_idx["open"]]
             exec_price = open_raw * (1 + slippage) if final_dir == 1 else open_raw * (1 - slippage)
 
-            if final_dir == 1 and not in_position:
-                qty = int(portfolio.cash * position_pct / exec_price) if exec_price > 0 else 0
-                if qty > 0:
-                    portfolio.buy(ticker, exec_price, qty, date_val)
-                    in_position = True
-            elif final_dir == 0 and in_position:
+            barrier_fired = False
+            if in_position and final_dir == 0:
                 ticker_key = list(portfolio.holdings.keys())[0] if portfolio.holdings else ticker
                 if ticker_key in portfolio.holdings:
                     held_qty = portfolio.holdings[ticker_key][0]
                     portfolio.sell(ticker_key, exec_price, held_qty, date_val)
+                in_position = False
+                entry_stop_tp = None
+            elif in_position and has_range:
+                px, _hit = _barrier_exit(
+                    test_values[i, col_idx["open"]],
+                    test_values[i, col_idx["high"]],
+                    test_values[i, col_idx["low"]],
+                    entry_stop_tp[0], entry_stop_tp[1],
+                )
+                if px is not None:
+                    ticker_key = list(portfolio.holdings.keys())[0] if portfolio.holdings else ticker
+                    if ticker_key in portfolio.holdings:
+                        held_qty = portfolio.holdings[ticker_key][0]
+                        portfolio.sell(ticker_key, px * (1 - slippage), held_qty, date_val)
                     in_position = False
+                    entry_stop_tp = None
+                    barrier_fired = True
+
+            if final_dir == 1 and not in_position and not barrier_fired:
+                qty = int(portfolio.cash * position_pct / exec_price) if exec_price > 0 else 0
+                if qty > 0:
+                    portfolio.buy(ticker, exec_price, qty, date_val)
+                    in_position = True
+                    if has_range and stop_loss_pct > 0 and take_profit_pct > 0:
+                        entry_stop_tp = (
+                            exec_price * (1 - stop_loss_pct),
+                            exec_price * (1 + take_profit_pct),
+                        )
+                    else:
+                        entry_stop_tp = None
 
             equity_points.append({"date": date_val, "equity": portfolio.portfolio_value({ticker: curr_close_raw})})
 

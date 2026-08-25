@@ -104,6 +104,40 @@ class TestSimulatedMetrics:
         assert metrics["simulated_max_drawdown"] == pytest.approx(0.05)
 
 
+class TestBarrierExit:
+    """Intraday stop-loss / take-profit fills (gap-aware, stop precedence)."""
+
+    def test_no_barrier_touch(self):
+        from src.trading.backtester import _barrier_exit
+        px, hit = _barrier_exit(100.0, 104.0, 98.0, stop_price=95.0, take_profit_price=110.0)
+        assert px is None and hit is None
+
+    def test_stop_touched_intrabar_fills_at_stop(self):
+        from src.trading.backtester import _barrier_exit
+        px, hit = _barrier_exit(100.0, 103.0, 94.0, stop_price=95.0, take_profit_price=110.0)
+        assert px == 95.0 and hit == "stop_loss"
+
+    def test_stop_gapped_through_fills_at_open(self):
+        from src.trading.backtester import _barrier_exit
+        px, hit = _barrier_exit(92.0, 96.0, 91.0, stop_price=95.0, take_profit_price=110.0)
+        assert px == 92.0 and hit == "stop_loss"
+
+    def test_take_profit_touched_fills_at_target(self):
+        from src.trading.backtester import _barrier_exit
+        px, hit = _barrier_exit(100.0, 112.0, 99.0, stop_price=95.0, take_profit_price=110.0)
+        assert px == 110.0 and hit == "take_profit"
+
+    def test_take_profit_gapped_up_fills_at_open(self):
+        from src.trading.backtester import _barrier_exit
+        px, hit = _barrier_exit(115.0, 118.0, 114.0, stop_price=95.0, take_profit_price=110.0)
+        assert px == 115.0 and hit == "take_profit"
+
+    def test_both_touched_same_bar_stop_wins(self):
+        from src.trading.backtester import _barrier_exit
+        px, hit = _barrier_exit(100.0, 112.0, 90.0, stop_price=95.0, take_profit_price=110.0)
+        assert px == 95.0 and hit == "stop_loss"
+
+
 # ── next-open execution semantics ─────────────────────────────────────────
 
 def _sig(direction, close, open_):
