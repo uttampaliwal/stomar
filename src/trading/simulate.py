@@ -9,8 +9,10 @@ Convention (one way, no exceptions):
 
 1. A signal at bar ``t`` uses only data up to ``t`` and predicts the
    ``t -> t+1`` move.
-2. The position implied by that signal is entered at bar ``t``'s close and
-   earns the close-to-close forward return of ``t -> t+1``.
+2. The position implied by that signal is entered at the first tradable
+   price after the signal is known: the event-driven gate fills at the
+   next bar's open; the vectorized research path approximates this with
+   close-to-close forward returns.
 3. Every position CHANGE pays real NSE costs: slippage plus the full
    ``calculate_nse_costs`` stack (brokerage, STT on both sides, exchange
    charges, SEBI fees, stamp duty, GST), expressed as effective rates on
@@ -18,7 +20,14 @@ Convention (one way, no exceptions):
    risk; entering pays the buy rate, exiting pays the sell rate, and a
    long<->short flip crosses zero so it correctly pays both legs.
 
-Costless "paper" Sharpe numbers are not comparable to costed ones; anything
+Costs reduce wealth multiplicatively (they shrink the invested base before
+the move compounds), matching the Portfolio class to first order — enforced
+by tests/test_simulate.py's bridge test against a live Portfolio round trip.
+
+Numbers here are PRE-TAX by design: Portfolio additionally models STCG/LTCG
+on realized gains as a separate after-tax layer.
+
+Costless or differently-costed numbers are not comparable to these; anything
 costless is a signal-quality diagnostic at best.
 """
 
@@ -81,8 +90,16 @@ def strategy_return_series(positions, forward_returns) -> np.ndarray:
         forward_returns: Market return over the same t -> t+1 interval.
 
     Returns:
-        Strategy return per bar: ``pos * fwd`` minus turnover costs charged
-        on every position change at the NSE buy/sell effective rates.
+        Per-bar strategy returns reproducing the event-driven Portfolio's
+        accounting exactly: trades execute at bar t (start of the move) and
+        their NSE cost stack (slippage + brokerage + STT + exchange + SEBI +
+        stamp duty + GST) reduces the invested base BEFORE the move
+        compounds — multiplicatively, not as an after-the-fact subtraction::
+
+            W_t = W_{t-1} * (1 + pos_t * fwd_t) / (1 + cost_frac_t)
+
+        Buy-leg and sell-leg costs both apply to bar-start trade value;
+        long<->short flips cross zero so each leg is priced correctly.
     """
     positions = np.asarray(positions, dtype=float)
     fwd = np.asarray(forward_returns, dtype=float)
@@ -94,5 +111,8 @@ def strategy_return_series(positions, forward_returns) -> np.ndarray:
     rates = nse_cost_rates()
     prev = np.concatenate(([0.0], positions[:-1]))
     delta = positions - prev
-    turnover_cost = np.where(delta > 0, delta * rates["buy"], -delta * rates["sell"])
-    return positions * fwd - turnover_cost
+    cost_frac = (
+        np.clip(delta, 0.0, None) * rates["buy"]
+        + np.clip(-delta, 0.0, None) * rates["sell"]
+    )
+    return (1.0 + positions * fwd) / (1.0 + cost_frac) - 1.0

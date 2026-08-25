@@ -165,8 +165,8 @@ class TestOOSMetrics:
         buy = nse_cost_rates()["buy"]
         df = pd.DataFrame({"y_true": np.full(100, 0.01), "y_pred": np.full(100, 0.9)})
         m = oos_metrics(df)
-        # single entry pays the buy rate once; holding is free
-        expected_total = (1.01 - buy) * (1.01 ** 99) - 1
+        # single entry pays the buy rate once (multiplicatively); holding is free
+        expected_total = (1.01 / (1 + buy)) * (1.01 ** 99) - 1
         assert m["total_return"] == pytest.approx(expected_total, abs=1e-4)
         assert m["n_periods"] == 100
         assert m["volatility"] < 0.01
@@ -180,7 +180,7 @@ class TestOOSMetrics:
         df = pd.DataFrame({"y_true": rets, "y_pred": np.full(200, 0.9)})
         m = oos_metrics(df)
         # long throughout: only the entry pays; 199 remaining bars alternate
-        expected_total = (1.01 - buy) * (0.99 * 1.01) ** 99 * 0.99 - 1
+        expected_total = (1.01 / (1 + buy)) * (0.99 * 1.01) ** 99 * 0.99 - 1
         assert m["total_return"] == pytest.approx(expected_total, abs=5e-3)
         vol = np.std(rets, ddof=1)
         assert m["volatility"] == pytest.approx(round(vol * np.sqrt(252), 4), abs=1e-2)
@@ -206,7 +206,7 @@ class TestOOSMetrics:
         buy = nse_cost_rates()["buy"]
         df = pd.DataFrame({"y_true": np.zeros(50), "y_pred": np.full(50, 0.9)})
         m = oos_metrics(df)
-        assert m["total_return"] == pytest.approx((1 - buy) ** 1 * 1.0 ** 49 - 1, abs=1e-4)
+        assert m["total_return"] == pytest.approx(1 / (1 + buy) - 1, abs=1e-4)
 
     def test_known_drawdown(self):
         from src.trading.simulate import nse_cost_rates
@@ -217,7 +217,9 @@ class TestOOSMetrics:
             "y_pred": np.array([0.9, 0.1] * 50),
         })
         m = oos_metrics(df)
-        expected_total = ((1.01 - rates["buy"]) * (1 - rates["sell"])) ** 50 - 1
+        expected_total = (
+            (1.01 / (1 + rates["buy"])) / (1 + rates["sell"])
+        ) ** 50 - 1
         assert m["total_return"] == pytest.approx(expected_total, abs=1e-4)
         # flat periods bleed the sell rate below the local peak
         assert m["max_drawdown"] < 0
