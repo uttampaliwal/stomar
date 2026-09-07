@@ -63,3 +63,44 @@ def select_training_features(df_feat: pd.DataFrame, ticker: str) -> list[str]:
             len(FEATURE_COLS) - len(missing_optional), len(FEATURE_COLS),
         )
     return [c for c in FEATURE_COLS if c in df_feat.columns]
+
+
+def build_feature_frame(df: pd.DataFrame, ticker: str | None = None,
+                        index_df: pd.DataFrame | None = None,
+                        load_index: bool = True) -> pd.DataFrame:
+    """Build the trainer-identical feature frame for inference (O2 parity).
+
+    Every consumer (trainer, daily orchestrator, pipeline hash, backfill,
+    edge gate) must build features through this single function. Previously
+    inference paths used bare ``add_technical_indicators`` and silently
+    zero-filled the 16 SOTA factors at serve time.
+
+    Args:
+        df: OHLCV data indexed by date with open/high/low/close/volume.
+        ticker: Optional ticker for external PIT features (sentiment, flows,
+            PCR, MTF). None → neutral defaults (historical convention).
+        index_df: NIFTY history for relative strength, or None to skip.
+            Defaults to best-effort local load (never raises).
+
+    Returns:
+        Feature DataFrame (all-NaN columns dropped, like training).
+        Never raises for missing optionals; raises ValueError on empty input
+        (from compute_features) or missing REQUIRED_FEATURES.
+    """
+    from src.signals.feature_pipeline import compute_features
+
+    if index_df is None and load_index:
+        try:
+            from src.signals.feature_pipeline import load_index_history
+
+            index_df = load_index_history(period="5y")
+        except Exception as exc:
+            logger.debug("index history unavailable, continuing without it: %s", exc)
+
+    df_feat = compute_features(df, ticker=ticker, index_df=index_df)
+    df_feat = df_feat.dropna(axis=1, how="all")
+
+    missing_required = sorted(set(REQUIRED_FEATURES) - set(df_feat.columns))
+    if missing_required:
+        raise ValueError(f"required features missing: {missing_required}")
+    return df_feat

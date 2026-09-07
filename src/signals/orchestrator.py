@@ -371,7 +371,7 @@ class DailyOrchestrator:
     def _run_ensemble(self, ticker: str, df: pd.DataFrame, signals: dict = None) -> dict:
         """Run ensemble prediction, using a per-ticker meta-learner when available."""
         try:
-            from src.data.features import add_technical_indicators
+            from src.models.trainer_features import build_feature_frame
             from src.models.model import load_models, models_exist, model_feature_cols
             from src.models.ensemble import predict_ensemble, load_meta_model
             from src.core.constants import MODELS_DIR
@@ -399,7 +399,10 @@ class DailyOrchestrator:
                 except Exception as e:
                     logger.debug(f"Could not load per-ticker meta for {ticker}: {e}")
 
-            df_feat = add_technical_indicators(df)
+            # Trainer-identical feature frame (O2 parity): the full SOTA factor
+            # set, not the bare legacy indicators. Freshly computed signals
+            # below override the cache-derived PIT values on the last row.
+            df_feat = build_feature_frame(df, ticker=ticker)
 
             # Inject real-time signal values as features for the model
             signal_map = {

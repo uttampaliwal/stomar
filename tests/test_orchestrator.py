@@ -112,10 +112,18 @@ def test_run_ensemble_keeps_latest_bar_for_inference(ledger, sample_df):
         return (1, 80.0, {})
 
     orch = DailyOrchestrator(tickers=["TEST.NS"], ledger=ledger)
+    # O2 parity: _run_ensemble builds features via the shared
+    # trainer_features.build_feature_frame seam (not the legacy
+    # add_technical_indicators) — patch the seam. NOTE: patching must name
+    # the seam module; a lazy first-import inside the patch would otherwise
+    # bind the mock into feature_pipeline's namespace.
+    def fake_frame(df_in, ticker=None, **kwargs):
+        return fake_features(df_in)
+
     with patch("src.models.model.models_exist", return_value=True), \
          patch("src.models.model.load_models", return_value=tup), \
          patch("src.models.model.model_feature_cols", return_value=feature_cols), \
-         patch("src.data.features.add_technical_indicators", side_effect=fake_features), \
+         patch("src.models.trainer_features.build_feature_frame", side_effect=fake_frame), \
          patch("src.models.ensemble.predict_ensemble", side_effect=fake_predict), \
          patch("src.signals.interpretability.explain_prediction", return_value={"top": []}):
         result = orch._run_ensemble("TEST.NS", sample_df)

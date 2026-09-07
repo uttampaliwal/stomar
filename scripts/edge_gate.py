@@ -172,15 +172,13 @@ def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float) -> dict | No
     except Exception as exc:
         logger.warning("skip %s: no cached history (%s)", ticker, exc)
         return None
-    # Full factor set via the SAME builder the trainer uses (feature_pipeline
-    # wraps add_technical_indicators + SOTA factors). Bare
-    # add_technical_indicators() cannot serve stored bundles (16 stored
-    # columns missing -> scaler shape error). External PIT features resolve
-    # from on-disk caches (sentiment JSON, fii_dii + MTF parquet) with
-    # neutral defaults — same convention as training backfill.
-    from src.signals.feature_pipeline import compute_features
+    # Full factor set via the shared trainer-identical builder (O2 parity).
+    # External PIT features resolve from on-disk caches (sentiment JSON,
+    # fii_dii + MTF parquet) with neutral defaults — same convention as
+    # training backfill.
+    from src.models.trainer_features import build_feature_frame
 
-    df_feat = compute_features(df, ticker=ticker, include_external=True)
+    df_feat = build_feature_frame(df, ticker=ticker)
 
     try:
         lstm, gru, transformer, xgb, scaler, features, lgb = load_models(ticker)

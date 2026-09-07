@@ -627,7 +627,7 @@ class TestRetrainingPipelineCheckpoint:
         # Mock all stages to succeed
         with patch("src.data.data_fetcher.fetch_stock_data") as mock_fetch, \
              patch("src.data.data_validation.validate_data") as mock_val, \
-             patch("src.data.features.add_technical_indicators") as mock_feat, \
+             patch("src.models.trainer_features.build_feature_frame") as mock_frame, \
              patch("src.data.feature_store.compute_feature_hash") as mock_hash, \
              patch("src.data.feature_store.register_feature_version"), \
              patch("src.models.trainer.train_for_ticker") as mock_train, \
@@ -645,7 +645,7 @@ class TestRetrainingPipelineCheckpoint:
 
             mock_fetch.return_value = df
             mock_val.return_value = {"passed": True, "errors": [], "warnings": [], "data_points": 100}
-            mock_feat.return_value = df
+            mock_frame.return_value = df.assign(returns_1d=0.001)
             mock_hash.return_value = "abc123"
             mock_train.return_value = {"metrics": {}}
             mock_bt.return_value = (

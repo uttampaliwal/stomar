@@ -231,11 +231,13 @@ class HistoricalBackfill:
                                  ticker: str, regime: str = None) -> dict:
         """Run ensemble on historical slice."""
         try:
-            from src.data.features import add_technical_indicators
+            from src.models.trainer_features import build_feature_frame
             from src.models.ensemble import predict_ensemble
 
             feature_cols = models["features"]
-            df_feat = add_technical_indicators(df_slice)
+            # Trainer-identical frame (O2 parity); ticker=None → neutral
+            # external defaults, matching the backfill PIT convention.
+            df_feat = build_feature_frame(df_slice, ticker=None)
 
             # Fill missing model features with 0 (signal features not available in historical OHLCV)
             for col in feature_cols:

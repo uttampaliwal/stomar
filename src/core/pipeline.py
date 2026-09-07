@@ -214,17 +214,23 @@ class RetrainingPipeline:
             )
 
     def _stage_features(self, ticker: str) -> PipelineResult:
-        """Stage 3: Compute features with versioning."""
+        """Stage 3: Compute features with versioning.
+
+        Hashes the trainer's actual candidate set (O2 parity): the same
+        frame + FEATURE_COLS selection training uses. Hashing the legacy
+        indicator subset produced lineage that matched nothing.
+        """
         try:
             from src.data.data_fetcher import fetch_stock_data
-            from src.data.features import add_technical_indicators
+            from src.models.trainer_features import (
+                build_feature_frame,
+                select_training_features,
+            )
             from src.data.feature_store import compute_feature_hash, register_feature_version
 
             df = fetch_stock_data(ticker, period=self.config.lookback_period)
-            df = add_technical_indicators(df, ticker)
-
-            skip = {"open", "high", "low", "close", "volume", "target", "target_direction"}
-            feature_cols = sorted([c for c in df.columns if c not in skip])
+            df_feat = build_feature_frame(df, ticker=ticker)
+            feature_cols = select_training_features(df_feat, ticker)
             fhash = compute_feature_hash(feature_cols)
 
             register_feature_version(
