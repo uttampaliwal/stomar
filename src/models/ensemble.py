@@ -534,7 +534,13 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
         if dl_sum == 0:  # tree-only bundle: no DL models to aggregate
             dl_dir = None
         results.append({
+            "date": r["date"],
             "actual": r["actual"],
+            "ensemble_prob": float(final_prob),
+            "lstm_prob": r["lstm_prob"], "gru_prob": r["gru_prob"],
+            "transformer_prob": r["transformer_prob"],
+            "xgb_prob": r["xgb_prob"], "lgb_prob": r["lgb_prob"],
+            "cat_prob": r["cat_prob"],
             "lstm": r["lstm"], "gru": r["gru"], "transformer": r["transformer"],
             "dl_ensemble": dl_dir, "xgb": r["xgb"], "lgb": r["lgb"],
             "cat": r["cat"],
