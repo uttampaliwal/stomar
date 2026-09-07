@@ -60,6 +60,20 @@ class Order:
     timestamp: str = ""
     notes: str = ""
 
+    @property
+    def net_cash_delta(self) -> float:
+        """Signed cash impact of the fill.
+
+        Convention: fill_cost is ALWAYS gross + costs (both sides), so
+        callers must not add costs a second time. BUY spends
+        (price*qty + costs); SELL receives (price*qty - costs).
+        """
+        gross = self.filled_price * self.filled_quantity
+        costs = self.fill_cost - gross
+        if self.side == OrderSide.SELL:
+            return gross - costs
+        return -(gross + costs)
+
 
 @dataclass
 class Bar:
@@ -150,6 +164,9 @@ class ExecutionEngine:
 
                 order.filled_price = actual_fill
                 order.filled_quantity = order.quantity
+                # Convention: fill_cost = gross + costs on BOTH sides.
+                # SELL net proceeds = fill_cost - 2*costs; use
+                # order.net_cash_delta for the signed cash impact.
                 order.fill_cost = actual_fill * order.quantity + costs["total"]
                 order.status = OrderStatus.FILLED
                 order.notes = (f"Fill: {actual_fill:.2f}, "

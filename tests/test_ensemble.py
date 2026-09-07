@@ -344,6 +344,23 @@ class TestRegimeAdjustedEnsemble:
         assert "error" not in details
         assert details["lstm_prob"] == 0.5  # placeholder for missing DL
 
+    def test_meta_learner_skipped_when_models_missing(self):
+        """O1: 0.5 placeholders must not be fed to the meta-learner at full weight."""
+        from src.models.ensemble import predict_ensemble
+        s = self._setup()
+        from src.models.ensemble import train_meta_learner
+        import numpy as np
+        meta = train_meta_learner(
+            np.random.default_rng(7).random((60, 6)),
+            np.random.default_rng(8).integers(0, 2, 60),
+        )
+        dir_, conf, details = predict_ensemble(
+            None, None, None, s["xgb"], s["scaler"], s["features"], s["df"],
+            lgb_model=s["lgb"], cat_model=s["cat"], meta_model=meta,
+        )
+        assert dir_ in (0, 1)
+        assert details["weights"] != "meta_learner"
+
 
 class TestMetaLearnerBeatsEqualWeight:
     def test_on_synthetic_data(self):

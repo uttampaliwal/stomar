@@ -122,7 +122,10 @@ class Portfolio:
         rets = equity.pct_change().dropna()
         total_return = (equity.iloc[-1] - self.initial_capital) / self.initial_capital
         daily_rf = RISK_FREE_RATE / 252
-        sharpe = float((rets.mean() - daily_rf) / rets.std() * np.sqrt(252)) if rets.std() > 0 else 0
+        # Standard annualised Sharpe: excess annual return over annual vol.
+        # (Previously subtracted daily_rf from mean daily return before
+        # scaling, which understated the rf drag by sqrt(252).)
+        sharpe = float((rets.mean() * 252 - RISK_FREE_RATE) / (rets.std() * np.sqrt(252))) if rets.std() > 0 else 0
         cummax = equity.cummax()
         drawdown = (equity - cummax) / cummax
         max_dd = float(drawdown.min())

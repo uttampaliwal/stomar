@@ -1,6 +1,10 @@
+import logging
+
 import numpy as np
 import pandas as pd
 from src.core.constants import RISK_FREE_RATE
+
+logger = logging.getLogger(__name__)
 
 
 def kelly_criterion(win_rate: float, avg_win: float, avg_loss: float) -> float:
@@ -32,6 +36,10 @@ def volatility_position_size(capital: float, target_risk: float, atr: float, pri
 
 def calculate_var(returns: np.ndarray, confidence: float = 0.95) -> float:
     if len(returns) < 20:
+        logger.warning(
+            "VaR on %d samples (<20): returning 0.0 — treat as UNKNOWN, not no-risk",
+            len(returns),
+        )
         return 0.0
     sorted_returns = np.sort(returns)
     idx = int((1 - confidence) * len(sorted_returns))
@@ -40,6 +48,10 @@ def calculate_var(returns: np.ndarray, confidence: float = 0.95) -> float:
 
 def calculate_cvar(returns: np.ndarray, confidence: float = 0.95) -> float:
     if len(returns) < 20:
+        logger.warning(
+            "CVaR on %d samples (<20): returning 0.0 — treat as UNKNOWN, not no-risk",
+            len(returns),
+        )
         return 0.0
     var = calculate_var(returns, confidence)
     tail = returns[returns <= var]

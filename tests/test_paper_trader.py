@@ -266,3 +266,32 @@ class TestStatePersistence:
         t = _trader()
         result = t.load_state(str(tmp_path / "nope.json"))
         assert result is False
+
+    def test_state_restores_capital_streak_and_halt(self, tmp_path):
+        """O1: restart must not reopen the loss budget (capital+streak+halt)."""
+        t = _trader()
+        t.place_order("TEST.NS", OrderSide.BUY, OrderType.MARKET, 10)
+        t.on_bar("TEST.NS", o=1000, h=1010, low=990, c=1005)
+        t.risk_controller.update_consecutive_losses(True)
+        t.risk_controller.update_consecutive_losses(True)
+        t.risk_controller.halted = True
+        path = tmp_path / "state.json"
+        t.save_state(str(path))
+
+        t2 = PaperTrader(initial_capital=999_999)
+        assert t2.load_state(str(path)) is True
+        assert t2.initial_capital == t.initial_capital
+        assert t2.risk_controller.consecutive_losses == 2
+        assert t2.risk_controller.halted is True
+
+    def test_on_bar_fill_auto_saves_state(self, tmp_path, monkeypatch):
+        """O1: stop/limit fills via on_bar() must persist (not just market trades)."""
+        t = _trader()
+        t.save_state(str(tmp_path / "seed.json"))
+        saved = []
+        monkeypatch.setattr(
+            t, "save_state", lambda path=None: saved.append(path or "auto")
+        )
+        t.place_order("TEST.NS", OrderSide.BUY, OrderType.MARKET, 10)
+        t.on_bar("TEST.NS", o=1000, h=1010, low=990, c=1005)
+        assert saved, "on_bar fills must trigger a state save"

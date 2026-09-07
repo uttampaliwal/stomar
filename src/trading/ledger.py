@@ -229,14 +229,19 @@ class Ledger:
         action = decision["action"]
         ensemble_dir = decision["ensemble_direction"]
 
-        # Determine if prediction was correct based on action taken
-        if action == "BUY":
+        # Determine if prediction was correct based on action taken.
+        # Flat bars (|return| <= 0.5%) are excluded from directional scoring:
+        # a BUY/SELL on a flat day is neither right nor wrong (correct=None),
+        # so flat markets can't inflate SELL (or BUY) win rates. HOLD owns the
+        # flat band and is correct only when the market actually went sideways.
+        if abs(actual_return) <= 0.005:
+            correct = 1 if action == "HOLD" else None
+        elif action == "BUY":
             correct = 1 if actual_direction == 1 else 0
         elif action == "SELL":
             correct = 1 if actual_direction == 0 else 0
         elif action == "HOLD":
-            # HOLD is correct if market went sideways (return between -0.5% and +0.5%)
-            correct = 1 if abs(actual_return) <= 0.005 else 0
+            correct = 0
         else:
             correct = None
 

@@ -80,7 +80,7 @@ class RetrainingPipeline:
             ("VALIDATE", "_stage_validate", False),
             ("FEATURES", "_stage_features", False),
             ("TRAIN", "_stage_train", True),    # needs previous result
-            ("EVALUATE", "_stage_evaluate", False),
+            ("EVALUATE", "_stage_evaluate", True),  # threads TRAIN hash through
             ("PROMOTE", "_stage_promote", True),  # needs previous result
         ]
 
@@ -263,8 +263,13 @@ class RetrainingPipeline:
                 message=f"Training failed: {e}",
             )
 
-    def _stage_evaluate(self, ticker: str) -> PipelineResult:
-        """Stage 5: Evaluate on OOS window with validation gates."""
+    def _stage_evaluate(self, ticker: str, prev=None) -> PipelineResult:
+        """Stage 5: Evaluate on OOS window with validation gates.
+
+        Threads the TRAIN feature hash through (prev) so PROMOTE — which
+        receives the EVALUATE result via _find_prev_result — promotes with
+        the real hash instead of None.
+        """
         try:
             from src.trading.backtester import run_walk_forward_backtest
             from src.data.data_fetcher import fetch_stock_data
@@ -302,12 +307,14 @@ class RetrainingPipeline:
                     ticker=ticker, stage="evaluate", status="rejected",
                     message=f"Rejected: {'; '.join(reasons)}",
                     metrics=metrics,
+                    feature_hash=prev.feature_hash if prev else None,
                 )
 
             return PipelineResult(
                 ticker=ticker, stage="evaluate", status="success",
                 message=f"Passed: accuracy={oos_accuracy:.1%}, sharpe={sharpe:.2f}",
                 metrics=metrics,
+                feature_hash=prev.feature_hash if prev else None,
             )
         except Exception as e:
             return PipelineResult(
@@ -320,6 +327,13 @@ class RetrainingPipeline:
         try:
             from src.models.model import promote_model
 
+            if prev is None or not prev.feature_hash:
+                return PipelineResult(
+                    ticker=ticker, stage="promote", status="failed",
+                    message="Refusing to promote without a feature hash "
+                            "(EVALUATE did not thread TRAIN hash)",
+                    metrics=prev.metrics if prev else {},
+                )
             promote_model(ticker, prev.feature_hash)
 
             return PipelineResult(

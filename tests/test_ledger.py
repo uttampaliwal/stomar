@@ -182,6 +182,38 @@ def test_log_outcome_nonexistent_decision(ledger):
     ledger.log_outcome(999, actual_return=0.01, actual_direction=1)
 
 
+def test_log_outcome_flat_bar_excluded_from_directional_scoring(
+    ledger, sample_signals
+):
+    """O1: flat bars must not inflate BUY/SELL win rates (correct=None)."""
+    buy_id = ledger.log_decision(
+        "2025-01-15", "RELIANCE.NS", sample_signals, "BUY", 0.05, 0.7
+    )
+    ledger.log_outcome(buy_id, actual_return=0.001, actual_direction=0)
+    row = ledger.conn.execute(
+        "SELECT correct FROM decisions WHERE id = ?", (buy_id,)
+    ).fetchone()
+    assert row["correct"] is None
+
+    sell_id = ledger.log_decision(
+        "2025-01-15", "TCS.NS", sample_signals, "SELL", 0.05, 0.7
+    )
+    ledger.log_outcome(sell_id, actual_return=-0.002, actual_direction=0)
+    row = ledger.conn.execute(
+        "SELECT correct FROM decisions WHERE id = ?", (sell_id,)
+    ).fetchone()
+    assert row["correct"] is None
+
+    hold_id = ledger.log_decision(
+        "2025-01-15", "INFY.NS", sample_signals, "HOLD", 0.0, 0.5
+    )
+    ledger.log_outcome(hold_id, actual_return=0.001, actual_direction=0)
+    row = ledger.conn.execute(
+        "SELECT correct FROM decisions WHERE id = ?", (hold_id,)
+    ).fetchone()
+    assert row["correct"] == 1
+
+
 # --- log_snapshot ---
 
 def test_log_snapshot_stores_data(ledger):

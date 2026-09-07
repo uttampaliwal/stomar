@@ -324,8 +324,17 @@ def predict_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat,
         float(cat_prob[1]),   # cat P(up)
     ]])
 
-    # Use meta-learner if available
-    if meta_model is not None:
+    # Use meta-learner only when every slot it was trained on is real.
+    # Missing models emit 0.5 placeholders; feeding those at full weight
+    # biases the meta output toward 50/50, so fall back to the active-only
+    # average instead (same rule as the backtest path).
+    meta_usable = (
+        meta_model is not None
+        and has_dl
+        and lgb_model is not None
+        and cat_model is not None
+    )
+    if meta_usable:
         ensemble_prob = float(predict_with_metalearner(meta_model, meta_X)[0])
         weights_used = "meta_learner"
     else:
@@ -474,7 +483,14 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
     if not rows:
         return []
 
-    if meta_model is not None:
+    has_dl_bt = all(m is not None for m in (lstm, gru, transformer))
+    meta_usable_bt = (
+        meta_model is not None
+        and has_dl_bt
+        and lgb_model is not None
+        and cat_model is not None
+    )
+    if meta_usable_bt:
         meta_probs = predict_with_metalearner(
             meta_model, np.asarray([r["meta_X"] for r in rows])
         )
@@ -485,8 +501,23 @@ def backtest_ensemble(lstm, gru, transformer, xgb, scaler, feature_cols, df_feat
             weights = {name: 1.0 / len(MODEL_NAMES) for name in MODEL_NAMES}
 
         meta_probs = []
+        has_dl_bt = all(m is not None for m in (lstm, gru, transformer))
         for r in rows:
-            model_probs = [(n, r[f"{n}_prob"]) for n in MODEL_NAMES]
+            # Active-only: missing models emit 0.5 placeholders that must not
+            # dilute the average toward 50/50 (mirrors predict_ensemble).
+            model_probs = []
+            if has_dl_bt:
+                model_probs += [("lstm", r["lstm_prob"]),
+                                ("gru", r["gru_prob"]),
+                                ("transformer", r["transformer_prob"])]
+            model_probs.append(("xgb", r["xgb_prob"]))
+            if lgb_model is not None:
+                model_probs.append(("lgb", r["lgb_prob"]))
+            if cat_model is not None:
+                model_probs.append(("cat", r["cat_prob"]))
+            if not model_probs:
+                meta_probs.append(0.5)
+                continue
             total_w = sum(weights.get(n, 1.0 / len(MODEL_NAMES)) for n, _ in model_probs)
             if total_w > 0:
                 meta_probs.append(sum(p * weights[n] / total_w for n, p in model_probs))

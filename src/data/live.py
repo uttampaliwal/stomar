@@ -537,7 +537,8 @@ class LiveDataEngine:
                 continue
             try:
                 quote = fetcher.get_quote(symbol)
-                quote.ts = datetime.now()
+                from src.core.timeutils import now_ist
+                quote.ts = now_ist()
                 with self._lock:
                     self._quotes[symbol] = (time.monotonic(), quote)
                 try:

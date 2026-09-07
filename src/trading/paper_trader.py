@@ -71,7 +71,7 @@ class PaperTrader:
     """Simulates trading with real delayed prices."""
 
     def __init__(self, initial_capital: float = 100_000,
-                 slippage_bps: int = 5,
+                 slippage_bps: int = 10,
                  risk_limits: Optional[RiskLimits] = None,
                  persist_risk_state: bool = False,
                  risk_state_file: str | Path = None):
@@ -193,6 +193,14 @@ class PaperTrader:
             # Update risk equity
             equity = self.get_equity()
             self.risk_controller.update_equity(equity)
+
+        if records:
+            # Fills via place_order()+on_bar() (stops/limits) must persist too —
+            # previously only execute_market_trade() saved, so state drifted.
+            try:
+                self.save_state()
+            except Exception as e:
+                logger.warning("Failed to auto-save paper trading state: %s", e)
 
         return records
 
@@ -464,7 +472,15 @@ class PaperTrader:
             raise
 
     def save_state(self, path: str = None):
-        """Save paper trading state to disk for persistence across restarts."""
+        """Save paper trading state to disk for persistence across restarts.
+
+        Single-file truth: paper_state.json carries everything needed to
+        resume (capital, positions, loss windows AND streak/halt), written
+        atomically with fsync via secure_io. The risk controller's own
+        risk_state.json / kill_switch.json remain as secondary sources.
+        """
+        from src.core.secure_io import atomic_write_json
+
         if path is None:
             from src.core.constants import PAPER_STATE_PATH
             path = PAPER_STATE_PATH
@@ -482,23 +498,15 @@ class PaperTrader:
             "risk_daily_pnl": self.risk_controller.daily_pnl,
             "risk_weekly_pnl": self.risk_controller.weekly_pnl,
             "risk_peak_equity": self.risk_controller.peak_equity,
+            "risk_consecutive_losses": self.risk_controller.consecutive_losses,
+            "risk_halted": self.risk_controller.halted,
             "engine": self.engine.get_state(),
         }
-        import tempfile
-        dir_name = os.path.dirname(path)
-        if dir_name:
-            os.makedirs(dir_name, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(dir=dir_name or ".", suffix=".tmp")
         try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(state, f, indent=2, default=str)
-            os.replace(tmp_path, path)
+            atomic_write_json(str(path), state)
             logger.info("State saved to %s", path)
         except Exception:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+            logger.exception("State save failed for %s", path)
             raise
 
     def load_state(self, path: str = None) -> bool:
@@ -521,6 +529,7 @@ class PaperTrader:
             return False
 
         self.cash = state.get("cash", self.initial_capital)
+        self.initial_capital = state.get("initial_capital", self.initial_capital)
         self.cumulative_pnl = state.get("cumulative_pnl", 0.0)
         self.positions = {
             t: Position(ticker=t, quantity=v["quantity"], avg_cost=v["avg_cost"],
@@ -551,6 +560,17 @@ class PaperTrader:
         self.risk_controller.peak_equity = state.get(
             "risk_peak_equity", self.initial_capital)
         self.risk_controller.current_equity = self.get_equity()
+        # Streak + halt travel with paper_state.json so a restart can never
+        # silently reopen the loss budget. Kill-switch FILE stays authoritative
+        # for halt persistence; this only restores the in-memory flag.
+        if "risk_consecutive_losses" in state:
+            try:
+                self.risk_controller.consecutive_losses = int(
+                    state.get("risk_consecutive_losses", 0))
+            except (TypeError, ValueError):
+                pass
+        if state.get("risk_halted", False):
+            self.risk_controller.halted = True
 
         engine_state = state.get("engine")
         if engine_state:

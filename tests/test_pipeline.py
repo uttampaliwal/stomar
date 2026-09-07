@@ -178,9 +178,41 @@ class TestPipelineStages:
             pipeline = RetrainingPipeline()
             prev = PipelineResult(
                 ticker="T", stage="eval", status="success", message="ok",
+                feature_hash="abc123",
             )
             result = pipeline._stage_promote("TEST.NS", prev)
             assert result.status == "failed"
+
+    def test_evaluate_threads_train_hash(self):
+        """O1: EVALUATE must carry TRAIN's hash so PROMOTE keeps lineage."""
+        with patch("src.data.data_fetcher.fetch_stock_data") as mock_fetch, \
+             patch("src.data.features.add_technical_indicators") as mock_feat, \
+             patch("src.trading.backtester.run_walk_forward_backtest") as mock_bt:
+            mock_fetch.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
+            mock_feat.return_value = pd.DataFrame({"close": [100]*100, "open": [100]*100, "high": [101]*100, "low": [99]*100, "volume": [1000]*100})
+            mock_bt.return_value = (
+                {"ensemble_accuracy": 0.53, "simulated_sharpe": 0.5, "simulated_max_drawdown": 0.15},
+                None, [],
+            )
+            pipeline = RetrainingPipeline()
+            prev = PipelineResult(
+                ticker="T", stage="train", status="success", message="ok",
+                feature_hash="hash-abc",
+            )
+            result = pipeline._stage_evaluate("TEST.NS", prev)
+            assert result.status == "success"
+            assert result.feature_hash == "hash-abc"
+
+    def test_promote_refuses_missing_hash(self):
+        """O1: never promote with feature_hash=None (loses TRAIN lineage)."""
+        with patch("src.models.model.promote_model") as mock_promote:
+            pipeline = RetrainingPipeline()
+            prev = PipelineResult(
+                ticker="T", stage="eval", status="success", message="ok",
+            )
+            result = pipeline._stage_promote("TEST.NS", prev)
+            assert result.status == "failed"
+            mock_promote.assert_not_called()
 
 
 # ── Full run (mocked) ──
