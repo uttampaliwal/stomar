@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "ONGC_NS",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T16:03:33.250627+00:00",
+  "files": {
+    "ONGC_NS_lstm.pt": "6bda5c4ace0ee7c779067574c3a7243b901cf602937df163057275073512467d",
+    "ONGC_NS_gru.pt": "3b980331a754c89faa75d9a7052906874a1fdc8e043ff179ae1255ee95dd9685",
+    "ONGC_NS_transformer.pt": "8c6c21c45462a1e842084c57f85be0d3d17a99f947831574590a91e86c1cc699",
+    "ONGC_NS_xgb.pkl": "c3ee10e786174211877a31e038417fb33ec339260043f214f8afc692fa707e5f",
+    "ONGC_NS_scaler.pkl": "1df28da49f82d43cd167275d262bd6cfe07ce08a19ddd23bfa2c0be15cc8ec03",
+    "ONGC_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "ONGC_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "ONGC_NS_lgb.pkl": "7cc64b629f59b5a3dc869bf6ebf232aecf2872b13511da6d3652d2c8a7ebd435",
+    "ONGC_NS_cat.pkl": "2589119c035719c364627101dfdc4ad37713fcb816fc71b451881d34ed1c2bc2"
+  }
+}

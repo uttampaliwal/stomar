@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_SBIN_NS",
+  "model_version": "1",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "2023-04-05 00:00:00:2026-09-07 00:00:00:750",
+  "created_at": "2026-09-07T12:37:09.278881+00:00",
+  "files": {
+    "meta_SBIN_NS.pkl": "8b136562106834ca29f018c1bb69e2a7df509a248538dc6541f2e20c08d11c35"
+  }
+}

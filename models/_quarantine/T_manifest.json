@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "T",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-25T15:17:04.767785+00:00",
+  "files": {
+    "T_lstm.pt": "64aca507d2795d21a4164fa4469faefbd6dce99532cbfe996cff696222887ad2",
+    "T_gru.pt": "5f197bd420ef81a6d6f91139472447baaffda0e247315c7a71c75bd66c3a6ee0",
+    "T_transformer.pt": "3ebf6f74ee91a157678a4e9006d1f93be94ae7c1ad4e61b07d3cb131927a30c9",
+    "T_xgb.pkl": "1d6b15379b1fdaf5e9bc114cbb0fe341befb6af577ac4f71cfd160d10d7ed891",
+    "T_scaler.pkl": "c7d2e9ae4b88fd0908070afae112e2571aa67259d02e2dcc4a7fbed17371a2b0",
+    "T_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "T_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "T_lgb.pkl": "f25946a99ec801c957849355c933e19d62beb9729c0c1ed05b46b72522a7c50a",
+    "T_cat.pkl": "1ecb7ada5f8799ee430ff3014945a35e2bd8b6be126d23e2234903cfe2c83fc9"
+  }
+}

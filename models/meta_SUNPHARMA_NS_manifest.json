@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_SUNPHARMA_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T15:41:38.794261+00:00",
+  "files": {
+    "meta_SUNPHARMA_NS.pkl": "0b3702b7c5fca7eec5cbe20c461a50e9d6e0e432be2fdc61acbe0164c119c13a"
+  }
+}

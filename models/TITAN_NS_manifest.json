@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "TITAN_NS",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T17:52:09.772126+00:00",
+  "files": {
+    "TITAN_NS_lstm.pt": "b4410f871a52013a03b1a12b1edb45aec584e6b0b00f0592e9a4cc3e1d41679d",
+    "TITAN_NS_gru.pt": "50edf547e01501f2115ea4384841d0ea77761b0ec7cb212f4f55b44ca2c0b351",
+    "TITAN_NS_transformer.pt": "8565421b6733a280a6e1982c8e5ff733703bd4f290c120a4fff1e44b3d889bf1",
+    "TITAN_NS_xgb.pkl": "d30a27b028e802f67c7d9bc66f992dd3f958b1e5d053c5d1be247468d64d19df",
+    "TITAN_NS_scaler.pkl": "0de0b0f159a76e29908750eb898d064283e21fbc3b7f1ebad4a073a9b6cdca9a",
+    "TITAN_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "TITAN_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "TITAN_NS_lgb.pkl": "9ce39299935ba4d2c134fc3b0ab92ece8016c295066c38ed87d5a87de1c49622",
+    "TITAN_NS_cat.pkl": "42c39149e6471eda90d5f1f280ae05a4a31a6f65feca056a3e37b35ced54a315"
+  }
+}

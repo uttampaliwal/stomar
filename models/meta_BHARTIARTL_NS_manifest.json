@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_BHARTIARTL_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T13:26:20.789973+00:00",
+  "files": {
+    "meta_BHARTIARTL_NS.pkl": "28c51717916c68cead362a282adbc4bb6cbb9fd3ba5297e8a78c9862c8d3e40e"
+  }
+}

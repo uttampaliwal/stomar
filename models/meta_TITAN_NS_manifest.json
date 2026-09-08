@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_TITAN_NS",
+  "model_version": "1",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "2023-04-05 00:00:00:2026-09-07 00:00:00:750",
+  "created_at": "2026-09-07T12:56:03.584759+00:00",
+  "files": {
+    "meta_TITAN_NS.pkl": "a8b559696c30d19510968494f3f0931f2deb2c1d2c81bfbcb50988c6b323a2c8"
+  }
+}

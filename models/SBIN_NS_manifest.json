@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "SBIN_NS",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T13:16:10.208802+00:00",
+  "files": {
+    "SBIN_NS_lstm.pt": "592dbdf905e767ff14ead0f2fcada6719a473b32d5a309a886936c56f117fd94",
+    "SBIN_NS_gru.pt": "0dd7000c2a3027fead77ccce4c6e089dbbc5dd645984a0d3befa977eb63e1913",
+    "SBIN_NS_transformer.pt": "a404e64892782ceeba056aeffc1190325469dd0d62a47f1b7acc9a5804f9a10d",
+    "SBIN_NS_xgb.pkl": "68d7757cd5232cae6aacdab94397a8bff5ad442270694176154effcd5410a981",
+    "SBIN_NS_scaler.pkl": "803d6a76a8f89ab2efd795bc35a8da605c2e4dbed136439991ec8484acae465a",
+    "SBIN_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "SBIN_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "SBIN_NS_lgb.pkl": "aba35cc1dde3b42f80d33b2035769b86e7cc7cc0813de620aca87798fc4bec43",
+    "SBIN_NS_cat.pkl": "f71e907a68c6167e6f993d22baf6f5165778148ab55f8068965621b1332204ac"
+  }
+}

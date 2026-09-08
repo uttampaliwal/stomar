@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "BAJFINANCE_NS",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T14:07:52.916949+00:00",
+  "files": {
+    "BAJFINANCE_NS_lstm.pt": "8efe647ef391d1374affa44855be3cc114e6deedb8b990c09bcfd863c9332bd4",
+    "BAJFINANCE_NS_gru.pt": "c82dd09e57e8a665348d41f1d445b9c4b16d9c2afe98683583512261be4ef036",
+    "BAJFINANCE_NS_transformer.pt": "6cf2989a89feccf8c0c5fc2f07e38690b84b27824b0c322e18040115afd33315",
+    "BAJFINANCE_NS_xgb.pkl": "76ab4e604fe3754eee35374502c6df926dc269ec7836693a2b4d0a176cc4b3a0",
+    "BAJFINANCE_NS_scaler.pkl": "af432e46d83a3323c5a307ab430f81365cd3f5b0213ceb7e1765d4f4605cc38b",
+    "BAJFINANCE_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "BAJFINANCE_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "BAJFINANCE_NS_lgb.pkl": "5c4ee14bb02265b2b903fcac0ef47eb406c991be7913b318be30a28f7cf48ed3",
+    "BAJFINANCE_NS_cat.pkl": "16d1f3de33f4d26746824b1fb4f2e0953daab45f3d1bafdaf92cb1129cd5a2f4"
+  }
+}

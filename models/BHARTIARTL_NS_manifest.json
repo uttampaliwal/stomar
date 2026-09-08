@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "BHARTIARTL_NS",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T13:26:04.836862+00:00",
+  "files": {
+    "BHARTIARTL_NS_lstm.pt": "ddd488a579e07bfe279a2c405e7dcbf50c5ceb166cd4bb53486327958c530453",
+    "BHARTIARTL_NS_gru.pt": "0f65d8cf52243f782d683856f05b27e990c2f973553babcf8c27a3d0cf228ec7",
+    "BHARTIARTL_NS_transformer.pt": "24cb881e8cc733b87df30cd219ad85b0b0eeb04e9dc2cb1d4177b4f909fd1042",
+    "BHARTIARTL_NS_xgb.pkl": "59bc3295ad090b1fbf74c36a07ee15b6697ac16e466ec02ffcbf2227b816299a",
+    "BHARTIARTL_NS_scaler.pkl": "0cccba18f397d23633520511e6133eb1e3634c5a5caf808aa98deda6bae202b8",
+    "BHARTIARTL_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "BHARTIARTL_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "BHARTIARTL_NS_lgb.pkl": "7198f0445ba4b3feac292523b28db7edbefea5156b8293f6095daffe3f487997",
+    "BHARTIARTL_NS_cat.pkl": "ed1db80d844ae4f39a53047591b521f2779ae9ad8e0d737adb2c67e01d57c927"
+  }
+}

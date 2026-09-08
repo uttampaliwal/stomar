@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "LT_NS",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T14:43:25.371849+00:00",
+  "files": {
+    "LT_NS_lstm.pt": "357504e8eeb0ab73dd8283d8de6f7a40db34a4a4af9dc9c8e3fcfe0c8c35a579",
+    "LT_NS_gru.pt": "5391adfc31f9a5d6fd845e9c9478aeb843f9fa7951c025957cacafeceeeac456",
+    "LT_NS_transformer.pt": "e016d573beaa8ad4de07dbc0d7446fe8f8f0057ec0fa0e81ea1901a689bfed74",
+    "LT_NS_xgb.pkl": "c86d5bcaae1379d10d3adcea67e8407b02e9a7cacfb097694e28c6874c91008f",
+    "LT_NS_scaler.pkl": "3b02bf6096a9c8d8adac8cc3b45044f9aeb37f9a378e3e2f9d6899fbdd627261",
+    "LT_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "LT_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "LT_NS_lgb.pkl": "dfb2871aa15fbfc7bd3ab7d88d0a5c52c34556d12d50622d9b23fca7ac905608",
+    "LT_NS_cat.pkl": "250843b38c4811a48cc02d24e5779b0949c3be672875263c7d387bebb5b0b41a"
+  }
+}

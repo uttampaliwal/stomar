@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "WIPRO_NS",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T14:57:15.402506+00:00",
+  "files": {
+    "WIPRO_NS_lstm.pt": "78ac279f7e7bf40c08581a887d60312798728f937f6ecea6712e8a20b724f7d5",
+    "WIPRO_NS_gru.pt": "d552fb2d1ceb921254123fede33b5354a1af842d6ecf9297baa1649f4d49c6c6",
+    "WIPRO_NS_transformer.pt": "a69e247a749fba43d1771d586feb5ae1bd2af572a35c01b79616cadc9e59cac1",
+    "WIPRO_NS_xgb.pkl": "3cc81d70ed2eba75a83d3ccf8bf74c6c22381ec0c45ccad2721fc45c1972ba2b",
+    "WIPRO_NS_scaler.pkl": "743c275b3900aa13be73763b47dc29894fd03c2cd97ecc563a50e59dfca1fb4b",
+    "WIPRO_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "WIPRO_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "WIPRO_NS_lgb.pkl": "1550b3c1a932b9a7a731aa9ea02250dc8cafe0ff5581f723cb4466fe44fbdcbf",
+    "WIPRO_NS_cat.pkl": "3d9198f59565226b34440183c7c2e304965278d734ead85f8f39220655f5506c"
+  }
+}

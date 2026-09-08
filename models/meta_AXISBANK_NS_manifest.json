@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_AXISBANK_NS",
+  "model_version": "1",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "2023-04-05 00:00:00:2026-09-07 00:00:00:750",
+  "created_at": "2026-09-07T12:52:24.576669+00:00",
+  "files": {
+    "meta_AXISBANK_NS.pkl": "a719777dfb84c49cac77602f18325ff4acd779ae904c2c37fd8c38960e7ec47c"
+  }
+}

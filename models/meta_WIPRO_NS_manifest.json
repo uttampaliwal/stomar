@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_WIPRO_NS",
+  "model_version": "1",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "2023-04-05 00:00:00:2026-09-07 00:00:00:750",
+  "created_at": "2026-09-07T12:48:50.334231+00:00",
+  "files": {
+    "meta_WIPRO_NS.pkl": "236125c7e82ea0e6c5fe28db33e98307e8efacfd8a5f1a217ce58f6936b012d9"
+  }
+}

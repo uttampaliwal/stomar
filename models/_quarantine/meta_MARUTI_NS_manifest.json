@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_MARUTI_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T15:31:46.985007+00:00",
+  "files": {
+    "meta_MARUTI_NS.pkl": "30298de27945fe0146f0676e56ec836c04ec3091076ad2536816fe248139bdd2"
+  }
+}

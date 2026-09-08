@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "MARUTI_NS",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T15:31:37.910727+00:00",
+  "files": {
+    "MARUTI_NS_lstm.pt": "92064b0dba39f786be9cfea646bffd983be165982fd59d147ecbb85bba2d341b",
+    "MARUTI_NS_gru.pt": "d6659aee31f6d9db03cca01247d6c31d04635c59be602e50ceb4989f00f17bbf",
+    "MARUTI_NS_transformer.pt": "a8e48cb1e830c88250171ba22a5240ef910280ec81c24f5af3f27cd34efe2ce7",
+    "MARUTI_NS_xgb.pkl": "9f7e95d6ab66acf453dfaf9a2b185a5d5868397fc0c908bb2db4a066554f008e",
+    "MARUTI_NS_scaler.pkl": "0fbb03fd640ca96e9653fb66f92491a23216f5f2ef60563d755cb95d68fe4a63",
+    "MARUTI_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "MARUTI_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "MARUTI_NS_lgb.pkl": "fcfa72f0349864d4e34d0a36900b5fd60eef114301bb7544aa710744df18e49a",
+    "MARUTI_NS_cat.pkl": "c8d60e4996e64fc8bc85d3bbb8ee827e923409ca017c2f19ee2d2acf0df97ad0"
+  }
+}

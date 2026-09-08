@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_T",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-25T15:17:25.970179+00:00",
+  "files": {
+    "meta_T.pkl": "ec85343738f7ca94f72276438dc027fb7b279206f880dfe825e68475b818e2c9"
+  }
+}

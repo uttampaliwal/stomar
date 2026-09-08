@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_BAJFINANCE_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T14:09:18.945506+00:00",
+  "files": {
+    "meta_BAJFINANCE_NS.pkl": "9c6ecc0a668533d60a8e3e3f3afec1a4060f3cff2d1719364704741e5b232c13"
+  }
+}

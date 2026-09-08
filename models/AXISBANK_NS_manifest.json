@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "AXISBANK_NS",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T15:06:16.196503+00:00",
+  "files": {
+    "AXISBANK_NS_lstm.pt": "46d9c8e98a84d04bbecf5a8a373d151fd1098ed7a73a0f274f52328272ff9dca",
+    "AXISBANK_NS_gru.pt": "cb6b5c32b0064294c8907cf11068b91f6d4b5f5b47ee3b002878b7784797ba6b",
+    "AXISBANK_NS_transformer.pt": "e72066d8720ea790709bb9979b795a77a5e7e44328077fc9f921daad761f2281",
+    "AXISBANK_NS_xgb.pkl": "f66e2694d3efe4e50c7f1cee0aaabb15675b885aaba784694c09d508a798be94",
+    "AXISBANK_NS_scaler.pkl": "1377a1c5e769ccddeb435ac5449a6c92e6fbaeedc4dfc6c92b2b91e2e5286f25",
+    "AXISBANK_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "AXISBANK_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "AXISBANK_NS_lgb.pkl": "da32c3a63a055ba1970e42b9e4feee1eafa0368f20fdb2675823e46ad2b0964d",
+    "AXISBANK_NS_cat.pkl": "eb8dd697dc59b30344b27c3d09eae6010c392468ece7b4a348b57975f97e6a2a"
+  }
+}

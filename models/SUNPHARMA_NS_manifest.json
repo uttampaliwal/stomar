@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "SUNPHARMA_NS",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T15:41:27.952514+00:00",
+  "files": {
+    "SUNPHARMA_NS_lstm.pt": "4f09ade25ba7307caca870a29e1e4ff84acac9b9dfb8ee11c04d1f3c2b442180",
+    "SUNPHARMA_NS_gru.pt": "1d0dc1fcef72bf2cdfd226d7b8fd9e11a925dd273e057e6777cfd5d32bfb7386",
+    "SUNPHARMA_NS_transformer.pt": "2297231078146135b3c178deb7cc0924b78b05c26601b57dbb719c7c32358751",
+    "SUNPHARMA_NS_xgb.pkl": "7559945bf659469c45d877b58a2506eb6d2dd734e4c8f15a3d78437766bb580e",
+    "SUNPHARMA_NS_scaler.pkl": "068bdd9481726e246e61e343e7fe02ae0dc04183abe793bc47df56d85bb6d94a",
+    "SUNPHARMA_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "SUNPHARMA_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "SUNPHARMA_NS_lgb.pkl": "7140ead68c1701fae1354256db1b72931e909d875b14af35b9eefe786b24bf8d",
+    "SUNPHARMA_NS_cat.pkl": "0f72defb17c4fbe9b4b85fde1a1a00c58816a1c2e067086075b92a3cfec643a7"
+  }
+}

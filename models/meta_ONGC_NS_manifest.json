@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_ONGC_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T16:03:42.505670+00:00",
+  "files": {
+    "meta_ONGC_NS.pkl": "7aa841f49273e6e694324f06adb4e338d467b89c5be08958c08dc1b66a3d73f8"
+  }
+}

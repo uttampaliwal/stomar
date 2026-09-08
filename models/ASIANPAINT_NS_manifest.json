@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "bundle": "ASIANPAINT_NS",
+  "model_version": "2",
+  "feature_schema_version": "4",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T15:49:56.673186+00:00",
+  "files": {
+    "ASIANPAINT_NS_lstm.pt": "c281fb2f03637aa1a3873c5f618012743c93d1d9a47bc4df2232131ab115c014",
+    "ASIANPAINT_NS_gru.pt": "f70bdddc52fcb528917fec755f3f6ee9f771ddb9cef04ea8546a67838264e3d3",
+    "ASIANPAINT_NS_transformer.pt": "8b78dcd5df589772922ca9c624bc50e6a1f6a2b792aa81d86fc6550f61c6e326",
+    "ASIANPAINT_NS_xgb.pkl": "28e007cd364f3d14f3cde94e60f961192c23d19a04a8a805da5c9687becfda17",
+    "ASIANPAINT_NS_scaler.pkl": "7423d73c77541b478df2f7c692621841902be5ab8ee56e71ff3ed5388ff7d7fc",
+    "ASIANPAINT_NS_features.pkl": "9dbb3b5bcd8b1c296857dd884a190d16f7306bb64217bd099aba3847063489ad",
+    "ASIANPAINT_NS_lstm_dim.pkl": "4e148c4bd8680b2de4785d81d31a1e4fbbd65c87e687e64c68d68c52aa2c4004",
+    "ASIANPAINT_NS_lgb.pkl": "61eef9dd9fa58e3f865faa061624d61e8afad21e2ad0f821099a81968ee39c27",
+    "ASIANPAINT_NS_cat.pkl": "a300722510c271716c3b359e74e85af5bcd2dad8e0f075f11000a8f013aa65b9"
+  }
+}

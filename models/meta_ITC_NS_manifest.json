@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_ITC_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T12:36:32.411333+00:00",
+  "files": {
+    "meta_ITC_NS.pkl": "e37bd2fad6fab522bae1b4d5d3f7931904d289e89f340511a90ee59be90c4f20"
+  }
+}

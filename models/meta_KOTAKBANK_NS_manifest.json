@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "bundle": "meta_KOTAKBANK_NS",
+  "model_version": "1",
+  "feature_schema_version": "1",
+  "training_dataset_hash": "",
+  "created_at": "2026-08-20T13:44:16.122485+00:00",
+  "files": {
+    "meta_KOTAKBANK_NS.pkl": "de8d8a96dc71bae8e7f8fb0ce6ff2199678b2e7e3625c67b32fc7bf37f2ee501"
+  }
+}
