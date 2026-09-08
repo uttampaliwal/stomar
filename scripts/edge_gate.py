@@ -294,20 +294,23 @@ def load_ticker_rows(ticker: str):
     return rows, closes_all, meta_model is not None
 
 
-def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float) -> dict | None:
+def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float,
+                    entry_thr: float = 0.5) -> dict | None:
+    """Score one ticker. ``entry_thr`` applies ONLY to the ensemble (F2b
+    exception run at 0.6); all challengers stay frozen at their own rules."""
     rows, closes_all, meta_used = load_ticker_rows(ticker)
     if not rows:
         return None
 
     actual = np.array([r["actual"] for r in rows])
-    ens_pred = np.array([r["final_ensemble"] for r in rows])
+    ens_prob = np.array([r.get("ensemble_prob", 0.5) for r in rows])
     meta_X = np.array([[r["xgb_prob"], r["lgb_prob"], r["lstm_prob"],
                         r["gru_prob"], r["transformer_prob"], r["cat_prob"]]
                        for r in rows])
 
     fit_idx, eval_idx = split_oos(len(rows), fit_frac, eval_frac)
     ev_actual = actual[eval_idx]
-    ev_ens = ens_pred[eval_idx]
+    ev_ens = (ens_prob[eval_idx] > entry_thr).astype(int)
     ev_closes = [closes_all[i] for i in eval_idx]
 
     ev_naive = np.array(naive_preds(actual[fit_idx], len(eval_idx)))
@@ -333,6 +336,7 @@ def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float) -> dict | No
 
     return {
         "ticker": ticker,
+        "entry_thr": entry_thr,
         "n_rows": len(rows),
         "n_eval": len(eval_idx),
         "k_ens": int((ev_ens == ev_actual).sum()),
@@ -412,6 +416,8 @@ def main() -> int:
     ap.add_argument("--tickers", nargs="*", default=None)
     ap.add_argument("--fit-frac", type=float, default=FIT_FRAC_DEFAULT)
     ap.add_argument("--eval-frac", type=float, default=EVAL_FRAC_DEFAULT)
+    ap.add_argument("--entry-threshold", type=float, default=0.5,
+                    help="F2b exception: ensemble entry threshold (challengers frozen)")
     ap.add_argument("--regime-split", action="store_true",
                     help="F2: pooled accuracy/economics by NIFTY-trend regime")
     ap.add_argument("--report-dir", default=os.path.join(ROOT, "data", "edge_gate"))
@@ -428,7 +434,8 @@ def main() -> int:
     for t in tickers:
         logger.info("edge-gate: evaluating %s", t)
         try:
-            res = evaluate_ticker(t, args.fit_frac, args.eval_frac)
+            res = evaluate_ticker(t, args.fit_frac, args.eval_frac,
+                                  entry_thr=args.entry_threshold)
         except Exception as exc:
             logger.warning("edge-gate: %s failed (%s)", t, exc)
             traceback.print_exc()
@@ -440,7 +447,8 @@ def main() -> int:
                   f"ens={a['ensemble']:.3f} naive={a['naive']:.3f} "
                   f"mom={a['momentum']:.3f} log={a['logistic']:.3f} "
                   f"ret_ens={res['econ']['ensemble']['total_return']:+.3f} "
-                  f"ret_bh={res['econ']['buy_hold']['total_return']:+.3f}")
+                  f"ret_bh={res['econ']['buy_hold']['total_return']:+.3f} "
+                  f"turn={res['econ']['ensemble']['turnover']:4d}")
 
     if not per_ticker:
         print("EDGE GATE: NO DATA — no ticker evaluated")
@@ -475,7 +483,8 @@ def main() -> int:
     os.makedirs(args.report_dir, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report = {"stamp": stamp, "fit_frac": args.fit_frac,
-              "eval_frac": args.eval_frac, "pooled": {
+              "eval_frac": args.eval_frac,
+              "entry_threshold": args.entry_threshold, "pooled": {
                   "n_eval": n_eval, "k_ens": k_ens, **verdict},
               "regimes": regimes,
               "tickers": per_ticker}

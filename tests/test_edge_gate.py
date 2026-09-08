@@ -125,3 +125,15 @@ def test_regime_breakdown_pools_correctly(monkeypatch):
     assert out["bull"]["n"] == 10
     assert out["bull"]["accs"]["ensemble"] == 1.0
     assert out["bull"]["accs"]["momentum"] == 0.0
+
+
+def test_higher_entry_threshold_cuts_choppy_turnover():
+    import numpy as np
+
+    from scripts.edge_gate import economics
+    rng = np.random.default_rng(3)
+    probs = 0.5 + rng.normal(0, 0.08, 200)
+    closes = list(100 * np.exp(np.cumsum(rng.normal(0.0, 0.01, 200))))
+    lo = economics((probs > 0.5).astype(int), closes)
+    hi = economics((probs > 0.6).astype(int), closes)
+    assert hi["turnover"] <= lo["turnover"]
