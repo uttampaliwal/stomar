@@ -15,7 +15,10 @@ from scripts.edge_gate import (
     momentum_preds,
     naive_preds,
     pooled_verdict,
+    regime_breakdown,
+    regime_labels,
     split_oos,
+    strategy_rets,
 )
 
 
@@ -87,3 +90,38 @@ def test_pooled_verdict_pass_and_fail():
     v2 = pooled_verdict(2000, 980, bad, 0.10, 0.05, 0.6)
     assert v2["passed"] is False
     assert v2["checks"]["beats_naive"] is False
+
+
+def test_strategy_rets_length_and_flat():
+    closes = [100.0, 101.0, 102.0, 101.5]
+    r = strategy_rets([0, 0, 0, 0], closes)
+    assert len(r) == 4
+    assert float(np.sum(np.abs(r))) == 0.0
+
+
+def test_regime_labels_band_and_unknown():
+    import pandas as pd
+
+    dates = pd.bdate_range("2024-01-01", periods=100)
+    assert regime_labels([], lookback=63) == []
+    labels = regime_labels([str(d.date()) for d in dates[:5]], lookback=63)
+    assert labels == ["unknown"] * 5  # not enough history
+
+
+def test_regime_breakdown_pools_correctly(monkeypatch):
+    import scripts.edge_gate as eg
+
+    dates = [f"2024-01-{d:02d}" for d in range(1, 11)]
+    det = {"dates": dates,
+           "actual": [1] * 10,
+           "preds": {"ensemble": [1] * 10, "naive": [1] * 10,
+                     "momentum": [0] * 10, "logistic": [1] * 10},
+           "closes": [100.0 + i for i in range(10)]}
+    per_ticker = [{"eval_detail": det}]
+    monkeypatch.setattr(eg, "regime_labels",
+                        lambda dates, lookback=63, band=0.03: ["bull"] * len(dates))
+    out = regime_breakdown(per_ticker)
+    assert set(out) == {"bull"}
+    assert out["bull"]["n"] == 10
+    assert out["bull"]["accs"]["ensemble"] == 1.0
+    assert out["bull"]["accs"]["momentum"] == 0.0

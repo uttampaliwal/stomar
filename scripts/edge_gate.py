@@ -116,19 +116,59 @@ def mcnemar_p(ens_correct: list[int], base_correct: list[int]) -> float:
 
 def economics(pred_dirs, closes) -> dict:
     """Net-of-costs directional long/flat economics on an eval window."""
-    from src.trading.simulate import strategy_return_series
     from src.models.validation import performance_metrics
 
-    pos = np.where(np.asarray(pred_dirs) > 0.5, 1.0, 0.0)
-    fwd = pd_pct_fwd(closes)
-    rets = strategy_return_series(pos, fwd)
+    rets = strategy_rets(pred_dirs, closes)
     m = performance_metrics(rets)
+    pos = np.where(np.asarray(pred_dirs) > 0.5, 1.0, 0.0)
     return {
         "total_return": float(m.get("total_return", 0.0)),
         "sharpe": float(m.get("sharpe", 0.0)),
         "max_drawdown": float(m.get("max_drawdown", 0.0)),
         "turnover": int(np.sum(np.diff(np.concatenate(([0.0], pos))) != 0)),
     }
+
+
+def strategy_rets(pred_dirs, closes) -> np.ndarray:
+    """Per-bar net-of-costs strategy returns (powers economics + F2 regimes)."""
+    from src.trading.simulate import strategy_return_series
+
+    pos = np.where(np.asarray(pred_dirs) > 0.5, 1.0, 0.0)
+    fwd = pd_pct_fwd(closes)
+    return np.asarray(strategy_return_series(pos, fwd), dtype=float)
+
+
+def regime_labels(dates, lookback: int = 63, band: float = 0.03) -> list[str]:
+    """NIFTY-trend regime per date: bull/bear/sideways/unknown.
+
+    Trailing ``lookback``-day index return vs ±``band`` — strictly
+    point-in-time (only index values on/before each date).
+    """
+    import pandas as pd
+
+    try:
+        from src.signals.feature_pipeline import load_index_history
+
+        idx = load_index_history(period="10y")
+    except Exception as exc:
+        logger.warning("regime split unavailable (no index history): %s", exc)
+        return ["unknown"] * len(dates)
+    if idx is None or idx.empty or "close" not in idx.columns:
+        return ["unknown"] * len(dates)
+    dts = pd.to_datetime(dates)
+    series = idx["close"].reindex(dts, method="ffill")
+    ret = series.pct_change(lookback)
+    out = []
+    for v in ret.values:
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            out.append("unknown")
+        elif v > band:
+            out.append("bull")
+        elif v < -band:
+            out.append("bear")
+        else:
+            out.append("sideways")
+    return out
 
 
 def pd_pct_fwd(closes) -> np.ndarray:
@@ -307,7 +347,64 @@ def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float) -> dict | No
         "econ": {"ensemble": econ_ens, "buy_hold": econ_bh,
                  "momentum": econ_mom, "logistic": econ_log},
         "meta_used": meta_used,
+        # F2 regime split inputs (raw eval vectors; pooled later).
+        "eval_detail": {
+            "dates": [str(rows[i]["date"]) for i in eval_idx],
+            "actual": ev_actual.astype(int).tolist(),
+            "preds": {"ensemble": ev_ens.astype(int).tolist(),
+                      "naive": ev_naive.astype(int).tolist(),
+                      "momentum": ev_mom.astype(int).tolist(),
+                      "logistic": ev_log.astype(int).tolist()},
+            "closes": [float(c) for c in ev_closes],
+        },
     }
+
+
+def regime_breakdown(per_ticker) -> dict:
+    """F2: pool eval bars by NIFTY-trend regime (descriptive, not a retest).
+
+    Returns per-regime {n, accs, ret_ens, ret_bh} pooled across tickers.
+    Economics per regime compounds that regime's bars of the full-window
+    per-bar net return series.
+    """
+    all_dates = sorted({d for r in per_ticker for d in r["eval_detail"]["dates"]})
+    reg_of = dict(zip(all_dates, regime_labels(all_dates)))
+    out = {}
+    for regime in ("bull", "bear", "sideways"):
+        n = k_ens = 0
+        k_base = {"naive": 0, "momentum": 0, "logistic": 0}
+        rets_ens, rets_bh = [], []
+        for r in per_ticker:
+            det = r["eval_detail"]
+            idx = [i for i, d in enumerate(det["dates"]) if reg_of.get(d) == regime]
+            if not idx:
+                continue
+            actual = np.array(det["actual"])[idx]
+            for name in ("ensemble", "naive", "momentum", "logistic"):
+                pred = np.array(det["preds"][name])[idx]
+                c = int((pred == actual).sum())
+                if name == "ensemble":
+                    k_ens += c
+                else:
+                    k_base[name] += c
+            n += len(idx)
+            # Regime economics: compound this regime's bars of the ticker's
+            # full-window per-bar series (= growth if invested only on
+            # regime bars).
+            full_rets = strategy_rets(det["preds"]["ensemble"], det["closes"])
+            full_bh = strategy_rets([1] * len(det["closes"]), det["closes"])
+            rets_ens.append(float(np.prod([1 + full_rets[i] for i in idx]) - 1))
+            rets_bh.append(float(np.prod([1 + full_bh[i] for i in idx]) - 1))
+        if n == 0:
+            continue
+        out[regime] = {
+            "n": n,
+            "accs": {"ensemble": k_ens / n,
+                     **{k: v / n for k, v in k_base.items()}},
+            "ret_ens": float(np.mean(rets_ens)),
+            "ret_bh": float(np.mean(rets_bh)),
+        }
+    return out
 
 
 def main() -> int:
@@ -315,6 +412,8 @@ def main() -> int:
     ap.add_argument("--tickers", nargs="*", default=None)
     ap.add_argument("--fit-frac", type=float, default=FIT_FRAC_DEFAULT)
     ap.add_argument("--eval-frac", type=float, default=EVAL_FRAC_DEFAULT)
+    ap.add_argument("--regime-split", action="store_true",
+                    help="F2: pooled accuracy/economics by NIFTY-trend regime")
     ap.add_argument("--report-dir", default=os.path.join(ROOT, "data", "edge_gate"))
     args = ap.parse_args()
 
@@ -363,11 +462,22 @@ def main() -> int:
 
     verdict = pooled_verdict(n_eval, k_ens, accs, ret_ens, ret_bh, mcn_best)
 
+    regimes = {}
+    if args.regime_split:
+        regimes = regime_breakdown(per_ticker)
+        for name, g in regimes.items():
+            a = g["accs"]
+            print(f"  regime {name:8s} n={g['n']:5d} "
+                  f"ens={a['ensemble']:.3f} naive={a['naive']:.3f} "
+                  f"mom={a['momentum']:.3f} log={a['logistic']:.3f} "
+                  f"ret_ens={g['ret_ens']:+.3f} ret_bh={g['ret_bh']:+.3f}")
+
     os.makedirs(args.report_dir, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report = {"stamp": stamp, "fit_frac": args.fit_frac,
               "eval_frac": args.eval_frac, "pooled": {
                   "n_eval": n_eval, "k_ens": k_ens, **verdict},
+              "regimes": regimes,
               "tickers": per_ticker}
     with open(os.path.join(args.report_dir, f"report_{stamp}.json"), "w") as f:
         json.dump(report, f, indent=2, default=str)
