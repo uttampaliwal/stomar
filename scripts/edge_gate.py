@@ -159,7 +159,12 @@ def pooled_verdict(n_eval: int, k_ens: int, accs: dict,
 
 # ── heavy per-ticker path (trained bundles, cached history) ──────────────────
 
-def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float) -> dict | None:
+def load_ticker_rows(ticker: str):
+    """Load bundle + features and run backtest rows for a ticker.
+
+    Shared by the gate and F1 meta refresh so both score identical rows.
+    Returns (rows, closes, meta_used) or (None, None, False) when skipped.
+    """
     import pandas as pd
 
     from src.data.data_fetcher import fetch_stock_data
@@ -171,7 +176,7 @@ def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float) -> dict | No
         df = fetch_stock_data(ticker, period="5y", force_refresh=False)
     except Exception as exc:
         logger.warning("skip %s: no cached history (%s)", ticker, exc)
-        return None
+        return None, None, False
     # Full factor set via the shared trainer-identical builder (O2 parity).
     # External PIT features resolve from on-disk caches (sentiment JSON,
     # fii_dii + MTF parquet) with neutral defaults — same convention as
@@ -200,11 +205,18 @@ def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float) -> dict | No
 
     meta_model = None
     try:
-        from src.models.artifacts import ArtifactBundle
+        # Production path, identical to orchestrator._run_ensemble: per-ticker
+        # meta lives in its OWN manifest bundle (meta_{T}.pkl), not inside
+        # the ticker bundle — a bundle-listing check here silently disables
+        # the meta path and gates the wrong strategy.
+        import os
 
-        bundle = ArtifactBundle.for_ticker("models", ticker)
-        if f"meta_{clean}.pkl" in bundle.listed_files():
-            meta_model = bundle.load_joblib(f"meta_{clean}.pkl")
+        from src.core.constants import MODELS_DIR
+        from src.models.ensemble import load_meta_model
+
+        ticker_meta_path = os.path.join(MODELS_DIR, f"meta_{clean}.pkl")
+        if os.path.exists(ticker_meta_path):
+            meta_model = load_meta_model(ticker_meta_path)
     except Exception as exc:
         logger.debug("meta unavailable for %s: %s", ticker, exc)
 
@@ -219,7 +231,7 @@ def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float) -> dict | No
     )
     if not rows or len(rows) < 100:
         logger.warning("skip %s: only %d backtest rows", ticker, len(rows) if rows else 0)
-        return None
+        return None, None, False
 
     close_by_date = df_feat["close"].to_dict()
 
@@ -238,6 +250,13 @@ def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float) -> dict | No
     rows = keep
     if len(rows) < 100:
         logger.warning("skip %s: price alignment left %d rows", ticker, len(rows))
+        return None, None, False
+    return rows, closes_all, meta_model is not None
+
+
+def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float) -> dict | None:
+    rows, closes_all, meta_used = load_ticker_rows(ticker)
+    if not rows:
         return None
 
     actual = np.array([r["actual"] for r in rows])
@@ -287,7 +306,7 @@ def evaluate_ticker(ticker: str, fit_frac: float, eval_frac: float) -> dict | No
         "best_baseline": best_base,
         "econ": {"ensemble": econ_ens, "buy_hold": econ_bh,
                  "momentum": econ_mom, "logistic": econ_log},
-        "meta_used": meta_model is not None,
+        "meta_used": meta_used,
     }
 
 
