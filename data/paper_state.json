@@ -1,15 +1,55 @@
 {
   "initial_capital": 200000,
-  "cash": 200000,
+  "cash": 172230.9448,
   "cumulative_pnl": 0.0,
-  "positions": {},
+  "positions": {
+    "TCS.NS": {
+      "quantity": 8,
+      "avg_cost": 2253.251,
+      "current_price": 2253.251
+    },
+    "HINDUNILVR.NS": {
+      "quantity": 5,
+      "avg_cost": 1940.0381000000002,
+      "current_price": 1940.0381
+    }
+  },
   "closed_positions": [],
-  "trade_log": [],
+  "trade_log": [
+    {
+      "timestamp": "2026-09-15T18:58:05.702440",
+      "ticker": "TCS.NS",
+      "side": "BUY",
+      "order_type": "MARKET",
+      "quantity": 8,
+      "fill_price": 2253.251,
+      "fill_cost": 18053.871000000003,
+      "slippage": 0.0,
+      "pnl": 0.0,
+      "cumulative_pnl": 0.0,
+      "cash_after": 200000
+    },
+    {
+      "timestamp": "2026-09-15T18:58:16.763073",
+      "ticker": "HINDUNILVR.NS",
+      "side": "BUY",
+      "order_type": "MARKET",
+      "quantity": 5,
+      "fill_price": 1940.0381,
+      "fill_cost": 9715.184200000002,
+      "slippage": 0.0,
+      "pnl": 0.0,
+      "cumulative_pnl": 0.0,
+      "cash_after": 181946.129
+    }
+  ],
   "risk_daily_pnl": 0.0,
   "risk_weekly_pnl": 0.0,
   "risk_peak_equity": 200000,
+  "risk_consecutive_losses": 0,
+  "risk_halted": false,
   "engine": {
-    "order_counter": 1,
+    "order_counter": 3,
     "pending_orders": [],
     "filled_orders": [
       {
@@ -26,6 +66,36 @@
         "fill_cost": 10020.4648,
         "timestamp": "",
         "notes": "Fill: 500.25, costs: 15.46"
+      },
+      {
+        "order_id": "ORD-000002",
+        "ticker": "TCS.NS",
+        "side": "BUY",
+        "order_type": "MARKET",
+        "quantity": 8,
+        "price": 2251.0,
+        "stop_price": 0,
+        "status": "FILLED",
+        "filled_price": 2253.251,
+        "filled_quantity": 8,
+        "fill_cost": 18053.871000000003,
+        "timestamp": "",
+        "notes": "Fill: 2253.25, costs: 27.86"
+      },
+      {
+        "order_id": "ORD-000003",
+        "ticker": "HINDUNILVR.NS",
+        "side": "BUY",
+        "order_type": "MARKET",
+        "quantity": 5,
+        "price": 1938.1,
+        "stop_price": 0,
+        "status": "FILLED",
+        "filled_price": 1940.0381,
+        "filled_quantity": 5,
+        "fill_cost": 9715.184200000002,
+        "timestamp": "",
+        "notes": "Fill: 1940.04, costs: 14.99"
       }
     ],
     "rejected_orders": []

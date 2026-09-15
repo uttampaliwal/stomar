@@ -101,8 +101,9 @@ def stage_safety_battery() -> dict:
 def stage_supervision(tickers: list[str] | None, capital: float) -> dict:
     """Today's decisions through ExecutionManager -> DryRunBroker."""
     from scripts.dry_run_supervision import run_supervision
+    from src.data.data_fetcher import NSE_STOCKS
 
-    report = run_supervision(tickers, capital=capital)
+    report = run_supervision(list(tickers) if tickers else list(NSE_STOCKS), capital=capital)
     errors = report.get("orders_blocked", 0)
     return {
         "orders_placed": report.get("orders_placed", 0),

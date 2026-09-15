@@ -50,8 +50,10 @@ def _quote_for(ticker: str, price: float) -> dict:
     }
 
 
-def run_supervision(tickers: list[str], capital: float = 500_000,
+def run_supervision(tickers: list[str] | None, capital: float = 500_000,
                     db_path: str | None = None) -> dict:
+    if not tickers:
+        tickers = list(NSE_STOCKS)
     reset_broker()
     from src.brokers.dryrun import DryRunBroker
     broker = DryRunBroker(initial_cash=capital)  # paper-only by construction

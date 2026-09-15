@@ -4,8 +4,8 @@
   "model_version": "1",
   "feature_schema_version": "1",
   "training_dataset_hash": "",
-  "created_at": "2026-08-19T12:08:53.247259+00:00",
+  "created_at": "2026-09-15T13:26:37.112193+00:00",
   "files": {
-    "meta_ICICIBANK_NS.pkl": "4facd4b593383f0d79d21a1125107021428db011823a2c3614d4f4bd45f063e3"
+    "meta_ICICIBANK_NS.pkl": "4a5a3fd8e2dcbcecc7735dd5c013e9d8f9f52ffd8882eb0dfa20f7432979fda5"
   }
 }

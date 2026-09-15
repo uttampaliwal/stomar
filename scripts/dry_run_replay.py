@@ -375,6 +375,14 @@ def scenario_budget_rollover():
     from src.core.timeutils import ist_today as real_ist_today
 
     mgr, _b, _r, audit = _fresh_manager("checks-budget", max_orders=2)
+    # Battery must be re-runnable same-day: clear today's ledger so the
+    # budget starts fresh on every run instead of inheriting prior submits.
+    import glob as _glob
+    for _old in _glob.glob(os.path.join(audit, "orders-*.jsonl")):
+        try:
+            os.unlink(_old)
+        except OSError:
+            pass
     today = date.today()
 
     try:
