@@ -203,3 +203,22 @@ Follow-up to the §1 verdict; each item is regression-tested:
 - README/meta-controller claims corrected: learned signal weighting via
   regularized logistic regression (not a "contextual bandit"); triple-
   barrier labels documented as computed-but-not-yet-the-training-target.
+
+---
+
+## 7. Status update — 2026-09-16 (measured, not estimated)
+
+Source: `scripts/readiness_report.py` -> `data/readiness/report.json`
+(generated 2026-09-16T11:21Z). Verdict: **NO-GO — blocking requirements open.**
+
+| Section 3 item | Then (2026-08-01) | Now (2026-09-16) |
+|---|---|---|
+| 1. Retrain without `ichimoku_chikou` | IN PROGRESS (5 tickers left) | **CLOSED** — 21/21 bundles at model_version 2 / schema 4 |
+| 2. Live broker sandbox validation | IN PROGRESS | Still **OPEN** — `kite_sandbox.json` not run |
+| 3. Operator credentials and checklist | OPEN | Still **OPEN** — all five live-gate vars unset (correctly locked) |
+| 4. Supervised dry-run window (>=14) | WINDOW IN PROGRESS | Still **OPEN** — 1/14 green sessions (window started 2026-09-15; safety battery 23/23) |
+
+Closing item 1 fixed a safety gap (leakage), not the alpha gap:
+`docs/GATE-VERDICT.md` (F3) stays **NO-GO for live real-money trading** —
+pooled edge gates FAIL on economics net of full NSE costs. Reopening the
+alpha track needs a new hypothesis doc plus a new gate, never a threshold tweak.
