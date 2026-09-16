@@ -361,15 +361,59 @@ def _remove_systemd() -> int:
     return 0
 
 
+def _win_task_run() -> str:
+    """schtasks /tr string Task Scheduler can actually execute.
+
+    Two constraints drive this design: (1) Scheduler splits /tr into
+    executable + arguments on quote boundaries and never interprets
+    shell redirection (>>) itself; (2) /tr is limited to 261 chars, too
+    short for a cmd.exe-wrapped venv-python invocation. So the action
+    points at scripts/run_watchdog_daily.bat, which resolves paths
+    portably via %~dp0 and owns the log redirection.
+    """
+    return f'"{os.path.join(SCRIPT_DIR, "run_watchdog_daily.bat")}"'
+
+
+def _win_install() -> int:
+    """Daily watchdog on Windows Task Scheduler (Mon–Fri 16:10)."""
+    os.makedirs(os.path.join(PROJECT_ROOT, "data", "pipeline_logs"),
+                exist_ok=True)
+    cmd = ["schtasks", "/create", "/tn", DAILY_TASK,
+           "/tr", _win_task_run(),
+           "/sc", "weekly", "/d", "MON,TUE,WED,THU,FRI", "/st", "16:10",
+           "/f"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode == 0:
+        print(f"Task '{DAILY_TASK}' installed (Windows Task Scheduler, Mon-Fri 16:10).")
+    else:
+        print(f"Failed to install task: {result.stderr}")
+    return result.returncode
+
+
+def _win_remove() -> int:
+    for name in (DAILY_TASK, DEEP_TASK):
+        subprocess.run(["schtasks", "/delete", "/tn", name, "/f"],
+                       capture_output=True, text=True)
+    print("watchdog tasks removed (if present)")
+    return 0
+
+
+def _win_status() -> int:
+    result = subprocess.run(
+        ["schtasks", "/query", "/tn", DAILY_TASK, "/fo", "LIST"],
+        capture_output=True, text=True)
+    if result.returncode == 0:
+        print(f"Task '{DAILY_TASK}' is installed:")
+        print(result.stdout)
+    else:
+        print(f"Task '{DAILY_TASK}' is not installed.")
+    return result.returncode
+
+
 def install_cron() -> int:
     kind = _scheduler_kind()
     if kind == "windows":
-        print("On Windows use Task Scheduler:")
-        print(f'  schtasks /create /tn StoMar_Readiness_Watchdog /tr '
-              f'"{sys.executable} '
-              f'{os.path.join(SCRIPT_DIR, "readiness_watchdog.py")}" '
-              f'/sc weekly /d MON,TUE,WED,THU,FRI /st 16:10 /f')
-        return 1
+        return _win_install()
     if kind == "cron":
         existing = subprocess.run(["crontab", "-l"], capture_output=True,
                                   text=True)
@@ -394,6 +438,8 @@ def install_cron() -> int:
 
 def remove_cron() -> int:
     kind = _scheduler_kind()
+    if kind == "windows":
+        return _win_remove()
     if kind == "cron":
         existing = subprocess.run(["crontab", "-l"], capture_output=True,
                                   text=True)

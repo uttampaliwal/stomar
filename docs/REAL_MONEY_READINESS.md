@@ -222,3 +222,31 @@ Closing item 1 fixed a safety gap (leakage), not the alpha gap:
 `docs/GATE-VERDICT.md` (F3) stays **NO-GO for live real-money trading** —
 pooled edge gates FAIL on economics net of full NSE costs. Reopening the
 alpha track needs a new hypothesis doc plus a new gate, never a threshold tweak.
+
+---
+
+## 8. Multi-machine evidence sync — 2026-09-16
+
+Problem: the 14-day dry-run window counts recorded watchdog sessions, but
+the watchdog only self-scheduled on cron/systemd Linux. On Windows nothing
+ever auto-ran, so 2026-08-01 → 2026-09-15 produced a single session
+(recorded manually). Ledger data was never lost — it just never ran.
+
+Fix (code, tested 2026-09-16):
+- `scripts/readiness_watchdog.py` gained a Windows path: `--install`
+  creates `StoMar_Readiness_Watchdog` in Task Scheduler (Mon–Fri 16:10)
+  via `scripts/run_watchdog_daily.bat` (portable `%~dp0` paths; a .bat
+  keeps the 261-char schtasks /tr limit happy). The pre-existing broken
+  task entry (unrunnable quoting) was replaced.
+- `scripts/sync_state.py` now syncs through a PRIVATE companion repo
+  (default `../stomar-state`, `--repo` override): pull before the run,
+  push after. Shared set = ledger (WAL-checkpointed) + paper account +
+  `data/readiness/progress.json` + `report.json` + full `models/` tree
+  (full tree on purpose: quarantine/registry/production must travel too).
+  Short-TTL caches and secrets never sync. Public `stomar` repo stays
+  code-only. Verified end-to-end against throwaway repos (copy/pull/
+  dry-run-push all pass; byte-identical restore of shared files).
+
+Still needed (operator): create private `stomar-state`, clone beside
+`stomar/`, seed-push once from the machine holding the newest state.
+F3 NO-GO from section 7 is unchanged by all of the above.
