@@ -65,16 +65,31 @@ def _base_cmd(paper: bool, capital: float) -> list[str]:
     return cmd
 
 
+def _win_task_run(paper: bool, capital: float, log_file: str) -> str:
+    """Build a schtasks /tr string Task Scheduler can actually execute.
+
+    schtasks stores /tr as one action: the first quoted token becomes the
+    executable and the rest become arguments. The old code quoted the
+    python-exe + script together as ONE token, so Scheduler looked for a
+    file literally named "python.exe auto_pipeline.py" and the 4 PM run
+    failed with file-not-found. Shell redirection (>>) also needs cmd.exe;
+    Scheduler does not interpret it on its own.
+    """
+    parts = _base_cmd(paper, capital)
+    quoted = " ".join(f'"{p}"' for p in parts)
+    inner = f'{quoted} >> "{log_file}" 2>&1'
+    return f'cmd.exe /d /c "{inner}"'
+
+
 def _win_install(run_time: str = "15:45", paper: bool = False,
                  capital: float = DEFAULT_CAPITAL) -> int:
     ensure_log_dir()
     log_file = os.path.join(LOG_DIR, f"daily_{datetime.now().strftime('%Y%m%d')}.log")
-    cmd_line = " ".join(_base_cmd(paper, capital))
 
     cmd = [
         "schtasks", "/create",
         "/tn", TASK_NAME,
-        "/tr", f'"{cmd_line}" >> "{log_file}" 2>&1',
+        "/tr", _win_task_run(paper, capital, log_file),
         "/sc", "daily",
         "/st", run_time,
         "/f",
@@ -97,12 +112,11 @@ def _win_install_boot(paper: bool = False, capital: float = DEFAULT_CAPITAL) -> 
     """Boot-time task: catches up missed days when the PC was off at 4PM."""
     ensure_log_dir()
     log_file = os.path.join(LOG_DIR, f"boot_{datetime.now().strftime('%Y%m%d')}.log")
-    cmd_line = " ".join(_base_cmd(paper, capital))
 
     cmd = [
         "schtasks", "/create",
         "/tn", BOOT_TASK_NAME,
-        "/tr", f'"{cmd_line}" >> "{log_file}" 2>&1',
+        "/tr", _win_task_run(paper, capital, log_file),
         "/sc", "onstart",
         "/delay", "0005:00",
         "/f",
