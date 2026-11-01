@@ -27,7 +27,7 @@ Single source of truth: `src/core/settings.py` (**pydantic-settings**, `env_pref
 
 Facts that save you an hour:
 
-- A **fallback settings class** duplicates all fields (`_FallbackSettings` in the same file) for when `pydantic-settings` import fails — keep both in sync.
+- pydantic-settings is a hard dependency; a **pydantic-free fallback path** (`_FallbackSettings`) keeps imports alive in minimal environments. The pydantic `Settings` class is the source of truth — new knobs go in both classes, and `tests/test_settings_parity.py` fails CI if they drift (this already caught 7 missing notification fields).
 - `STOMAR_DATA_DIR` is also read directly in `src/core/constants.py`.
 - **Production is fail-closed**: `STOMAR_ENV=production` without `STOMAR_API_KEY` or `STOMAR_AUTH_PASSWORD` refuses to boot (`api/main.py`).
 - Live trading additionally requires `STOMAR_LIVE_TRADING`, `STOMAR_LIVE_ACCOUNT_APPROVED`, `STOMAR_LIVE_CONFIRMATION` (phrase-exact) — see `src/core/trading_mode.py`. Paper mode is the default and requires none of these.

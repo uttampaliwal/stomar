@@ -35,6 +35,6 @@ Direction is one-way: routers/signals never reach brokers directly; every order 
 ## Known architecture debts (load-bearing context for agents)
 
 - Two data paths coexist: legacy fetch/parquet stack vs DuckDB PIT store. `services/market_data.py` glues them; PIT guarantee (`as_of`) only holds in the DuckDB path.
-- `_FallbackSettings` in `src/core/settings.py` duplicates ~60 fields of the pydantic settings — update both or tests will catch drift late.
+- `_FallbackSettings` in `src/core/settings.py` is the pydantic-free import path (kept and tested by design); a drift test (`tests/test_settings_parity.py`) fails CI if the fallback's fields/defaults ever diverge from the pydantic `Settings` class — add every new `STOMAR_*` knob to **both**.
 - Per-worker in-memory rate limiting and response cache in `api/main.py` (gunicorn `-w 4` → effective limits ×4).
 - 16:10 vs 15:45, drawdown 8% vs 15%, order budget 5 vs 10 in older docs are resolved in `docs/Go-Live-Gate.md`; when a number is in dispute, count from code.
