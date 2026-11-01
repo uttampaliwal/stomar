@@ -9,7 +9,7 @@ This file is an index. The authoritative, long-form checklist lives in **`docs/R
 
 ## Engineering debt queue (root-level, curated)
 
-- [ ] Migrate `models/` artifacts + `data/` state to Git LFS or a private sync remote; reconcile docs that claim these paths are gitignored.
+- [ ] Migrate `models/` artifacts + `data/` state to Git LFS or a private sync remote; reconcile docs that claim these paths are gitignored. *(Decision recorded 2026-11: `.gitattributes` no longer declares `filter=lfs` — LFS was deferred while state stays regular git-tracked blobs, and the unregistered filters would have failed add/checkout; file now carries plain `-text` binary markers with a re-enable recipe in the file itself.)*
 - [x] Enforce `_FallbackSettings` ←→ pydantic `Settings` parity in CI (`tests/test_settings_parity.py`; also fixed the real drift it caught: 7 notification fields were missing from the fallback).
 - [ ] Unify the parquet cache path and the DuckDB point-in-time store behind `services/market_data.py` (or retire the legacy path).
 - [ ] Fold root scripts (`auto_pipeline.py`, `run_daily.py` etc.) into `src/automation/` (coordinate with `docker-compose.yml` + docs references).

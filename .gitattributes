@@ -1,11 +1,17 @@
-# PyTorch model weights
-*.pt filter=lfs diff=lfs merge=lfs -text
-
-# Pickle / joblib serialized objects
-*.pkl filter=lfs diff=lfs merge=lfs -text
-
-# Parquet data files
-*.parquet filter=lfs diff=lfs merge=lfs -text
-
-# SQLite databases
-*.db filter=lfs diff=lfs merge=lfs -text
+# Binary state/artifact markers — deliberately NOT Git LFS.
+#
+# Decision (2026-11): `models/` bundles, `data/stomar.db` and `*.parquet`
+# are intentionally git-tracked state synced between machines (see AGENTS.md
+# repo-facts and ROADMAP.md). Git LFS was evaluated and deferred — these
+# blobs were committed as regular objects and no `filter.lfs` registration
+# exists, so declaring `filter=lfs` here was a lie that would fail any
+# future `git add`/checkout of these paths with an unregistered-filter error.
+# `-text` keeps git from ever line-ending-renormalizing these binaries.
+#
+# If LFS is ever adopted, register it (`git lfs install --local`) FIRST,
+# then re-add the `filter=lfs diff=lfs merge=lfs -text` lines in one commit —
+# see the ROADMAP artifact-migration item.
+*.pt -text
+*.pkl -text
+*.parquet -text
+*.db -text
