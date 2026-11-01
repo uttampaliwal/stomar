@@ -243,7 +243,7 @@ stomar/
 ├── src/automation/run_pipeline.py               # Retraining pipeline
 ├── src/automation/auto_pipeline.py              # Startup automation
 ├── src/automation/schedule_pipeline.py          # Windows Task Scheduler
-├── verify_system.py              # System verification
+
 ├── pyproject.toml                # Python deps + ruff/pytest config (single source of truth)
 ├── uv.lock                       # Locked dependency graph (commit it)
 ├── .python-version               # Pinned Python 3.13

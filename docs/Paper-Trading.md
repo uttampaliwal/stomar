@@ -62,7 +62,7 @@ when the trading mode is `live`.
 
 - `scripts/dry_run_supervision.py` — supervised dry-run harness → `data/dry_run/`.
 - `src/brokers/dryrun.py` — `DryRunBroker` with deterministic fills/partials/rejections, same lifecycle as live.
-- `verify_system.py` — environment sanity checks.
+- Smoke checks are part of CI now: `tests/test_system_smoke.py` (ledger + meta-controller + decision, synthetic data).
 
 ## Status
 

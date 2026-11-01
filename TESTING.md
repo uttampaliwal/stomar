@@ -41,7 +41,7 @@ Priority suites — run these when touching anything related:
 - Test names describe the risk, not the function (`test_live_requires_explicit_env_confirmation` style).
 - Fixtures for synthetic OHLC/returns live in `conftest.py` (`sample_prices`, `sample_returns`, `sample_feature_df`).
 - `scripts/dry_run_replay.py` & `scripts/dry_run_supervision.py` are supervised manual validations, not tests; expect them exercised against real bundles during go-live checks.
-- `verify_system.py` is a smoke print-script using synthetic data — not part of CI.
+- `tests/test_system_smoke.py` is the synthetic-data smoke suite (ledger roundtrip, meta-controller training gate, decide() contract) — runs in CI. Promoted from the old root `verify_system.py` print-script, which only printed.
 
 ## Coverage expectations
 

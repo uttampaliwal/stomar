@@ -41,7 +41,7 @@ Facts that save you an hour:
 | `uv run src/automation/run_daily.py` | One research day: 14 signals → meta-controller → paper trades; `--backfill`, `--paper-trade`, `--dry-run` |
 | `uv run src/automation/run_pipeline.py` | Per-ticker retrain with OOS gates (`min_oos_accuracy`, `min_oos_sharpe`, drawdown cap) or `--train-all` |
 | `uv run src/automation/schedule_pipeline.py` | Installs cross-platform scheduler (Task Scheduler / cron / systemd) for weekday 15:45 IST |
-| `uv run verify_system.py` | Smoke check on synthetic data (prints; no asserts) |
+| `uv run pytest tests/test_system_smoke.py` | Real smoke suite on synthetic data (asserts; ~8 s) — promoted from the deleted root `verify_system.py` print-script |
 | `scripts/` | Edge gate, dry-run replay/supervision, meta refresh, state sync, watchdog, Kite sandbox validation |
 
 Note: `src/automation/run_pipeline.py --paper` currently only fetches a bar and saves state (vestigial); use `src/automation/auto_pipeline.py` or `src/automation/run_daily.py --paper-trade` for real paper activity.

@@ -3,7 +3,6 @@
 Usage:
     python src/automation/run_pipeline.py                       # All configured tickers
     python src/automation/run_pipeline.py RELIANCE.NS TCS.NS    # Specific tickers
-    python src/automation/run_pipeline.py --paper               # Run paper trading after training
     python src/automation/run_pipeline.py --train-all           # Batch train all 20 NSE stocks
     python src/automation/run_pipeline.py --train RELIANCE.NS   # Train specific ticker(s)
 """
@@ -24,8 +23,6 @@ def main():
 
     parser = argparse.ArgumentParser(description="StoMar Retraining Pipeline")
     parser.add_argument("tickers", nargs="*", help="Tickers to process")
-    parser.add_argument("--paper", action="store_true",
-                        help="Run paper trading after training")
     parser.add_argument("--train-all", action="store_true",
                         help="Batch train all 20 NSE stocks")
     parser.add_argument("--train", nargs="+", metavar="TICKER",
@@ -85,33 +82,6 @@ def main():
     for r in results:
         icon = {"success": "OK", "failed": "FAIL", "rejected": "REJECT"}.get(r.status, "?")
         print(f"  [{icon}] {r.ticker}: [{r.stage}] {r.message}")
-
-    if args.paper:
-        print("\n=== Paper Trading Mode ===")
-        from src.trading.paper_trader import PaperTrader
-
-        trader = PaperTrader(initial_capital=100_000)
-        trader.load_state()
-
-        for r in results:
-            if r.status == "success":
-                ticker = r.ticker
-                print(f"  Loading latest data for {ticker}...")
-                try:
-                    from src.data.data_fetcher import fetch_stock_data
-                    df = fetch_stock_data(ticker, period="5d")
-                    if len(df) >= 2:
-                        last = df.iloc[-1]
-                        bar_data = {
-                            "o": float(last["open"]), "h": float(last["high"]),
-                            "low": float(last["low"]), "c": float(last["close"]),
-                        }
-                        print(f"  {ticker}: OHLC = {bar_data}")
-                except Exception as e:
-                    print(f"  {ticker}: Could not fetch data: {e}")
-
-        trader.save_state()
-        print("  Paper trading state saved.")
 
     exit_code = 0 if summary["failed"] == 0 else 1
     sys.exit(exit_code)

@@ -220,7 +220,7 @@ stomar/
 ├── src/automation/run_pipeline.py            # Retraining pipeline
 ├── src/automation/auto_pipeline.py           # Recommended: gap detection + backfill + daily + paper + summary
 ├── src/automation/schedule_pipeline.py       # Windows Task Scheduler
-├── verify_system.py           # System verification
+
 ├── pyproject.toml             # Python deps + ruff/pytest config
 ├── uv.lock                    # Locked dependency graph (commit it)
 ├── .python-version            # Pinned Python 3.13
@@ -375,7 +375,6 @@ uv run src/automation/run_daily.py --paper-trade --capital 500000
 # Retraining pipeline
 uv run src/automation/run_pipeline.py --train-all               # Train all 20 stocks
 uv run src/automation/run_pipeline.py --train RELIANCE.NS       # Specific tickers
-uv run src/automation/run_pipeline.py --paper                   # Train + paper trade
 
 # Scheduler (host cron / systemd timer / Windows Task Scheduler)
 uv run src/automation/schedule_pipeline.py                      # Install daily 15:45 IST + boot catch-up
