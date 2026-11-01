@@ -54,9 +54,32 @@ class TestGapFilling:
         assert fixes[-1]["ticker"] == "TEST.NS"
 
     def test_holiday_gaps_are_not_treated_as_missing(self, tmp_data):
-        # Diwali 2025 (Tue Oct 21) missing from an otherwise complete series
+        """1-day gap on an official NSE holiday is expected, not data loss.
+
+        P2.3 contract: a single missing weekday whose date is on the NSE
+        holiday calendar (src/core/calendar) must not trigger gap_fill.
+        The dropped date is chosen from that same calendar over a frame
+        anchored to *today*, so the test cannot rot as the wall clock moves
+        (the previous hard-coded Diwali-2025 date slid out of the ~1y window
+        in Oct 2026 and broke CI with a KeyError). If the assert below fires,
+        extend ``_HOLIDAYS_BY_YEAR`` with the current year's official NSE
+        list — that is exactly the staleness the assert is reporting.
+        """
+        from src.core.calendar import is_trading_day
+
         df = _price_df(n=260)
-        df = df.drop([pd.Timestamp("2025-10-21")])
+        holiday_dts = [
+            d for d in df.index
+            if not is_trading_day(d.to_pydatetime().date())
+        ]
+        # Skip the frame edges: a missing edge date creates no detectable gap.
+        interior = holiday_dts[1:-1] or holiday_dts
+        assert interior, (
+            "No in-window date is a non-trading NSE holiday per "
+            "src/core/calendar — extend _HOLIDAYS_BY_YEAR with the current "
+            "year's official NSE holiday list."
+        )
+        df = df.drop([interior[0]])
         with patch.object(data_fetcher, "fetch_stock_data", return_value=df):
             result = fetch_validated_stock_data("TEST.NS", period="2y")
         assert "gap_fill" not in result["fixes"]

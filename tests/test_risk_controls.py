@@ -311,8 +311,16 @@ class TestPersistedRiskState:
                              state_file=state, persist_state=True)
         rc1.update_daily_pnl(-3_000)
 
-        # Simulate a restart on the NEXT IST day within the same ISO week.
-        tomorrow = rc_mod.ist_today() + __import__("datetime").timedelta(days=1)
+        # Simulate a restart on a NEW IST day that stays within the SAME ISO
+        # week. Tomorrow is same-week Mon-Sat; on a Sunday (tomorrow starts a
+        # new ISO week) fall back to yesterday, so the weekly-retention
+        # assertion below is independent of which day the suite runs on.
+        # (Used to mock plain `today + 1 day`, which reset weekly_pnl to 0.0
+        # on every Sunday run.)
+        today = rc_mod.ist_today()
+        tomorrow = today + __import__("datetime").timedelta(days=1)
+        if rc_mod.iso_week_key(tomorrow) != rc_mod.iso_week_key(today):
+            tomorrow = today - __import__("datetime").timedelta(days=1)
         monkeypatch.setattr(rc_mod, "ist_today", lambda: tomorrow)
 
         restarted = RiskController(initial_capital=100_000,
