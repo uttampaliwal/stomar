@@ -1,17 +1,15 @@
-# Binary state/artifact markers — deliberately NOT Git LFS.
+# Binary/artifact hydration rules.
 #
-# Decision (2026-11): `models/` bundles, `data/stomar.db` and `*.parquet`
-# are intentionally git-tracked state synced between machines (see AGENTS.md
-# repo-facts and ROADMAP.md). Git LFS was evaluated and deferred — these
-# blobs were committed as regular objects and no `filter.lfs` registration
-# exists, so declaring `filter=lfs` here was a lie that would fail any
-# future `git add`/checkout of these paths with an unregistered-filter error.
-# `-text` keeps git from ever line-ending-renormalizing these binaries.
-#
-# If LFS is ever adopted, register it (`git lfs install --local`) FIRST,
-# then re-add the `filter=lfs diff=lfs merge=lfs -text` lines in one commit —
-# see the ROADMAP artifact-migration item.
-*.pt -text
-*.pkl -text
+# Git LFS ADOPTED (2026-11): models/ weights (*.pt, *.pkl) are stored in
+# Git LFS (ROADMAP artifact-migration item). Requirements:
+#   - a clone that touches models/ must register the LFS filters ONCE per
+#     clone (`git lfs install --local`, already present in .git/config) —
+#     unregistered clones check out pointer stubs instead of weights.
+#   - CI/CodeQL do NOT fetch LFS objects: tests build synthetic fixtures
+#     and никогда read real model/data files, so checkout stays lfs:false.
+# `data/stomar.db` and *.parquet stay regular blobs (small; synced with
+# plain git). `-text` keeps git from line-ending-renormalizing binaries.
+*.pt filter=lfs diff=lfs merge=lfs -text
+*.pkl filter=lfs diff=lfs merge=lfs -text
 *.parquet -text
 *.db -text

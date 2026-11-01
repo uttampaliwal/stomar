@@ -30,7 +30,7 @@ Golden rule: if any other doc disagrees with `docs/Go-Live-Gate.md`, **that doc 
 
 - Python 3.13 managed by **uv** (`uv sync`, `uv run ...`); web frontend is a React/Vite app in `web/` (Node ≥ 22, `npm run lint`, `npm run build`).
 - CI: `.github/workflows/ci.yml` (lint + pytest + web build), CodeQL weekly, Dependabot.
-- Runtime state files (`data/stomar.db`, `data/paper_state.json`) and trained bundles under `models/` are **intentionally git-tracked** to sync state between machines (see `.gitignore` exceptions) — this contradicts an older README claim; treat them as state, not code, and never casually delete/regenerate them in a commit.
+- Runtime state files (`data/stomar.db`, `data/paper_state.json`) and trained bundles under `models/` are **intentionally git-tracked** to sync state between machines (see `.gitignore` exceptions; weights `*.pkl`/`*.pt` ride in Git LFS since 2026-11) — this contradicts an older README claim; treat them as state, not code, and never casually delete/regenerate them in a commit. Any clone touching `models/` must run `git lfs install --local` once or checkouts surface 130-byte pointer stubs instead of weights.
 - `models/_quarantine/` holds expired experiment artifacts — leave them alone unless explicitly asked.
 - Trained-model counts/routers/pages floats often in docs; when updating docs, count reality (`git ls-files`, files in `api/routers/`, `web/src/pages/`, `def test_` in `tests/`).
 - Data-refresh automation entry point: `src/automation/auto_pipeline.py` (holiday-aware gap detection, Telegram notify, per-stage retries). Scheduler installers: `src/automation/schedule_pipeline.py`.
