@@ -1,0 +1,21 @@
+# Roadmap
+
+This file is an index. The authoritative, long-form checklist lives in **`docs/ROADMAP.md`**; staging gates in **`docs/Live-Trading-Roadmap.md`**; the binding decision point in **`docs/Go-Live-Gate.md`**; and the recorded status in `docs/GATE-VERDICT.md` and `docs/REAL_MONEY_READINESS.md`.
+
+## Current status snapshot (2026-11)
+
+- **Verdict:** not live — edge-gate records accuracy 0.59–0.70 but post-cost returns below buy-and-hold; REAL-MONEY readiness audit is NO-GO.
+- **Build contract:** frozen in `docs/MASTER-PLAN.md`; fix cadence tracked as one PR per gate item.
+
+## Engineering debt queue (root-level, curated)
+
+- [ ] Migrate `models/` artifacts + `data/` state to Git LFS or a private sync remote; reconcile docs that claim these paths are gitignored.
+- [ ] Collapse `_FallbackSettings` duplication in `src/core/settings.py` (single pydantic source + import-time test).
+- [ ] Unify the parquet cache path and the DuckDB point-in-time store behind `services/market_data.py` (or retire the legacy path).
+- [ ] Fold root scripts (`auto_pipeline.py`, `run_daily.py` etc.) into `src/automation/` (coordinate with `docker-compose.yml` + docs references).
+- [ ] Replace/remove vestigial `run_pipeline.py --paper` dead mode; promote `verify_system.py` to a real pytest smoke test or delete.
+- [ ] Move in-memory rate limit / response cache to a shared store or document per-worker multiplication.
+- [ ] Archive `models/_quarantine/` experiment bundles out of git.
+- [ ] Re-check NSE bhavcopy archive fallback (`src/data/data_sources.py`) for live URL validity — source console discontinued.
+- [ ] Coverage gate: add `pytest-cov` threshold in CI once baseline suite stabilizes.
+- [ ] Pr-templates/issue-templates, release notes automation for tagged versions.

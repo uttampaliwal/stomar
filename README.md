@@ -1,6 +1,6 @@
 # StoMar — Autonomous Quant Trading System
 
-An autonomous quantitative trading system for the Indian NSE market. 5-model ML ensemble, meta-controller combining 14 signal modules, persistent SQLite ledger, paper trading with short selling, model interpretability, and a React dashboard with FastAPI backend.
+An autonomous quantitative trading system for the Indian NSE market. 6-model ML ensemble, meta-controller combining 14 signal modules, persistent SQLite ledger, paper trading with short selling, model interpretability, and a React dashboard with FastAPI backend.
 
 [![CI](https://github.com/uttampaliwal/stomar/actions/workflows/ci.yml/badge.svg)](https://github.com/uttampaliwal/stomar/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -45,13 +45,13 @@ everything reproducibly — no manual venv/pip management.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                REACT DASHBOARD (21 pages, :5173)                 │
+│                REACT DASHBOARD (22 pages, :5173)                 │
 │  Scanner | Consensus | Ranking | Portfolio | Backtest | Risk     │
 │  Sentiment | Market Pulse | Optimizer | Paper Trading | Ledger   │
 │                      ↕ Vite proxy (/api)                         │
 ├─────────────────────────────────────────────────────────────────┤
 │                  FASTAPI BACKEND (:8000)                          │
-│  24 API routers | CORS | Response caching | Parallel fetch      │
+│  26 API routers | CORS | Response caching | Parallel fetch      │
 └───────────────────────────┬─────────────────────────────────────┘
                             │ calls
 ┌───────────────────────────▼─────────────────────────────────────┐
@@ -164,7 +164,7 @@ uv run run_daily.py --dry-run                # Signals only, no ledger writes
 - **NSE costs** — Brokerage, STT, stamp duty, exchange charges, GST
 - **Risk controls** — Position limits, drawdown limits, kill switch, Kelly sizing
 
-### Dashboard (21 pages)
+### Dashboard (22 pages)
 
 | # | Page | Purpose |
 |---|------|---------|
@@ -228,7 +228,7 @@ stomar/
 ├── api/                       # FastAPI backend
 │   ├── main.py                # App + CORS + response caching
 │   ├── utils.py               # Parallel fetch utility
-│   └── routers/               # 24 API routers
+│   └── routers/               # 26 API routers
 │       ├── predictions.py     # ML predictions + feature importance + explanations
 │       ├── scanner.py         # Multi-stock screening
 │       ├── consensus.py       # Meta-Controller integration
@@ -257,7 +257,7 @@ stomar/
 │   │   ├── App.tsx            # Router with 21 routes
 │   │   ├── components/        # Sidebar, ThemeProvider, UI components
 │   │   ├── hooks/             # useApi, useDebouncedValue
-│   │   ├── pages/             # 21 page components
+│   │   ├── pages/             # 22 page components
 │   │   └── lib/               # Utilities + typed API shapes (api-types.ts)
 │   ├── .nvmrc                 # Node 22
 │   ├── vite.config.ts         # Vite + proxy /api → :8000
@@ -307,11 +307,11 @@ stomar/
 │       ├── risk_controls.py   # Pre-trade risk controls + kill switch
 │       ├── optimizer.py       # MVO, Black-Litterman
 │       └── holdings.py        # Zerodha CSV parser
-├── tests/                     # 750 tests
-├── models/                    # Trained weights (gitignored)
-│   ├── *.pt, *.pkl            # Per-ticker models
+├── tests/                     # ~1,430 tests (97 files)
+├── models/                    # Trained weights (git-tracked: state-sync baseline, see .gitignore)
+│   ├── *.pt, *.pkl            # Per-ticker models + manifests
 │   └── meta_controller.pkl    # Meta-controller
-├── data/                      # Runtime data (gitignored)
+├── data/                      # Runtime data (caches gitignored; ledger + paper state tracked for sync)
 │   ├── *.parquet              # OHLCV cache
 │   ├── *.json                 # Sentiment/MTF cache
 │   ├── stomar.db              # SQLite ledger
@@ -411,7 +411,7 @@ Verify: `curl http://localhost:8000/api/health` and `docker compose exec schedul
 ## Tests
 
 ```bash
-# Run all 750 tests
+# Run the full suite (~1,430 tests)
 uv run pytest tests/ -v
 
 # Run with coverage
@@ -436,7 +436,7 @@ uv run ruff check .
 | **Optimization** | SciPy, scikit-learn (Ledoit-Wolf) |
 | **Technical Analysis** | `ta` library (30+ indicators) |
 | **Storage** | SQLite (ledger), Parquet (data cache) |
-| **Testing** | pytest (750 tests), ruff (linting) |
+| **Testing** | pytest (~1,430 tests), ruff (linting) |
 
 ---
 
@@ -444,7 +444,7 @@ uv run ruff check .
 
 | Feature | StoMar | Basic Systems |
 |---------|--------|---------------|
-| **ML Models** | 5-model ensemble + meta-learner | Single model (Random Forest/LSTM) |
+| **ML Models** | 6-model ensemble + meta-learner | Single model (Random Forest/LSTM) |
 | **Target Labels** | Triple-barrier (profit/loss/time) | Simple 1-day return direction |
 | **Validation** | Walk-forward chronological splits | Random train/test split (leaky) |
 | **Signal Integration** | 14 modules via regularized logistic meta-model | Single technical indicator |

@@ -1,0 +1,30 @@
+# Fast, repo-native hooks. Run: uv run pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude_types: [svg]
+      - id: end-of-file-fixer
+        exclude_types: [svg]
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=4096"] # exceptions for tracked model bundles are handled in CI
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0 # keep roughly in sync with pyproject ruff version
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+
+  # web-side hooks run the same eslint used by CI
+  - repo: local
+    hooks:
+      - id: web-eslint
+        name: web eslint (staged ts/tsx)
+        language: system
+        entry: bash -c 'cd web && npx eslint --no-warn-ignored'
+        pass_filenames: true
+        files: ^web/.*\.(ts|tsx)$

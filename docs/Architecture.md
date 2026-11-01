@@ -43,8 +43,8 @@ Benchmarks / calibration / readiness gate / monitoring / Telegram summary
 | `src/trading` | Paper trader, execution engine, risk controls, execution manager, ledger, portfolio/tax, backtester, optimizer |
 | `src/brokers` | Broker adapter interface, dry-run broker, Kite (live, gated), order reconciler |
 | `services/` | Risk guard (hardware circuit breakers), market data service |
-| `api/` | FastAPI application — 24 routers under `/api` (73 endpoints) |
-| `web/` | React + Vite dashboard (21 pages) talking to the API via `/api` |
+| `api/` | FastAPI application — 26 routers under `/api` (73 endpoints) |
+| `web/` | React + Vite dashboard (22 pages) talking to the API via `/api` |
 | `scripts/` | One-off ops: dry-run supervision, kite sandbox validation, legacy model migration, GPU setup |
 
 ## Entry scripts
