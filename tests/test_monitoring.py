@@ -2,6 +2,7 @@
 
 import json
 import os
+import unittest.mock
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -66,6 +67,19 @@ class TestMonitoringReport:
 # ── ModelMonitor ──
 
 class TestPerformanceDrift:
+    @pytest.fixture(autouse=True)
+    def _no_live_retrain(self):
+        """Stub the retrain trigger for severity-only tests.
+
+        A critical drift normally enqueues a RetrainingPipeline daemon
+        thread that REALLY trains (network fetch + full epoch budget) and
+        writes models/T_* artifact bundles into the repo tree. These tests
+        only assert severity classification, so the trigger is stubbed;
+        the TestAutoRetrain* classes stub the worker explicitly instead.
+        """
+        with unittest.mock.patch.object(ModelMonitor, "_trigger_retrain"):
+            yield
+
     def test_no_drift(self):
         monitor = ModelMonitor()
         alert = monitor.check_performance_drift("T", 0.53, 0.53)
