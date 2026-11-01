@@ -6,13 +6,13 @@ import time
 
 import pytest
 
-from auto_pipeline import AutoPipeline
+from src.automation.auto_pipeline import AutoPipeline
 
 
 @pytest.fixture(autouse=True)
 def fast_retries(monkeypatch):
     """No real waits in tests."""
-    monkeypatch.setattr("auto_pipeline.RETRY_DELAYS", (0, 0))
+    monkeypatch.setattr("src.automation.auto_pipeline.RETRY_DELAYS", (0, 0))
 
 
 class TestRetryLogic:
@@ -69,7 +69,7 @@ class TestBackupLedger:
     def test_backup_only_on_sunday(self, tmp_path, monkeypatch):
         p = AutoPipeline(tickers=["TEST.NS"])
         from datetime import datetime
-        monkeypatch.setattr("auto_pipeline.datetime", type(
+        monkeypatch.setattr("src.automation.auto_pipeline.datetime", type(
             "FakeDT", (), {
                 "now": staticmethod(lambda: datetime(2026, 8, 3, 12, 0)),  # Monday
                 "strftime": staticmethod(lambda *a, **k: datetime(2026, 8, 3, 12, 0).strftime(*a, **k)),
@@ -86,7 +86,7 @@ class TestBackupLedger:
     def test_backup_creates_copy_on_sunday(self, tmp_path, monkeypatch):
         p = AutoPipeline(tickers=["TEST.NS"])
         from datetime import datetime
-        monkeypatch.setattr("auto_pipeline.datetime", type(
+        monkeypatch.setattr("src.automation.auto_pipeline.datetime", type(
             "FakeDT", (), {
                 "now": staticmethod(lambda: datetime(2026, 8, 2, 12, 0)),  # Sunday
                 "strftime": staticmethod(lambda *a, **k: datetime(2026, 8, 2, 12, 0).strftime(*a, **k)),
@@ -109,9 +109,9 @@ class TestHealthSweep:
         p._status = "completed"
         p._last_run_date = "2026-08-03"
         monkeypatch.setattr("src.core.constants.DATA_DIR", str(tmp_path / "data"))
-        monkeypatch.setattr("auto_pipeline.MODELS_DIR", str(tmp_path / "models"))
+        monkeypatch.setattr("src.automation.auto_pipeline.MODELS_DIR", str(tmp_path / "models"))
         monkeypatch.setattr("src.core.constants.PAPER_STATE_PATH", str(tmp_path / "paper_state.json"))
-        monkeypatch.setattr("auto_pipeline.MONITORING_DIR", str(tmp_path / "monitoring"))
+        monkeypatch.setattr("src.automation.auto_pipeline.MONITORING_DIR", str(tmp_path / "monitoring"))
 
         health = p._run_health_sweep()
 
@@ -136,9 +136,9 @@ class TestHealthSweep:
 
         p = AutoPipeline(tickers=["TEST.NS"])
         monkeypatch.setattr("src.core.constants.DATA_DIR", str(tmp_path / "data"))
-        monkeypatch.setattr("auto_pipeline.MODELS_DIR", str(models_dir))
+        monkeypatch.setattr("src.automation.auto_pipeline.MODELS_DIR", str(models_dir))
         monkeypatch.setattr("src.core.constants.PAPER_STATE_PATH", str(tmp_path / "paper_state.json"))
-        monkeypatch.setattr("auto_pipeline.MONITORING_DIR", str(tmp_path / "monitoring"))
+        monkeypatch.setattr("src.automation.auto_pipeline.MONITORING_DIR", str(tmp_path / "monitoring"))
 
         health = p._run_health_sweep()
         assert health["model_age_days"]["TEST.NS"] == 5
@@ -146,9 +146,9 @@ class TestHealthSweep:
     def test_model_missing_reports_none(self, tmp_path, monkeypatch):
         p = AutoPipeline(tickers=["TEST.NS"])
         monkeypatch.setattr("src.core.constants.DATA_DIR", str(tmp_path / "data"))
-        monkeypatch.setattr("auto_pipeline.MODELS_DIR", str(tmp_path / "models"))
+        monkeypatch.setattr("src.automation.auto_pipeline.MODELS_DIR", str(tmp_path / "models"))
         monkeypatch.setattr("src.core.constants.PAPER_STATE_PATH", str(tmp_path / "paper_state.json"))
-        monkeypatch.setattr("auto_pipeline.MONITORING_DIR", str(tmp_path / "monitoring"))
+        monkeypatch.setattr("src.automation.auto_pipeline.MONITORING_DIR", str(tmp_path / "monitoring"))
 
         health = p._run_health_sweep()
         assert health["model_age_days"]["TEST.NS"] is None
@@ -179,7 +179,7 @@ class TestDailyRunStatePersistence:
         state_path = tmp_path / "paper_state.json"
         monkeypatch.setattr("src.core.constants.PAPER_STATE_PATH", str(state_path))
         monkeypatch.setattr(
-            "auto_pipeline.META_CONTROLLER_PATH",
+            "src.automation.auto_pipeline.META_CONTROLLER_PATH",
             str(tmp_path / "no_meta_controller.json"),
         )
         monkeypatch.setattr(

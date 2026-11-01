@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-import schedule_pipeline as sp
+from src.automation import schedule_pipeline as sp
 
 
 @pytest.fixture(autouse=True)

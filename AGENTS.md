@@ -33,7 +33,7 @@ Golden rule: if any other doc disagrees with `docs/Go-Live-Gate.md`, **that doc 
 - Runtime state files (`data/stomar.db`, `data/paper_state.json`) and trained bundles under `models/` are **intentionally git-tracked** to sync state between machines (see `.gitignore` exceptions) — this contradicts an older README claim; treat them as state, not code, and never casually delete/regenerate them in a commit.
 - `models/_quarantine/` holds expired experiment artifacts — leave them alone unless explicitly asked.
 - Trained-model counts/routers/pages floats often in docs; when updating docs, count reality (`git ls-files`, files in `api/routers/`, `web/src/pages/`, `def test_` in `tests/`).
-- Data-refresh automation entry point: `auto_pipeline.py` (holiday-aware gap detection, Telegram notify, per-stage retries). Scheduler installers: `schedule_pipeline.py`.
+- Data-refresh automation entry point: `src/automation/auto_pipeline.py` (holiday-aware gap detection, Telegram notify, per-stage retries). Scheduler installers: `src/automation/schedule_pipeline.py`.
 - External endpoints baked in code (NSE FII/DII + option chain, Yahoo, Google News RSS, Screener.in, Telegram) are **best-effort public endpoints** with circuit breakers in `src/data/resilience.py`; changes here are API-drift-prone, so isolate and test.
 
 ## Coding standards

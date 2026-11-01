@@ -35,7 +35,7 @@
   - Effort: 2 hours
 
 - [x] 🔴 **P0.3** Pipeline failure notification
-  - File: `auto_pipeline.py` → `run()` except block
+  - File: `src/automation/auto_pipeline.py` → `run()` except block
   - On any step failure, write to `data/pipeline_failures.json` with timestamp + stage + error
   - Add `/api/monitoring/failures` endpoint to surface this in the UI
   - Add a visible red banner on the Dashboard if failures exist from last 24h
@@ -49,7 +49,7 @@
   - Effort: 30 minutes
 
 - [x] 🟠 **P0.5** Persist meta-controller per-ticker, not just global
-  - File: `auto_pipeline.py` → `_ensure_meta_controller()`
+  - File: `src/automation/auto_pipeline.py` → `_ensure_meta_controller()`
   - Currently loads one global `meta_controller.pkl`; per-ticker meta models are trained in `trainer.py` but not used in the daily loop
   - Load `models/meta_{ticker}.pkl` per ticker in `_run_daily()` if it exists
   - Effort: 1 hour
@@ -76,7 +76,7 @@
   - Effort: 2 hours
 
 ^- [x] 🟠 **P1.3** Cross-platform scheduler support
-  - File: `schedule_pipeline.py`
+  - File: `src/automation/schedule_pipeline.py`
   - Add Linux/Mac path using `cron` via `python-crontab` library
   - Auto-detect OS and use the right scheduler
   - Effort: 2–3 hours
@@ -84,7 +84,7 @@
 ^- [x] 🟡 **P1.4** Add startup auto-run on system boot (not just daily 4PM)
   - Windows: add a second Task Scheduler entry with trigger `AtStartup` + delay 5 minutes
   - This ensures if PC was off during 4PM run, it catches up on next boot
-  - Currently `auto_pipeline.py` does backfill but only if triggered; this makes it truly automatic
+  - Currently `src/automation/auto_pipeline.py` does backfill but only if triggered; this makes it truly automatic
   - Effort: 1 hour
 
 ---
@@ -106,7 +106,7 @@
   - Effort: 2 hours
 
 - [x] 🟠 **P2.3** Indian market holiday calendar
-  - File: `auto_pipeline.py` → `_get_trading_days_since()`
+  - File: `src/automation/auto_pipeline.py` → `_get_trading_days_since()`
   - Currently uses Mon–Fri as business days; doesn't account for NSE holidays (Diwali, Holi, etc.)
   - Add a hardcoded NSE holiday list (or fetch from NSE website) and exclude those dates from backfill
   - False "missed day" triggers on holidays waste compute and create confusion
@@ -125,7 +125,7 @@
 *You must run paper trading for a minimum period before any real money. This phase is mostly time, not code.*
 
 - [ ] 🔴 **P3.1** Start the paper trading clock — minimum 3 months uninterrupted
-  - Command: `uv run run_daily.py --paper-trade --capital 200000`
+  - Command: `uv run src/automation/run_daily.py --paper-trade --capital 200000`
   - Schedule via Task Scheduler to run every weekday at 3:45 PM IST (after market close)
   - Do NOT interrupt, reset, or modify the strategy during this period
   - This is a time gate, not a code task — it just has to run
@@ -140,7 +140,7 @@
   - Effort: 4–6 hours
 
 - [x] 🔴 **P3.3** Paper trading outcome logging (fill actual_return next day)
-  - File: `src/trading/ledger.py` + `run_daily.py`
+  - File: `src/trading/ledger.py` + `src/automation/run_daily.py`
   - At the start of each daily run, for yesterday's BUY/SELL decisions, fetch yesterday's close and today's open
   - Call `ledger.log_outcome(decision_id, actual_return, actual_direction)` for each resolved decision
   - This is what trains the meta-controller on real forward-looking data (not backfill)
@@ -227,13 +227,13 @@
   - Effort: 4 hours
 
 - [x] 🟠 **P5.3** Automated daily monitoring sweep
-  - File: `auto_pipeline.py` → add step after paper trades
+  - File: `src/automation/auto_pipeline.py` → add step after paper trades
   - For each ticker, run `ModelMonitor.check_data_freshness()` and `check_performance_drift()`
   - Write summary to `data/monitoring/daily_health.json`
   - Effort: 2 hours
 
 - [x] 🟡 **P5.4** SQLite backup strategy
-  - File: new step in `auto_pipeline.py`
+  - File: new step in `src/automation/auto_pipeline.py`
   - Once per week, copy `data/stomar.db` to `data/backups/stomar_YYYYMMDD.db`
   - Keep last 4 weekly backups (auto-delete older ones)
   - The ledger is the most valuable artifact in the entire system — protect it
@@ -258,7 +258,7 @@
   - Effort: 2 hours (code is ready, just needs live data)
 
 - [ ] 🟠 **P6.2** Automatic weekly model retraining schedule
-  - File: `auto_pipeline.py` + `schedule_pipeline.py`
+  - File: `src/automation/auto_pipeline.py` + `src/automation/schedule_pipeline.py`
   - Every Sunday, run `RetrainingPipeline.run_all()` for tickers where:
     - Model age > 30 days, OR
     - Feature drift alert was triggered in last 7 days

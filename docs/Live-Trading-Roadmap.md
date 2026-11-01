@@ -69,7 +69,7 @@ requires 60 live trading days at the prior level.
 
 ## Current daily operation (paper)
 
-Every scheduled invocation runs `auto_pipeline.py` (see `Architecture.md`):
+Every scheduled invocation runs `src/automation/auto_pipeline.py` (see `Architecture.md`):
 backfill missed days → train if needed → daily decisions → paper trades →
 health sweep → Telegram summary. Scheduled weekdays 15:45 IST plus boot
 catch-up on every device, so a day is covered whenever any machine is on.

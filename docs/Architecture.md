@@ -49,15 +49,15 @@ Benchmarks / calibration / readiness gate / monitoring / Telegram summary
 
 ## Entry scripts
 
-- **`run_pipeline.py`** — one-off retraining pipeline: FETCH → VALIDATE → FEATURES → TRAIN → EVALUATE → PROMOTE, gated by min OOS accuracy 50% / Sharpe 0.0 / max drawdown 30%.
-- **`run_daily.py`** — single-day loop: resolve outcomes → signals → orchestrator → paper trades. Used for one-off runs and as the legacy scheduler target.
-- **`auto_pipeline.py`** — **the recommended entry point.** Detects missed trading days → backfills (≤30 days, NSE holiday aware) → trains meta-controller if needed → daily orchestrator → paper trades → health sweep → weekly ledger backup → Telegram summary. Idempotent ("already ran today" detection); resumable via checkpoints; per-stage retries (1/5/15 min backoff); graceful shutdown.
-- **`schedule_pipeline.py`** — installs the scheduled task: Windows Task Scheduler, Linux crontab, or a systemd user timer (`Persistent=true` = boot catch-up). All scheduled entries run `auto_pipeline.py` so any invocation — at the 15:45 slot or right after boot — covers backfill + today + paper trades.
+- **`src/automation/run_pipeline.py`** — one-off retraining pipeline: FETCH → VALIDATE → FEATURES → TRAIN → EVALUATE → PROMOTE, gated by min OOS accuracy 50% / Sharpe 0.0 / max drawdown 30%.
+- **`src/automation/run_daily.py`** — single-day loop: resolve outcomes → signals → orchestrator → paper trades. Used for one-off runs and as the legacy scheduler target.
+- **`src/automation/auto_pipeline.py`** — **the recommended entry point.** Detects missed trading days → backfills (≤30 days, NSE holiday aware) → trains meta-controller if needed → daily orchestrator → paper trades → health sweep → weekly ledger backup → Telegram summary. Idempotent ("already ran today" detection); resumable via checkpoints; per-stage retries (1/5/15 min backoff); graceful shutdown.
+- **`src/automation/schedule_pipeline.py`** — installs the scheduled task: Windows Task Scheduler, Linux crontab, or a systemd user timer (`Persistent=true` = boot catch-up). All scheduled entries run `src/automation/auto_pipeline.py` so any invocation — at the 15:45 slot or right after boot — covers backfill + today + paper trades.
 - **`start_dev.sh` / `start_dev.bat`** — dev environment bootstrap (API + web).
 
 ## Scheduling and multi-device
 
-Every scheduled invocation runs the full idempotent `auto_pipeline.py`:
+Every scheduled invocation runs the full idempotent `src/automation/auto_pipeline.py`:
 
 - **Daily slot** (Mon–Fri 15:45 IST) — normal path.
 - **Boot catch-up** — Windows Task Scheduler `onstart` (5 min delay), crontab `@reboot` (5 min delay), or systemd timer `Persistent=true` (fires after boot if a run was missed). Because backfill is gap-based, a device that boots at 10:00 runs everything due for that day immediately.

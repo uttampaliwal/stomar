@@ -459,7 +459,7 @@ class TestAutoPipelineCheckpoint:
     def test_checkpoint_created_on_run(self, tmp_path):
         """Run creates a checkpoint file that persists after completion."""
         from unittest.mock import patch, MagicMock
-        from auto_pipeline import AutoPipeline
+        from src.automation.auto_pipeline import AutoPipeline
 
         ckpt_path = str(tmp_path / "pipeline_checkpoint.json")
 
@@ -468,8 +468,8 @@ class TestAutoPipelineCheckpoint:
         pipeline.ledger.get_last_decision_date.return_value = "2020-01-01"
         pipeline.ledger.get_dates_with_decisions.return_value = []
 
-        with patch("auto_pipeline.PipelineCheckpoint") as MockCkpt, \
-             patch("auto_pipeline.Ledger") as MockLedger:
+        with patch("src.automation.auto_pipeline.PipelineCheckpoint") as MockCkpt, \
+             patch("src.automation.auto_pipeline.Ledger") as MockLedger:
             real_ckpt = PipelineCheckpoint(pipeline="auto")
             MockCkpt.load.return_value = None
             MockCkpt.clear.return_value = None
@@ -502,7 +502,7 @@ class TestAutoPipelineCheckpoint:
     def test_resume_skips_completed_stages(self, tmp_path):
         """When checkpoint has FETCH done, run() skips FETCH."""
         from unittest.mock import patch, MagicMock
-        from auto_pipeline import AutoPipeline
+        from src.automation.auto_pipeline import AutoPipeline
 
         pipeline = AutoPipeline(tickers=["TEST.NS"])
         pipeline.ledger = MagicMock()
@@ -515,8 +515,8 @@ class TestAutoPipelineCheckpoint:
         existing_ckpt.advance("TRAIN")
         existing_ckpt.complete("TRAIN", {"status": "loaded"})
 
-        with patch("auto_pipeline.PipelineCheckpoint") as MockCkpt, \
-             patch("auto_pipeline.Ledger") as MockLedger:
+        with patch("src.automation.auto_pipeline.PipelineCheckpoint") as MockCkpt, \
+             patch("src.automation.auto_pipeline.Ledger") as MockLedger:
             MockCkpt.load.return_value = existing_ckpt
             MockCkpt.clear.return_value = None
             MockCkpt.return_value = existing_ckpt
@@ -542,14 +542,14 @@ class TestAutoPipelineCheckpoint:
     def test_failure_saves_checkpoint_for_resume(self):
         """When a stage fails, checkpoint is saved so next run resumes."""
         from unittest.mock import patch, MagicMock
-        from auto_pipeline import AutoPipeline
+        from src.automation.auto_pipeline import AutoPipeline
 
         pipeline = AutoPipeline(tickers=["TEST.NS"])
         pipeline.ledger = MagicMock()
         pipeline.ledger.get_last_decision_date.return_value = "2020-01-01"
 
-        with patch("auto_pipeline.PipelineCheckpoint") as MockCkpt, \
-             patch("auto_pipeline.Ledger") as MockLedger:
+        with patch("src.automation.auto_pipeline.PipelineCheckpoint") as MockCkpt, \
+             patch("src.automation.auto_pipeline.Ledger") as MockLedger:
             real_ckpt = PipelineCheckpoint(pipeline="auto")
             MockCkpt.load.return_value = None
             MockCkpt.clear.return_value = None
@@ -570,7 +570,7 @@ class TestAutoPipelineCheckpoint:
     def test_result_includes_checkpoint_info(self):
         """Result dict includes checkpoint metadata when resuming."""
         from unittest.mock import patch, MagicMock
-        from auto_pipeline import AutoPipeline
+        from src.automation.auto_pipeline import AutoPipeline
 
         pipeline = AutoPipeline(tickers=["TEST.NS"])
         pipeline.ledger = MagicMock()
@@ -581,8 +581,8 @@ class TestAutoPipelineCheckpoint:
         existing_ckpt.complete("FETCH", {"days_backfilled": 2})
         existing_ckpt.advance("DAILY")
 
-        with patch("auto_pipeline.PipelineCheckpoint") as MockCkpt, \
-             patch("auto_pipeline.Ledger") as MockLedger:
+        with patch("src.automation.auto_pipeline.PipelineCheckpoint") as MockCkpt, \
+             patch("src.automation.auto_pipeline.Ledger") as MockLedger:
             MockCkpt.load.return_value = existing_ckpt
             MockCkpt.clear.return_value = None
             MockCkpt.return_value = existing_ckpt

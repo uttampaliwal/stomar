@@ -63,10 +63,10 @@ uv sync --frozen
 
 # 4. ONE-COMMAND DEVICE SETUP — verifies env, tests Telegram, checks GPU,
 #    installs the daily task + boot catch-up, then runs the full pipeline.
-uv run auto_pipeline.py --setup-run
+uv run src/automation/auto_pipeline.py --setup-run
 
 # 5. Verify
-uv run schedule_pipeline.py --status
+uv run src/automation/schedule_pipeline.py --status
 tail -f data/pipeline_logs/daily_$(date +%Y%m%d).log
 ```
 
@@ -87,7 +87,7 @@ The same repo can be cloned on any machine on any day:
 git clone <your-repo-url> stomar && cd stomar
 cp .env.example .env && nano .env   # paste your full .env (API key, Telegram chat id)
 uv sync --frozen
-uv run auto_pipeline.py --setup-run
+uv run src/automation/auto_pipeline.py --setup-run
 ```
 
 A fresh clone has no ledger, so the first run performs a full 252-day
@@ -129,7 +129,7 @@ docker compose logs -f scheduler                        # first run output
 ```
 
 First container start trains models lazily on the first daily run; to warm up
-immediately: `docker compose exec scheduler python run_pipeline.py --train-all`.
+immediately: `docker compose exec scheduler python src/automation/run_pipeline.py --train-all`.
 
 ---
 
@@ -163,7 +163,7 @@ stays local and regenerates itself.
 ```bash
 # On the NEW device, every time you switch:
 python scripts/sync_state.py pull        # 1. pull latest state + code
-uv run auto_pipeline.py --setup-run      # 2. run the full day's pipeline
+uv run src/automation/auto_pipeline.py --setup-run      # 2. run the full day's pipeline
 
 # On the device you're LEAVING (or right after step 2, whichever is last):
 python scripts/sync_state.py push        # 3. push state back to the remote
@@ -196,14 +196,14 @@ Critical alert wiring (already automatic): pipeline failure, kill switch,
 drift, drawdown breach → `notify()` → Telegram + email.
 
 Pause everything: `touch data/kill_switch.json` with `{"halted": true}`;
-remove scheduler tasks: `uv run schedule_pipeline.py --remove` (native) or
+remove scheduler tasks: `uv run src/automation/schedule_pipeline.py --remove` (native) or
 `docker compose stop scheduler` (Docker).
 
 ## Rollback
 
 ```bash
 # Native
-uv run schedule_pipeline.py --remove
+uv run src/automation/schedule_pipeline.py --remove
 # Docker
 docker compose down            # volumes survive by default
 docker compose down -v         # ...or destroy data + models too

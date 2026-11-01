@@ -9,7 +9,7 @@
 
 import pytest
 
-from run_daily import run_paper_trades
+from src.automation.run_daily import run_paper_trades
 
 
 class _FakeLedger:

@@ -106,7 +106,7 @@ export default function Ledger() {
             Use this ledger to review historical decisions and trace how the automation pipeline behaved over time.
           </p>
           <div className="rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs text-muted-foreground">
-            python run_daily.py --backfill --days 252
+            python src/automation/run_daily.py --backfill --days 252
           </div>
         </div>
       </Card>

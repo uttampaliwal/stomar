@@ -55,7 +55,7 @@ export default function Backtest() {
             then roll forward. This mirrors the same historical validation path used by the CLI runner.
           </p>
           <div className="rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs text-muted-foreground">
-            python run_daily.py --backfill --days 252
+            python src/automation/run_daily.py --backfill --days 252
           </div>
         </div>
       </Card>

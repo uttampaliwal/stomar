@@ -37,14 +37,14 @@ Facts that save you an hour:
 
 | Command | What it does |
 |---|---|
-| `uv run auto_pipeline.py` | The real automation: NSE-holiday-aware gap detection → backfill → train → run daily → telegram summary → stage retries/checkpoints |
-| `uv run run_daily.py` | One research day: 14 signals → meta-controller → paper trades; `--backfill`, `--paper-trade`, `--dry-run` |
-| `uv run run_pipeline.py` | Per-ticker retrain with OOS gates (`min_oos_accuracy`, `min_oos_sharpe`, drawdown cap) or `--train-all` |
-| `uv run schedule_pipeline.py` | Installs cross-platform scheduler (Task Scheduler / cron / systemd) for weekday 15:45 IST |
+| `uv run src/automation/auto_pipeline.py` | The real automation: NSE-holiday-aware gap detection → backfill → train → run daily → telegram summary → stage retries/checkpoints |
+| `uv run src/automation/run_daily.py` | One research day: 14 signals → meta-controller → paper trades; `--backfill`, `--paper-trade`, `--dry-run` |
+| `uv run src/automation/run_pipeline.py` | Per-ticker retrain with OOS gates (`min_oos_accuracy`, `min_oos_sharpe`, drawdown cap) or `--train-all` |
+| `uv run src/automation/schedule_pipeline.py` | Installs cross-platform scheduler (Task Scheduler / cron / systemd) for weekday 15:45 IST |
 | `uv run verify_system.py` | Smoke check on synthetic data (prints; no asserts) |
 | `scripts/` | Edge gate, dry-run replay/supervision, meta refresh, state sync, watchdog, Kite sandbox validation |
 
-Note: `run_pipeline.py --paper` currently only fetches a bar and saves state (vestigial); use `auto_pipeline.py` or `run_daily.py --paper-trade` for real paper activity.
+Note: `src/automation/run_pipeline.py --paper` currently only fetches a bar and saves state (vestigial); use `src/automation/auto_pipeline.py` or `src/automation/run_daily.py --paper-trade` for real paper activity.
 
 ## Runtime state & where it lives
 

@@ -1,14 +1,14 @@
 """Daily autonomous loop. Run via scheduler or manually.
 
 Usage:
-    python run_daily.py                          # Run for all NSE stocks
-    python run_daily.py --ticker RELIANCE.NS     # Specific tickers
-    python run_daily.py --dry-run                # Don't write to ledger
-    python run_daily.py --backfill               # Backfill 1 year history + train meta
-    python run_daily.py --backfill --days 126    # Backfill 6 months + train
-    python run_daily.py --train-meta             # Train meta-controller only
-    python run_daily.py --paper-trade            # Auto-execute paper trades
-    python run_daily.py --paper-trade --capital 500000
+    python -m src.automation.run_daily                          # Run for all NSE stocks
+    python src/automation/run_daily.py --ticker RELIANCE.NS     # Specific tickers
+    python src/automation/run_daily.py --dry-run                # Don't write to ledger
+    python src/automation/run_daily.py --backfill               # Backfill 1 year history + train meta
+    python src/automation/run_daily.py --backfill --days 126    # Backfill 6 months + train
+    python src/automation/run_daily.py --train-meta             # Train meta-controller only
+    python src/automation/run_daily.py --paper-trade            # Auto-execute paper trades
+    python src/automation/run_daily.py --paper-trade --capital 500000
 """
 
 import argparse
@@ -18,11 +18,13 @@ import sys
 import os
 import time
 
-sys.path.insert(0, os.path.dirname(__file__))
+# Runnable as a module or as a file launched by schedulers with an
+# arbitrary cwd: re-root sys.path at the repo root and load the root .env.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"))
 except ImportError:
     pass
 

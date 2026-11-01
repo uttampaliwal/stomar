@@ -31,9 +31,12 @@ from datetime import datetime
 
 TASK_NAME = "StoMar_Daily_Signal"
 BOOT_TASK_NAME = "StoMar_Boot_Catchup"
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-AUTO_SCRIPT = os.path.join(SCRIPT_DIR, "auto_pipeline.py")
-LOG_DIR = os.path.join(SCRIPT_DIR, "data", "pipeline_logs")
+# Repo root = src/automation/..'s parent's parent. All scheduled commands and
+# log paths anchor here so cron's $HOME cwd and schtasks' System32 cwd can
+# never break relative paths.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+AUTO_SCRIPT = os.path.join(_PROJECT_ROOT, "src", "automation", "auto_pipeline.py")
+LOG_DIR = os.path.join(_PROJECT_ROOT, "data", "pipeline_logs")
 DEFAULT_CAPITAL = 200_000
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -189,7 +192,7 @@ Description=StoMar daily signal pipeline
 
 [Service]
 Type=oneshot
-WorkingDirectory={SCRIPT_DIR}
+WorkingDirectory={_PROJECT_ROOT}
 ExecStart={cmd_line}
 
 [Install]
@@ -454,7 +457,7 @@ def run_now() -> int:
     result = subprocess.run(
         [_python_path(), AUTO_SCRIPT],
         capture_output=False,
-        cwd=SCRIPT_DIR,
+        cwd=_PROJECT_ROOT,
     )
     return result.returncode
 

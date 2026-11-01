@@ -27,7 +27,7 @@ build on NVIDIA machines (RTX 50-series → cu128).
 - Early stopping: ReduceLROnPlateau (factor 0.5, patience 3) + val-loss patience 8 epochs, best state restored.
 - Adam, weight_decay 1e-5, MSELoss on next close (direction derived by comparison).
 - Meta-learner per ticker: out-of-fold probability vector `[xgb, lgb, lstm, gru, transformer, cat]`, LogisticRegression trained when ≥50 samples → `models/meta_{TICKER}.pkl`.
-- `batch_train()` trains all 20 tickers; `run_pipeline.py --train-all` triggers it.
+- `batch_train()` trains all 20 tickers; `src/automation/run_pipeline.py --train-all` triggers it.
 - Model version "2", feature schema version "4".
 
 ## Ensemble (`src/models/ensemble.py`)

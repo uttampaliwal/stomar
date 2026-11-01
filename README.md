@@ -26,13 +26,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # Linux/macOS
 start_dev.bat         # Windows
 
 # 4. Train all models
-uv run run_pipeline.py --train-all
+uv run src/automation/run_pipeline.py --train-all
 
 # 5. Backfill history + train meta-controller
-uv run run_daily.py --backfill
+uv run src/automation/run_daily.py --backfill
 
 # 6. Start paper trading
-uv run run_daily.py --paper-trade --capital 200000
+uv run src/automation/run_daily.py --paper-trade --capital 200000
 ```
 
 All Python dependencies are declared in `pyproject.toml` and pinned in `uv.lock`.
@@ -137,22 +137,22 @@ covers gap detection, backfill, training, today's decisions, paper trades,
 and the Telegram summary:
 
 ```bash
-uv run auto_pipeline.py                    # Everything, idempotent (safe to rerun)
-uv run auto_pipeline.py --force            # Force even if already ran today
-uv run auto_pipeline.py --setup            # One-command device setup: env + Telegram + GPU + scheduler
-uv run auto_pipeline.py --setup-run        # Same, plus run the pipeline immediately
-uv run auto_pipeline.py --capital 200000   # Paper starting capital
+uv run src/automation/auto_pipeline.py                    # Everything, idempotent (safe to rerun)
+uv run src/automation/auto_pipeline.py --force            # Force even if already ran today
+uv run src/automation/auto_pipeline.py --setup            # One-command device setup: env + Telegram + GPU + scheduler
+uv run src/automation/auto_pipeline.py --setup-run        # Same, plus run the pipeline immediately
+uv run src/automation/auto_pipeline.py --capital 200000   # Paper starting capital
 ```
 
 The lower-level single-day loop remains available:
 
 ```bash
-uv run run_daily.py                          # Run all 20 NSE stocks
-uv run run_daily.py --ticker RELIANCE.NS     # Specific tickers
-uv run run_daily.py --backfill               # Backfill 1 year + train meta
-uv run run_daily.py --train-meta             # Retrain meta-controller
-uv run run_daily.py --paper-trade            # Auto-execute paper trades
-uv run run_daily.py --dry-run                # Signals only, no ledger writes
+uv run src/automation/run_daily.py                          # Run all 20 NSE stocks
+uv run src/automation/run_daily.py --ticker RELIANCE.NS     # Specific tickers
+uv run src/automation/run_daily.py --backfill               # Backfill 1 year + train meta
+uv run src/automation/run_daily.py --train-meta             # Retrain meta-controller
+uv run src/automation/run_daily.py --paper-trade            # Auto-execute paper trades
+uv run src/automation/run_daily.py --dry-run                # Signals only, no ledger writes
 ```
 
 ### Paper Trading (with short selling)
@@ -216,10 +216,10 @@ uv run run_daily.py --dry-run                # Signals only, no ledger writes
 stomar/
 ├── start_dev.sh               # Start FastAPI + React dev servers (Linux/macOS)
 ├── start_dev.bat              # Start FastAPI + React dev servers (Windows)
-├── run_daily.py               # Single-day loop (legacy scheduler target)
-├── run_pipeline.py            # Retraining pipeline
-├── auto_pipeline.py           # Recommended: gap detection + backfill + daily + paper + summary
-├── schedule_pipeline.py       # Windows Task Scheduler
+├── src/automation/run_daily.py               # Single-day loop (legacy scheduler target)
+├── src/automation/run_pipeline.py            # Retraining pipeline
+├── src/automation/auto_pipeline.py           # Recommended: gap detection + backfill + daily + paper + summary
+├── src/automation/schedule_pipeline.py       # Windows Task Scheduler
 ├── verify_system.py           # System verification
 ├── pyproject.toml             # Python deps + ruff/pytest config
 ├── uv.lock                    # Locked dependency graph (commit it)
@@ -360,27 +360,27 @@ stomar/
 
 ```bash
 # Recommended: auto-pipeline (idempotent full run: backfill + daily + paper + summary)
-uv run auto_pipeline.py                          # Everything (safe to rerun daily)
-uv run auto_pipeline.py --force                  # Force even if already ran today
-uv run auto_pipeline.py --setup-run              # Setup device + run (one command)
+uv run src/automation/auto_pipeline.py                          # Everything (safe to rerun daily)
+uv run src/automation/auto_pipeline.py --force                  # Force even if already ran today
+uv run src/automation/auto_pipeline.py --setup-run              # Setup device + run (one command)
 
 # Single-day loop (legacy)
-uv run run_daily.py                              # All 20 NSE stocks
-uv run run_daily.py --ticker RELIANCE.NS         # Specific tickers
-uv run run_daily.py --backfill                   # Backfill 1 year
-uv run run_daily.py --train-meta                 # Retrain meta-controller
-uv run run_daily.py --paper-trade                # Auto paper trades
-uv run run_daily.py --paper-trade --capital 500000
+uv run src/automation/run_daily.py                              # All 20 NSE stocks
+uv run src/automation/run_daily.py --ticker RELIANCE.NS         # Specific tickers
+uv run src/automation/run_daily.py --backfill                   # Backfill 1 year
+uv run src/automation/run_daily.py --train-meta                 # Retrain meta-controller
+uv run src/automation/run_daily.py --paper-trade                # Auto paper trades
+uv run src/automation/run_daily.py --paper-trade --capital 500000
 
 # Retraining pipeline
-uv run run_pipeline.py --train-all               # Train all 20 stocks
-uv run run_pipeline.py --train RELIANCE.NS       # Specific tickers
-uv run run_pipeline.py --paper                   # Train + paper trade
+uv run src/automation/run_pipeline.py --train-all               # Train all 20 stocks
+uv run src/automation/run_pipeline.py --train RELIANCE.NS       # Specific tickers
+uv run src/automation/run_pipeline.py --paper                   # Train + paper trade
 
 # Scheduler (host cron / systemd timer / Windows Task Scheduler)
-uv run schedule_pipeline.py                      # Install daily 15:45 IST + boot catch-up
-uv run schedule_pipeline.py --remove             # Remove task
-uv run schedule_pipeline.py --run-now            # Run immediately
+uv run src/automation/schedule_pipeline.py                      # Install daily 15:45 IST + boot catch-up
+uv run src/automation/schedule_pipeline.py --remove             # Remove task
+uv run src/automation/schedule_pipeline.py --run-now            # Run immediately
 
 # Readiness automation (live-money gate evidence, paper-only)
 uv run scripts/readiness_watchdog.py             # One daily cycle (battery + supervised dry-run)
@@ -399,7 +399,7 @@ docker compose up -d --build
 ```
 
 - `api` — FastAPI + bundled React SPA on port 8000, healthchecked, auto-restart.
-- `scheduler` — cron daemon in-container running the tested `schedule_pipeline.py`
+- `scheduler` — cron daemon in-container running the tested `src/automation/schedule_pipeline.py`
   (weekdays 15:45 IST auto-pipeline run + boot catch-up for missed days).
 - State persists in named volumes `stomar-data` (SQLite/ledger/paper state/logs)
   and `stomar-models` (trained weights + meta-controller).

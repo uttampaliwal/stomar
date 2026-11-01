@@ -20,12 +20,12 @@ Fast, factual entry point. Deep dives live in `docs/` — trust those for detail
 - **Data:** yfinance (primary) → NSE archive fallback; DuckDB point-in-time store `data/market_data.db` (raw unadjusted OHLCV, `as_of` adjustments); parquet cache `data/*.parquet` (legacy path, still used by training); SQLite ledger `data/stomar.db` (SCHEMA_VERSION=2); JSON state files written atomically with filelock.
 - **Trading core:** event-driven engine shared by backtest/paper/live; `ExecutionManager` is the single order choke point (mode gate → quote-staleness → risk → idempotency → reconciliation → JSONL audit).
 - **Frontend:** React 19 + Vite 7 + Tailwind in `web/` (22 pages), talks to `/api` proxied in dev.
-- **Ops:** Dockerfile (uv + Node 22 build → gunicorn), docker-compose (`api` + `scheduler` running weekday 15:45 IST), `auto_pipeline.py` automation with Telegram notify & stage checkpoints. Health `/api/health`, metrics `/api/metrics` (Prometheus).
+- **Ops:** Dockerfile (uv + Node 22 build → gunicorn), docker-compose (`api` + `scheduler` running weekday 15:45 IST), `src/automation/auto_pipeline.py` automation with Telegram notify & stage checkpoints. Health `/api/health`, metrics `/api/metrics` (Prometheus).
 
 ## Layer map (dependency direction, top → bottom)
 
 1. **Presentation** — `api/routers/*` (26 routers), `web/` SPA, auth/session + rate limit + audit middleware in `api/main.py`.
-2. **Application** — `src/core/pipeline.RetrainingPipeline`, `src/signals/orchestrator.DailyOrchestrator`, `src/business automation` in `src/automation/daily_runner.py`, root scripts (`run_daily.py`, `auto_pipeline.py`).
+2. **Application** — `src/core/pipeline.RetrainingPipeline`, `src/signals/orchestrator.DailyOrchestrator`, `src/business automation` in `src/automation/daily_runner.py`, root scripts (`src/automation/run_daily.py`, `src/automation/auto_pipeline.py`).
 3. **Domain** — `src/models/*` (model/trainer/ensemble/meta-controller/registry), `src/signals/*` (14 modules), `src/trading/*` (engine, execution_manager, paper_trader, portfolio, backtester, ledger, risk_controls, risk, optimizer).
 4. **Infrastructure** — `src/data/*` (fetcher/sources/live/universes/resilience/store/feature_store), `src/brokers/*` (kite + dryrun + reconciler), `services/market_data.py`, `src/core/notifier.py` (Telegram).
 5. **State** — DuckDB PIT store, SQLite ledger, JSON state, parquet cache, model bundles + manifests (`models/`).

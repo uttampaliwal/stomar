@@ -239,10 +239,10 @@ Looking for help with:
 ```
 stomar/
 ├── start_dev.sh / start_dev.bat  # One-click dev startup (uv sync + npm ci + both servers)
-├── run_daily.py                  # Autonomous daily loop
-├── run_pipeline.py               # Retraining pipeline
-├── auto_pipeline.py              # Startup automation
-├── schedule_pipeline.py          # Windows Task Scheduler
+├── src/automation/run_daily.py                  # Autonomous daily loop
+├── src/automation/run_pipeline.py               # Retraining pipeline
+├── src/automation/auto_pipeline.py              # Startup automation
+├── src/automation/schedule_pipeline.py          # Windows Task Scheduler
 ├── verify_system.py              # System verification
 ├── pyproject.toml                # Python deps + ruff/pytest config (single source of truth)
 ├── uv.lock                       # Locked dependency graph (commit it)

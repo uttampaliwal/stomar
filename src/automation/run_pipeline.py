@@ -1,11 +1,11 @@
 """CLI entry point for the retraining pipeline.
 
 Usage:
-    python run_pipeline.py                       # All configured tickers
-    python run_pipeline.py RELIANCE.NS TCS.NS    # Specific tickers
-    python run_pipeline.py --paper               # Run paper trading after training
-    python run_pipeline.py --train-all           # Batch train all 20 NSE stocks
-    python run_pipeline.py --train RELIANCE.NS   # Train specific ticker(s)
+    python src/automation/run_pipeline.py                       # All configured tickers
+    python src/automation/run_pipeline.py RELIANCE.NS TCS.NS    # Specific tickers
+    python src/automation/run_pipeline.py --paper               # Run paper trading after training
+    python src/automation/run_pipeline.py --train-all           # Batch train all 20 NSE stocks
+    python src/automation/run_pipeline.py --train RELIANCE.NS   # Train specific ticker(s)
 """
 
 import argparse

@@ -30,7 +30,7 @@ period. With those closed, the gate described in §3 can be opened.
   verified bundles; legacy `pd.read_pickle` cache path removed from
   `multitimeframe.py`.
 - All callers migrated (`model.py`, `meta_controller.py`, `ensemble.py`,
-  `run_daily.py`, `auto_pipeline.py`, `daily_runner.py`, consensus API).
+  `src/automation/run_daily.py`, `src/automation/auto_pipeline.py`, `daily_runner.py`, consensus API).
 - `scripts/migrate_legacy_models.py` executed: 6 ticker bundles +
   1 meta-learner + 3 MTF pickles migrated to manifests/parquet; verified
   `load_models`, `promote_model` → production (registry entry created),
@@ -43,7 +43,7 @@ period. With those closed, the gate described in §3 can be opened.
   `STOMAR_LIVE_CONFIRMATION=I_CONFIRM_REAL_MONEY_TRADING`. The gate reads the
   live environment directly (not cached settings) and is re-checked on
   every execution.
-- Mode banner/logging wired into `run_daily.py`, `auto_pipeline.py`,
+- Mode banner/logging wired into `src/automation/run_daily.py`, `src/automation/auto_pipeline.py`,
   `daily_runner.py`, orchestrator, and the paper-trading API.
 
 ### C. Broker adapters — COMPLETE

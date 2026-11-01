@@ -5,8 +5,8 @@
 # Services:
 #   api       — FastAPI + React SPA (gunicorn), healthchecked, port 8000
 #   scheduler — cron daemon inside the container running the tested
-#               schedule_pipeline.py (weekdays 15:45 IST + boot catch-up);
-#               installs idempotently on first start
+#               src/automation/schedule_pipeline.py (weekdays 15:45 IST +
+#               boot catch-up); installs idempotently on first start
 #
 # State lives in two named volumes:
 #   stomar-data   — SQLite ledger, paper state, monitoring, pipeline logs
@@ -52,7 +52,7 @@ services:
       - stomar-models:/app/models
     command: >
       bash -c "
-      python schedule_pipeline.py --paper --capital $${PAPER_CAPITAL} --boot &&
+      python src/automation/schedule_pipeline.py --paper --capital $${PAPER_CAPITAL} --boot &&
       exec cron -f -l 2
       "
 

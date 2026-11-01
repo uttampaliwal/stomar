@@ -20,7 +20,7 @@ Services:
 | Service | Image/command | Notes |
 |---|---|---|
 | `api` | gunicorn 4 × uvicorn workers, `0.0.0.0:8000`, healthcheck `/api/health` | `STOMAR_ENV=production`, `TZ=Asia/Kolkata`, named volumes `stomar-data:/app/data`, `stomar-models:/app/models`, env_file `.env` |
-| `scheduler` | same image; installs cron, runs `auto_pipeline.py --paper --capital $PAPER_CAPITAL --boot` on weekdays 15:45 IST + boot catch-up | `depends_on: api (service_healthy)`; no healthcheck |
+| `scheduler` | same image; installs cron, runs `src/automation/auto_pipeline.py --paper --capital $PAPER_CAPITAL --boot` on weekdays 15:45 IST + boot catch-up | `depends_on: api (service_healthy)`; no healthcheck |
 
 ### Required config for a production container
 
@@ -33,7 +33,7 @@ Services:
 `.dockerignore` excludes `data/` and `models/`, so a fresh container starts with **no trained bundles**. Choose one:
 
 1. **Sync state from your keeper machine** into the volumes (intended path for multi-machine): run `scripts/sync_state.py` / copy `models/` + `data/stomar.db` + `data/paper_state.json` into the named volumes, or
-2. **Cold-start train inside the container:** `docker compose exec scheduler uv run auto_pipeline.py --setup-run` (long; produces fresh bundles that the subsequent scheduled runs will keep warm).
+2. **Cold-start train inside the container:** `docker compose exec scheduler uv run src/automation/auto_pipeline.py --setup-run` (long; produces fresh bundles that the subsequent scheduled runs will keep warm).
 
 Either way, verify: `curl localhost:8000/api/health` and check the dashboard loads, then confirm the ledger picked up state:
 
@@ -56,14 +56,14 @@ Use `./start_dev.sh` for development; for an unattended box, install the OS sche
 
 ```bash
 uv sync
-uv run schedule_pipeline.py --paper --capital 100000   # Windows: schtasks, Linux: cron/systemd timer
+uv run src/automation/schedule_pipeline.py --paper --capital 100000   # Windows: schtasks, Linux: cron/systemd timer
 ```
 
-Keep one machine = one scheduler. `schedule_pipeline.py` is idempotent per trading day (ledger-aware "already ran" check + boot catch-up), but two installations will fight over the JSON state locks.
+Keep one machine = one scheduler. `src/automation/schedule_pipeline.py` is idempotent per trading day (ledger-aware "already ran" check + boot catch-up), but two installations will fight over the JSON state locks.
 
 ## Observability & failure recovery
 
-- Pipeline failures: `data/monitoring/pipeline_failures.json` (surfaced by `auto_pipeline.py`, retried 60/300/900 s per stage).
+- Pipeline failures: `data/monitoring/pipeline_failures.json` (surfaced by `src/automation/auto_pipeline.py`, retried 60/300/900 s per stage).
 - Telegram summary per run when `STOMAR_TELEGRAM_*` configured (`src/core/notifier.py`).
 - Prometheus metrics at `/api/metrics`; health at `/api/health`.
 - Ingest is circuit-broken (`src/data/resilience.py`: yf 5 fails/120s, NSE 3/90s) — flapping markets degrade gracefully to parquet/NSE archive fallbacks.

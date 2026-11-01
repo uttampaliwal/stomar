@@ -4,11 +4,11 @@ Detects missed trading days, backfills them, trains models,
 runs the daily orchestrator, and auto-executes paper trades.
 
 Designed to run:
-  1. As a standalone script: python auto_pipeline.py
+  1. As a module: python -m src.automation.auto_pipeline
   2. Via Windows Task Scheduler (auto-installed on first run)
 
 Usage:
-    from auto_pipeline import AutoPipeline
+    from src.automation.auto_pipeline import AutoPipeline
     pipeline = AutoPipeline()
     pipeline.run()  # detects gaps, backfills, runs daily, paper trades
 """
@@ -24,11 +24,14 @@ import tempfile
 import time
 from datetime import datetime
 
-sys.path.insert(0, os.path.dirname(__file__))
+# Runnable as a module or as a file launched by schedulers with an
+# arbitrary cwd (cron/schtasks use absolute paths): re-root sys.path at the
+# repo root so `from src...` imports always resolve, and load the root .env.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"))
 except ImportError:
     pass
 
@@ -761,7 +764,7 @@ class AutoPipeline:
                 self._log("No decisions today, skipping paper trades")
                 return result
 
-            from run_daily import run_paper_trades
+            from src.automation.run_daily import run_paper_trades
             self._log(f"Executing paper trades for {len(decisions)} decisions...")
             summary = run_paper_trades(decisions, self.ledger, capital=self.paper_capital)
             result["trades"] = summary.get("total_trades", 0)
@@ -780,7 +783,7 @@ class AutoPipeline:
         """
         result = {"status": "skipped"}
         try:
-            from schedule_pipeline import check_status, install_task
+            from src.automation.schedule_pipeline import check_status, install_task
 
             ret = check_status()
             if ret == 0:
@@ -804,7 +807,7 @@ class AutoPipeline:
     def install_scheduler(self) -> dict:
         """Install cross-platform scheduler for daily 4 PM run + boot catch-up."""
         try:
-            from schedule_pipeline import install_task
+            from src.automation.schedule_pipeline import install_task
             result = install_task("16:00", boot=True)
             self._log(f"Scheduler installed: {result}")
             return {"status": "installed" if result == 0 else "failed", "returncode": result}
