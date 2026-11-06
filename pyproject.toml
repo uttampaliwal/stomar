@@ -42,6 +42,10 @@ dev = [
     "httpx>=0.27,<1",
     "pre-commit>=3.6,<5",
 ]
+research = [
+    "empyrical-reloaded>=0.7.2",
+    "quantstats>=0.0.86",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
