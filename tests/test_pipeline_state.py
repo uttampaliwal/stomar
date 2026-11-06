@@ -15,6 +15,17 @@ from src.core.pipeline_state import (
 )
 
 
+@pytest.fixture(autouse=True)
+def fast_retries(monkeypatch):
+    """No real RETRY_DELAYS waits in these tests (mirrors test_auto_pipeline_ops).
+
+    The state-machine tests mock stages to fail; without this each failing
+    stage sleeps through the production backoff (60s + 300s + 900s = 21 min),
+    freezing every local full-suite run at this file since its introduction.
+    """
+    monkeypatch.setattr("src.automation.auto_pipeline.RETRY_DELAYS", (0, 0))
+
+
 @pytest.fixture
 def tmp_checkpoint(tmp_path):
     """Provide a temporary checkpoint path for tests."""
