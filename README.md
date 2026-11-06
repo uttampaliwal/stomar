@@ -307,7 +307,7 @@ stomar/
 │       ├── risk_controls.py   # Pre-trade risk controls + kill switch
 │       ├── optimizer.py       # MVO, Black-Litterman
 │       └── holdings.py        # Zerodha CSV parser
-├── tests/                     # ~1,430 tests (97 files)
+├── tests/                     # ~1,460 tests (93 test files)
 ├── models/                    # Trained weights (git-tracked: state-sync baseline, see .gitignore)
 │   ├── *.pt, *.pkl            # Per-ticker models + manifests
 │   └── meta_controller.pkl    # Meta-controller
@@ -410,8 +410,13 @@ Verify: `curl http://localhost:8000/api/health` and `docker compose exec schedul
 ## Tests
 
 ```bash
-# Run the full suite (~1,430 tests)
+# Run the full suite (~1,460 tests)
 uv run pytest tests/ -v
+
+# Full suite plus the research dependency group (empyrical-reloaded metric
+# parity oracle in tests/test_metrics_parity.py — those tests skip silently
+# when the group is not installed)
+uv run --group research pytest tests/ -v
 
 # Run with coverage
 uv run pytest tests/ --cov=src --cov-report=term-missing
@@ -435,7 +440,7 @@ uv run ruff check .
 | **Optimization** | SciPy, scikit-learn (Ledoit-Wolf) |
 | **Technical Analysis** | `ta` library (30+ indicators) |
 | **Storage** | SQLite (ledger), Parquet (data cache) |
-| **Testing** | pytest (~1,430 tests), ruff (linting) |
+| **Testing** | pytest (~1,460 tests), ruff (linting), empyrical metric-parity oracle (research group) |
 
 ---
 
